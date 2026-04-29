@@ -1,0 +1,9 @@
+{
+  "name": "example_auth_query",
+  "min_source_files": 10,
+  "max_index_duration_ms": 2000,
+  "max_query_avg_duration_ms": 250,
+  "expected_top_paths": [
+    "indexing.py"
+  ]
+}

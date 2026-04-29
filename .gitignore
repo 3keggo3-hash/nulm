@@ -45,3 +45,25 @@ htmlcov/
 .claude-bridge/
 *.bak
 *.tmp
+
+# Local config and secrets
+.env
+.env.*
+*.local
+*.secret
+*.pem
+*.key
+*.p12
+*.sqlite
+*.db
+claude_desktop_config.json
+claude_desktop_config.local.json
+claude_desktop_config.private.json
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.aider*
+
+# Research
+.research/

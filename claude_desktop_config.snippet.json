@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "claude-bridge": {
+      "command": "/absolute/path/to/python3",
+      "args": ["-m", "claude_bridge.mcp_server"],
+      "env": {
+        "CLAUDE_BRIDGE_PROJECT_DIR": "/absolute/path/to/project",
+        "CLAUDE_BRIDGE_ALLOWED_ROOTS": "/absolute/path/to/project:/absolute/path/to/projects-parent",
+        "CLAUDE_BRIDGE_AUTO_APPROVE": "0",
+        "CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL": "0",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": "/absolute/path/to/repo/src"
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests-fallback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install fallback test deps
+        run: python -m pip install -e .[dev]
+      - name: Run full test suite
+        run: pytest -q
+
+  tests-treesitter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tree-sitter test deps
+        run: python -m pip install -e .[dev,treesitter]
+      - name: Run tree-sitter matrix and protocol coverage
+        run: pytest tests/test_tree_sitter_matrix.py tests/test_protocol.py -q
+
+  smoke-cli-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: python -m pip install -e .[dev]
+      - name: CLI smoke test
+        run: |
+          claude-bridge version
+          claude-bridge setup --project-dir .
+          claude-bridge benchmark --project-dir . --path src --query "tree sitter parser" --json
+
+  smoke-cli-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: python -m pip install -e .[dev]
+      - name: CLI smoke test
+        run: |
+          claude-bridge version
+          claude-bridge setup --project-dir .
+
+  smoke-cli-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: python -m pip install -e .[dev]
+      - name: CLI smoke test
+        run: |
+          claude-bridge version
+          claude-bridge setup --project-dir .

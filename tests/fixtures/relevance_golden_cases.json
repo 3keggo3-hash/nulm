@@ -1,0 +1,93 @@
+[
+  {
+    "name": "python_auth_flow",
+    "path": "src",
+    "query": "login auth session",
+    "limit": 3,
+    "files": {
+      "src/auth_service.py": "class AuthService:\n    pass\n\ndef login_user(email: str) -> bool:\n    \"\"\"Create a session for a successful login.\"\"\"\n    return True\n",
+      "src/session_store.py": "def create_session(user_id: str) -> str:\n    return user_id\n",
+      "src/payments.py": "def charge_card() -> bool:\n    return True\n"
+    },
+    "expected_top_paths": [
+      "auth_service.py",
+      "session_store.py"
+    ]
+  },
+  {
+    "name": "typescript_gateway_flow",
+    "path": "web",
+    "query": "login session auth",
+    "limit": 3,
+    "files": {
+      "web/auth.ts": "import { createSession } from \"./session\"\nexport class AuthGateway {}\nexport const loginUser = async (email: string) => createSession(email)\n",
+      "web/session.ts": "export function createSession(email: string) {\n  return email\n}\n",
+      "web/payments.ts": "export const chargeCard = async () => true\n"
+    },
+    "expected_top_paths": [
+      "auth.ts",
+      "session.ts"
+    ]
+  },
+  {
+    "name": "go_service_vs_payments",
+    "path": "goapp",
+    "query": "auth context login",
+    "limit": 3,
+    "files": {
+      "goapp/auth.go": "package auth\n\nimport \"context\"\n\ntype AuthService struct{}\n\nfunc LoginUser(ctx context.Context) error { return nil }\n",
+      "goapp/session.go": "package auth\n\nfunc BuildSession() string { return \"ok\" }\n",
+      "goapp/payments.go": "package billing\n\nfunc ChargeCard() bool { return true }\n"
+    },
+    "expected_top_paths": [
+      "auth.go",
+      "session.go"
+    ]
+  },
+  {
+    "name": "java_auth_service",
+    "path": "javaapp",
+    "query": "login auth session",
+    "limit": 3,
+    "files": {
+      "javaapp/AuthService.java": "import com.example.auth.SessionStore;\npublic class AuthService {\n    public void loginUser() {}\n}\n",
+      "javaapp/SessionStore.java": "package com.example.auth;\npublic class SessionStore {\n    public String createSession() { return \"ok\"; }\n}\n",
+      "javaapp/BillingService.java": "public class BillingService {\n    public void chargeCard() {}\n}\n"
+    },
+    "expected_top_paths": [
+      "AuthService.java",
+      "SessionStore.java"
+    ]
+  },
+  {
+    "name": "ruby_auth_service",
+    "path": "rubyapp",
+    "query": "login auth json",
+    "limit": 3,
+    "files": {
+      "rubyapp/auth_service.rb": "require \"json\"\nclass AuthService\n  def login_user\n  end\nend\n",
+      "rubyapp/session_store.rb": "class SessionStore\n  def create_session\n  end\nend\n",
+      "rubyapp/payments.rb": "class Payments\n  def charge_card\n  end\nend\n"
+    },
+    "expected_top_paths": [
+      "auth_service.rb"
+    ]
+  },
+  {
+    "name": "monorepo_mixed_languages",
+    "path": "workspace",
+    "query": "auth login session",
+    "limit": 4,
+    "files": {
+      "workspace/services/auth/auth.ts": "import { createSession } from \"./session\"\nexport class AuthGateway {}\nexport const loginUser = async () => createSession(\"u\")\n",
+      "workspace/services/auth/session.ts": "export function createSession(userId: string) {\n  return userId\n}\n",
+      "workspace/api/AuthController.java": "public class AuthController {\n    public void loginUser() {}\n}\n",
+      "workspace/billing/payments.py": "def charge_card() -> bool:\n    return True\n"
+    },
+    "expected_top_paths": [
+      "services/auth/auth.ts",
+      "api/AuthController.java",
+      "services/auth/session.ts"
+    ]
+  }
+]

@@ -23,17 +23,21 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Tools",
+    "Topic :: Utilities",
 ]
 dependencies = [
-    "fastapi>=0.100.0",
-    "uvicorn>=0.23.0",
+    "mcp>=1.6.1",
+    "pathspec>=0.12.1",
     "typer>=0.9.0",
     "rich>=13.0.0",
     "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
+legacy = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -41,14 +45,12 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.0",
 ]
+treesitter = [
+    "tree-sitter-language-pack>=0.2.0",
+]
 
 [project.scripts]
 claude-bridge = "claude_bridge.cli:main"
-
-[project.urls]
-Homepage = "https://github.com/yourusername/claude-bridge"
-Repository = "https://github.com/yourusername/claude-bridge"
-Issues = "https://github.com/yourusername/claude-bridge/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_bridge"]
@@ -70,10 +72,14 @@ line-length = 100
 target-version = "py38"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["mcp.*"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

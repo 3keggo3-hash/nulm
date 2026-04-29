@@ -1,0 +1,10 @@
+{
+  "name": "rails_controller",
+  "repo": "https://github.com/rails/rails",
+  "path": "actionpack/lib/action_controller",
+  "query": "controller request response render params",
+  "limit": 5,
+  "repeats": 5,
+  "baseline_file": "../baselines/rails_controller_baseline.json",
+  "notes": "Measure controller-layer discovery quality in Rails."
+}

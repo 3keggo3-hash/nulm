@@ -1,117 +1,149 @@
-"""Bookmarklet code and system prompt for Claude.ai."""
+"""System prompt and setup guide helpers for Claude Bridge."""
 
-# Minified JavaScript bookmarklet that extracts tool commands and sends to localhost
-BOOKMARKLET_CODE = """javascript:(function(){
-const text=document.body.innerText;
-const tools=[];
+from __future__ import annotations
 
-const readMatches=text.match(/\\[READ:\\s*([^\\]]+)\\]/g);
-if(readMatches)readMatches.forEach(m=>{
-const p=m.replace(/\\[READ:\\s*|\\]/g,'').trim();
-tools.push({tool:'READ',params:{path:p}});
-});
+import json
+import os
+import sys
+from pathlib import Path
 
-const listMatches=text.match(/\\[LIST:\\s*([^\\]]+)\\]/g);
-if(listMatches)listMatches.forEach(m=>{
-const p=m.replace(/\\[LIST:\\s*|\\]/g,'').trim();
-tools.push({tool:'LIST',params:{path:p}});
-});
+SYSTEM_PROMPT = """
+You are connected to Claude Bridge over MCP.
 
-const shellMatches=text.match(/\\[SHELL:\\s*([^\\]]+)\\]/g);
-if(shellMatches)shellMatches.forEach(m=>{
-const c=m.replace(/\\[SHELL:\\s*|\\]/g,'').trim();
-tools.push({tool:'SHELL',params:{command:c}});
-});
+Available tools:
+- `read_file(path)` to inspect files before making changes
+- `list_directory(path)` to understand project structure
+- `run_shell(command)` for safe, non-interactive commands after user approval
+- `patch_file(file, search, replace)` to apply SEARCH/REPLACE edits
+- `workspace_status()` to see the active project root and allowed roots
+- `switch_project_root(path)` to move into another allowed project folder
 
-const patchRegex=/\\[PATCH\\](.+?)\\[\\/PATCH\\]/gs;
-let pm;
-while((pm=patchRegex.exec(text))!==null){
-const block=pm[1];
-const f=block.match(/FILE:\\s*(.+)/)?.[1]?.trim();
-const s=block.match(/SEARCH:\\s*([\\s\\S]*?)(?=\\nREPLACE:|$)/)?.[1]?.trim();
-const r=block.match(/REPLACE:\\s*([\\s\\S]*?)$/)?.[1]?.trim();
-if(f)tools.push({tool:'PATCH',params:{file:f,search:s,replace:r}});
-}
+Rules:
+- Never write full files when a targeted patch is enough.
+- Always inspect the relevant file first with `read_file` or `list_directory`.
+- When any tool returns code `path_outside_project`, do not claim access is unavailable yet. First call `workspace_status()`, then `switch_project_root(path)` if the target is inside an allowed root, and then retry the original operation.
+- Any subdirectory inside an allowed root is also switchable. If `/Users/me/Desktop` is allowed, `/Users/me/Desktop/my-game` is valid for `switch_project_root(...)`.
+- Prefer `patch_file` with precise SEARCH and REPLACE blocks.
+- Mention when a shell command or patch will require approval or confirmation.
+- Treat MCP tool results as the source of truth.
+- Do not stop after finding a single matching constant, comment, or obvious-looking file. Cross-check related files before concluding the behavior is fully explained.
+- When a project has framework-specific runtime files, inspect them too. Example: in Godot projects, check scripts together with `project.godot`, scene files, and `export_presets.cfg` when they may affect runtime behavior.
+- For larger changes, hold a quality bar: correctness first, then regression safety, then readability, then tests, then user-visible impact.
+- For larger tasks, prefer decomposition: identify independent workstreams, keep ownership boundaries clear, then merge only after an integration pass and a final quality check.
 
-if(tools.length===0){alert('No tool commands found on page');return;}
+When editing code, think in small verified steps:
+1. Read the file or directory you need.
+2. Cross-check nearby config, entrypoint, scene, or export files when the first file alone may be misleading.
+3. Explain the bug, risk, or gap briefly.
+4. Apply a focused SEARCH/REPLACE patch.
+5. Run validation commands when useful.
+6. Summarize what changed and any remaining risks.
 
-const results=[];
-(async()=>{
-for(const t of tools){
-try{
-const r=await fetch('http://localhost:7337/execute',{
-method:'POST',
-headers:{'Content-Type':'application/json'},
-body:JSON.stringify(t)
-});
-const j=await r.json();
-results.push(`[${t.tool}:${t.tool==='SHELL'?t.params.command:t.tool==='READ'?t.params.path:t.params.file}]\\n${JSON.stringify(j,null,2)}`);
-}catch(e){
-results.push(`[${t.tool}] ERROR: ${e.message}`);
-}
-}
-const ta=document.createElement('textarea');
-ta.value=results.join('\\n\\n');
-document.body.appendChild(ta);
-ta.select();
-document.execCommand('copy');
-document.body.removeChild(ta);
-alert('Results copied! Paste into Claude.');
-})();
-})();"""
-
-
-# System prompt for Claude.ai Project Instructions
-SYSTEM_PROMPT = """You are Claude, an AI assistant with access to the user's local machine through the Claude Bridge tool.
-
-IMPORTANT: You must use the Tool Protocol to interact with the user's local files and terminal. NEVER output code changes directly in your response; always use [PATCH] blocks.
-
-## Available Tools
-
-### READ: View file contents
-Use: `[READ: path/to/file.py]`
-
-### LIST: View directory contents
-Use: `[LIST: src/]`
-
-### SHELL: Run terminal commands
-Use: `[SHELL: python -m pytest tests/]`
-
-### PATCH: Apply incremental changes
-Use:
-```
-[PATCH]
-FILE: path/to/file.py
+SEARCH/REPLACE reminder:
 SEARCH:
-def old_function():
-    pass
+<exact existing text>
 REPLACE:
-def old_function():
-    return "updated"
-[/PATCH]
+<new text>
+""".strip()
+
+
+def build_desktop_config(
+    project_dir: Path,
+    *,
+    allowed_roots: list[Path] | None = None,
+    python_executable: str | None = None,
+    package_root: Path | None = None,
+    auto_approve: bool = False,
+    client_managed_approval: bool = False,
+    approval_preset: str | None = None,
+) -> dict[str, object]:
+    """Build a Claude Desktop MCP config snippet."""
+    python_cmd = python_executable or sys.executable
+    package_root = package_root or Path(__file__).resolve().parents[2]
+
+    env = {
+        "CLAUDE_BRIDGE_PROJECT_DIR": str(project_dir.resolve()),
+        "CLAUDE_BRIDGE_ALLOWED_ROOTS": os.pathsep.join(
+            str(root.resolve()) for root in (allowed_roots or [project_dir])
+        ),
+        "CLAUDE_BRIDGE_AUTO_APPROVE": "1" if auto_approve else "0",
+        "CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL": "1" if client_managed_approval else "0",
+        "PYTHONUNBUFFERED": "1",
+    }
+    if approval_preset is not None:
+        env["CLAUDE_BRIDGE_APPROVAL_PRESET"] = approval_preset
+
+    src_dir = package_root / "src"
+    if src_dir.exists():
+        env["PYTHONPATH"] = str(src_dir)
+
+    return {
+        "mcpServers": {
+            "claude-bridge": {
+                "command": python_cmd,
+                "args": ["-m", "claude_bridge.mcp_server"],
+                "env": env,
+            }
+        }
+    }
+
+
+def generate_mcp_setup_guide(
+    project_dir: Path,
+    *,
+    allowed_roots: list[Path] | None = None,
+    python_executable: str | None = None,
+    package_root: Path | None = None,
+    auto_approve: bool = False,
+    client_managed_approval: bool = False,
+    approval_preset: str | None = None,
+) -> str:
+    """Render a copy-paste setup guide for Claude Desktop."""
+    config = build_desktop_config(
+        project_dir,
+        allowed_roots=allowed_roots,
+        python_executable=python_executable,
+        package_root=package_root,
+        auto_approve=auto_approve,
+        client_managed_approval=client_managed_approval,
+        approval_preset=approval_preset,
+    )
+    config_json = json.dumps(config, indent=2, ensure_ascii=False)
+
+    return f"""
+Add Claude Bridge to Claude Desktop by editing `claude_desktop_config.json`.
+
+Recommended configuration:
+
+```json
+{config_json}
 ```
 
-## Critical Rules
+Why this format:
+- Launches Claude Bridge through `python -m claude_bridge.mcp_server`, which is more reliable for Claude Desktop than printing setup text during MCP startup.
+- Passes the active project root through `CLAUDE_BRIDGE_PROJECT_DIR`.
+- Passes the broader allowed workspace list through `CLAUDE_BRIDGE_ALLOWED_ROOTS`.
+- Keeps stdout clean for the MCP protocol.
 
-1. NEVER write full files in your response. Use SEARCH/REPLACE blocks instead.
-2. The user will click the "Bridge" bookmarklet to execute your commands.
-3. Wait for the user to paste results before proceeding.
-4. Use specific SEARCH blocks that uniquely identify the code to change.
-5. For Python files, syntax errors will block the patch.
-6. Each successful PATCH triggers an automatic git commit.
+After saving the config:
+1. Fully quit Claude Desktop.
+2. Reopen Claude Desktop.
+3. Start a new chat and confirm the Claude Bridge tools appear.
 
-## Workflow
+First-message tip:
+- Claude Desktop may occasionally delay MCP tool routing until the second turn.
+- If the first reply claims it cannot access files, retry with a more explicit message such as:
+  - "Read the files in this project with claude-bridge"
+  - "Use workspace_status() and inspect the codebase"
+  - "Review this folder and use claude-bridge tools"
 
-1. User describes a task
-2. You: `[LIST: .]` to see project structure
-3. User clicks Bridge, pastes results
-4. You: `[READ: relevant_file.py]` to see code
-5. User clicks Bridge, pastes results
-6. You: `[PATCH]` with specific SEARCH/REPLACE
-7. User clicks Bridge, change is applied
-8. You: `[SHELL: python -m pytest]` to verify
-9. User clicks Bridge, shares results
-10. Continue until task complete
+Approval note:
+- In MCP stdio mode, Claude Bridge cannot safely pause for terminal `input()` prompts.
+- If you want `run_shell`, `write_file`, `patch_file`, and `undo_last_patch` to work with approvals, generate config with client-managed approval enabled.
+- Otherwise, leave the server fail-closed or enable auto-approve only in a trusted local environment.
 
-Remember: ALWAYS use [READ:], [LIST:], [SHELL:], or [PATCH:] commands instead of writing code directly.
-"""
+Troubleshooting:
+- Make sure the selected Python environment can import `claude_bridge`.
+- If you are running from this repository, keep `PYTHONPATH` pointing at the local `src` directory.
+- If the server does not appear, reopen `claude_desktop_config.json` and check for JSON syntax errors.
+""".strip()

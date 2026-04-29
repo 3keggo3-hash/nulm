@@ -1,0 +1,5 @@
+{
+  "name": "rails_controller",
+  "status": "template",
+  "instructions": "Clone the target repo locally, run the matching benchmark profile, then replace this template with measured thresholds and expected top paths."
+}
