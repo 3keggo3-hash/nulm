@@ -9,6 +9,7 @@ class TestPrompts:
         names = [prompt.name for prompt in prompts]
 
         assert "review" in names
+        assert "compact" in names
         assert "optimize" in names
         assert "orchestrate" in names
         assert "agent_loop" in names
@@ -17,6 +18,9 @@ class TestPrompts:
         assert "todo" in names
         assert "explain" in names
         assert "commit" in names
+        assert "shadow" in names
+        assert "benchmark" in names
+        assert "platform" in names
 
     async def test_review_prompt_renders_target_path(self):
         result = await mcp_server.mcp.get_prompt(
@@ -110,6 +114,35 @@ class TestPrompts:
         message_text = result.messages[0].content.text
         assert "Target: ." in message_text
         assert "Preferred style: short imperative commit message with a concise summary" in message_text
+
+    async def test_shadow_prompt_pushes_critical_reread(self):
+        result = await mcp_server.mcp.get_prompt(
+            "shadow",
+            {"target": "src/", "focus": "challenge prior assumptions"},
+        )
+
+        message_text = result.messages[0].content.text
+        assert "Target: src/" in message_text
+        assert "Focus: challenge prior assumptions" in message_text
+        assert "critical reread" in message_text
+
+    async def test_platform_prompt_targets_cross_platform_risks(self):
+        result = await mcp_server.mcp.get_prompt("platform")
+
+        message_text = result.messages[0].content.text
+        assert "Linux, Windows, WSL, VS Code" in message_text
+        assert "path issues" in message_text
+
+    async def test_compact_prompt_targets_lower_cost_context(self):
+        result = await mcp_server.mcp.get_prompt(
+            "compact",
+            {"target": "src/", "goal": "continue with lower token cost"},
+        )
+
+        message_text = result.messages[0].content.text
+        assert "Target: src/" in message_text
+        assert "Goal: continue with lower token cost" in message_text
+        assert "smallest useful set of files" in message_text
 
     async def test_prompt_arguments_expose_user_friendly_target_name(self):
         prompts = await mcp_server.mcp.list_prompts()

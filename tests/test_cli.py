@@ -5,7 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from claude_bridge import cli
-from claude_bridge.prompt import build_desktop_config, generate_mcp_setup_guide
+from claude_bridge.prompt import build_desktop_config, build_target_config, generate_mcp_setup_guide
 from claude_bridge import server as mcp_server
 
 
@@ -68,6 +68,25 @@ class TestDesktopConfig:
         assert "CLAUDE_BRIDGE_PROJECT_DIR" in guide
         assert '"command": "/usr/bin/python3"' in guide
 
+    def test_build_target_config_supports_generic_stdio(self, tmp_path: Path):
+        config = build_target_config(
+            tmp_path,
+            target="generic-stdio",
+            python_executable="/usr/bin/python3",
+            package_root=Path("/tmp/fake-project"),
+        )
+
+        server = config["servers"]["claude-bridge"]
+        assert server["command"] == "/usr/bin/python3"
+        assert server["args"] == ["-m", "claude_bridge.mcp_server"]
+
+    def test_generate_mcp_setup_guide_supports_vscode_target(self, tmp_path: Path):
+        guide = generate_mcp_setup_guide(tmp_path, target="vscode")
+
+        assert '"mcp"' in guide
+        assert '"servers"' in guide
+        assert "VS Code" in guide
+
 
 class TestCLI:
     def test_start_command_keeps_stdout_clean_for_mcp(self, tmp_path: Path, monkeypatch):
@@ -99,6 +118,16 @@ class TestCLI:
         assert "CLAUDE_BRIDGE_PROJECT_DIR" in result.stdout
         assert "CLAUDE_BRIDGE_ALLOWED_ROOTS" in result.stdout
 
+    def test_setup_command_supports_generic_target(self, tmp_path: Path):
+        result = runner.invoke(
+            cli.app,
+            ["setup", "--project-dir", str(tmp_path), "--target", "generic-stdio"],
+        )
+
+        assert result.exit_code == 0
+        assert "Target: generic-stdio" in result.stdout
+        assert '"servers"' in result.stdout
+
     def test_install_command_writes_claude_desktop_config(self, tmp_path: Path):
         config_path = tmp_path / "claude_desktop_config.json"
         project_dir = tmp_path / "project"
@@ -129,6 +158,45 @@ class TestCLI:
             f"{project_dir.resolve()}:{extra_root.resolve()}"
         )
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "1"
+
+    def test_install_command_writes_generic_target_config(self, tmp_path: Path):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        config_path = tmp_path / "generic.json"
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "install",
+                "--project-dir",
+                str(project_dir),
+                "--target",
+                "generic-stdio",
+                "--config-path",
+                str(config_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "installed for generic-stdio" in result.stdout
+        written = json.loads(config_path.read_text(encoding="utf-8"))
+        server = written["servers"]["claude-bridge"]
+        assert server["args"] == ["-m", "claude_bridge.mcp_server"]
+
+    def test_install_command_uses_default_path_for_vscode_target(self, tmp_path: Path):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        result = runner.invoke(
+            cli.app,
+            ["install", "--project-dir", str(project_dir), "--target", "vscode"],
+        )
+
+        assert result.exit_code == 0
+        expected_path = project_dir / ".claude-bridge.vscode.json"
+        assert expected_path.exists()
+        written = json.loads(expected_path.read_text(encoding="utf-8"))
+        assert "mcp" in written
 
     def test_install_command_accepts_approval_preset(self, tmp_path: Path):
         config_path = tmp_path / "claude_desktop_config.json"

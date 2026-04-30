@@ -81,3 +81,12 @@ class TestEnvConfiguration:
         current = mcp_server.current_config()
 
         assert current["onboarding_enabled"] is False
+
+    def test_intent_compaction_can_be_enabled_from_env(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_BRIDGE_INTENT_COMPACTION_ENABLED", "true")
+
+        mcp_server.configure_from_env()
+        current = mcp_server.current_config()
+
+        assert current["intent_compaction_enabled"] is True

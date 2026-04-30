@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 SYSTEM_PROMPT = """
 You are connected to Claude Bridge over MCP.
@@ -46,8 +47,10 @@ REPLACE:
 <new text>
 """.strip()
 
+SUPPORTED_SETUP_TARGETS = ("claude-desktop", "generic-stdio", "vscode")
 
-def build_desktop_config(
+
+def build_stdio_server_entry(
     project_dir: Path,
     *,
     allowed_roots: list[Path] | None = None,
@@ -56,8 +59,8 @@ def build_desktop_config(
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
-) -> dict[str, object]:
-    """Build a Claude Desktop MCP config snippet."""
+) -> dict[str, Any]:
+    """Build a portable stdio MCP server entry."""
     python_cmd = python_executable or sys.executable
     package_root = package_root or Path(__file__).resolve().parents[2]
 
@@ -78,28 +81,27 @@ def build_desktop_config(
         env["PYTHONPATH"] = str(src_dir)
 
     return {
-        "mcpServers": {
-            "claude-bridge": {
-                "command": python_cmd,
-                "args": ["-m", "claude_bridge.mcp_server"],
-                "env": env,
-            }
-        }
+        "command": python_cmd,
+        "args": ["-m", "claude_bridge.mcp_server"],
+        "env": env,
     }
 
 
-def generate_mcp_setup_guide(
+def build_target_config(
     project_dir: Path,
     *,
+    target: str = "claude-desktop",
     allowed_roots: list[Path] | None = None,
     python_executable: str | None = None,
     package_root: Path | None = None,
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
-) -> str:
-    """Render a copy-paste setup guide for Claude Desktop."""
-    config = build_desktop_config(
+) -> dict[str, Any]:
+    """Build a target-specific MCP config snippet."""
+    if target not in SUPPORTED_SETUP_TARGETS:
+        raise ValueError(f"Unsupported setup target: {target}")
+    server_entry = build_stdio_server_entry(
         project_dir,
         allowed_roots=allowed_roots,
         python_executable=python_executable,
@@ -108,10 +110,105 @@ def generate_mcp_setup_guide(
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
     )
+    if target == "claude-desktop":
+        return {"mcpServers": {"claude-bridge": server_entry}}
+    if target == "generic-stdio":
+        return {"servers": {"claude-bridge": server_entry}}
+    return {"mcp": {"servers": {"claude-bridge": server_entry}}}
+
+
+def build_desktop_config(
+    project_dir: Path,
+    *,
+    allowed_roots: list[Path] | None = None,
+    python_executable: str | None = None,
+    package_root: Path | None = None,
+    auto_approve: bool = False,
+    client_managed_approval: bool = False,
+    approval_preset: str | None = None,
+) -> dict[str, object]:
+    """Build a Claude Desktop MCP config snippet."""
+    return build_target_config(
+        project_dir,
+        target="claude-desktop",
+        allowed_roots=allowed_roots,
+        python_executable=python_executable,
+        package_root=package_root,
+        auto_approve=auto_approve,
+        client_managed_approval=client_managed_approval,
+        approval_preset=approval_preset,
+    )
+
+
+def generate_mcp_setup_guide(
+    project_dir: Path,
+    *,
+    target: str = "claude-desktop",
+    allowed_roots: list[Path] | None = None,
+    python_executable: str | None = None,
+    package_root: Path | None = None,
+    auto_approve: bool = False,
+    client_managed_approval: bool = False,
+    approval_preset: str | None = None,
+) -> str:
+    """Render a copy-paste setup guide for a supported MCP client target."""
+    config = build_target_config(
+        project_dir,
+        target=target,
+        allowed_roots=allowed_roots,
+        python_executable=python_executable,
+        package_root=package_root,
+        auto_approve=auto_approve,
+        client_managed_approval=client_managed_approval,
+        approval_preset=approval_preset,
+    )
     config_json = json.dumps(config, indent=2, ensure_ascii=False)
+    target_title = {
+        "claude-desktop": "Claude Desktop",
+        "generic-stdio": "a generic stdio MCP client",
+        "vscode": "VS Code or a VS Code MCP extension",
+    }[target]
+    location_hint = {
+        "claude-desktop": "editing `claude_desktop_config.json`",
+        "generic-stdio": "adding this server entry to your client's MCP JSON config",
+        "vscode": "adding this JSON snippet to the relevant VS Code MCP settings or extension config",
+    }[target]
+    wrapper_note = {
+        "claude-desktop": "Uses the `mcpServers` wrapper expected by Claude Desktop.",
+        "generic-stdio": "Uses a simple `servers` wrapper. If your client expects a different top-level key, keep the inner `claude-bridge` server entry and adapt only the wrapper.",
+        "vscode": "Uses an `mcp.servers` wrapper as a practical VS Code-oriented snippet. If your chosen extension expects a different top-level key, keep the inner `claude-bridge` entry and adjust only the wrapper.",
+    }[target]
+    after_saving = {
+        "claude-desktop": (
+            "1. Fully quit Claude Desktop.\n"
+            "2. Reopen Claude Desktop.\n"
+            "3. Start a new chat and confirm the Claude Bridge tools appear."
+        ),
+        "generic-stdio": (
+            "1. Save the config in the location your MCP client reads.\n"
+            "2. Restart or reload that client.\n"
+            "3. Confirm the Claude Bridge tools appear."
+        ),
+        "vscode": (
+            "1. Save the settings or extension config.\n"
+            "2. Reload VS Code or restart the extension host.\n"
+            "3. Confirm the Claude Bridge tools appear in the MCP-capable UI."
+        ),
+    }[target]
+    first_message_tip = ""
+    if target == "claude-desktop":
+        first_message_tip = """
+
+First-message tip:
+- Claude Desktop may occasionally delay MCP tool routing until the second turn.
+- If the first reply claims it cannot access files, retry with a more explicit message such as:
+  - "Read the files in this project with claude-bridge"
+  - "Use workspace_status() and inspect the codebase"
+  - "Review this folder and use claude-bridge tools"
+""".rstrip()
 
     return f"""
-Add Claude Bridge to Claude Desktop by editing `claude_desktop_config.json`.
+Add Claude Bridge to {target_title} by {location_hint}.
 
 Recommended configuration:
 
@@ -124,18 +221,12 @@ Why this format:
 - Passes the active project root through `CLAUDE_BRIDGE_PROJECT_DIR`.
 - Passes the broader allowed workspace list through `CLAUDE_BRIDGE_ALLOWED_ROOTS`.
 - Keeps stdout clean for the MCP protocol.
+- {wrapper_note}
 
 After saving the config:
-1. Fully quit Claude Desktop.
-2. Reopen Claude Desktop.
-3. Start a new chat and confirm the Claude Bridge tools appear.
+{after_saving}
 
-First-message tip:
-- Claude Desktop may occasionally delay MCP tool routing until the second turn.
-- If the first reply claims it cannot access files, retry with a more explicit message such as:
-  - "Read the files in this project with claude-bridge"
-  - "Use workspace_status() and inspect the codebase"
-  - "Review this folder and use claude-bridge tools"
+{first_message_tip}
 
 Approval note:
 - In MCP stdio mode, Claude Bridge cannot safely pause for terminal `input()` prompts.
@@ -145,5 +236,5 @@ Approval note:
 Troubleshooting:
 - Make sure the selected Python environment can import `claude_bridge`.
 - If you are running from this repository, keep `PYTHONPATH` pointing at the local `src` directory.
-- If the server does not appear, reopen `claude_desktop_config.json` and check for JSON syntax errors.
+- If the server does not appear, reopen the target config and check for JSON syntax errors.
 """.strip()

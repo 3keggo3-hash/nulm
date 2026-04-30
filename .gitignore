@@ -43,6 +43,7 @@ htmlcov/
 # Project specific
 *.log
 .claude-bridge/
+.claude-bridge-notes.json
 *.bak
 *.tmp
 

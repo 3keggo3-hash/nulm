@@ -41,6 +41,10 @@ _SECRET_PATTERNS: dict[str, str] = {
     "secret_assignment": r"(?i)\bsecret\s*[:=]\s*['\"][^'\"]+['\"]",
     "token_assignment": r"(?i)\btoken\s*[:=]\s*['\"][^'\"]+['\"]",
     "password_assignment": r"(?i)\bpassword\s*[:=]\s*['\"][^'\"]+['\"]",
+    "api_key_unquoted": r"(?i)\bapi[_-]?key\s*[:=]\s*\S+",
+    "secret_unquoted": r"(?i)\bsecret\s*[:=]\s*\S+",
+    "token_unquoted": r"(?i)\btoken\s*[:=]\s*\S+",
+    "password_unquoted": r"(?i)\bpassword\s*[:=]\s*\S+",
     "aws_access_key_id": r"AKIA[0-9A-Z]{16}",
     "github_token": r"ghp_[A-Za-z0-9]{20,}",
 }
@@ -100,7 +104,7 @@ def is_binary_bytes(raw: bytes) -> bool:
 
 
 def safe_read_text(target: Path) -> str:
-    return target.read_text(encoding="utf-8")
+    return target.read_bytes().decode("utf-8")
 
 
 def is_within_root(target: Path, root: Path) -> bool:

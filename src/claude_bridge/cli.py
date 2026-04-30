@@ -17,15 +17,19 @@ from rich.text import Text
 
 from claude_bridge import __version__
 from claude_bridge.audit import summarize_session
-from claude_bridge.benchmarking import run_index_and_relevance_benchmark
-from claude_bridge.benchmarking import compare_benchmark_to_baseline
-from claude_bridge.benchmarking import load_benchmark_profile
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
-from claude_bridge.server import current_config, mcp, set_config
-from claude_bridge.prompt import SYSTEM_PROMPT, build_desktop_config, generate_mcp_setup_guide
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
 console = Console()
+
+
+class _MCPProxy:
+    def __getattr__(self, name: str) -> Any:
+        _, runtime_mcp, _ = _server_runtime()
+        return getattr(runtime_mcp, name)
+
+
+mcp = _MCPProxy()
 
 
 def _resolve_cli_approval_mode(
@@ -74,6 +78,37 @@ def _load_desktop_config(config_path: Path) -> dict[str, object]:
     return raw
 
 
+def _server_runtime() -> tuple[Any, Any, Any]:
+    from claude_bridge.server import current_config, mcp, set_config
+
+    return current_config, mcp, set_config
+
+
+def _prompt_runtime() -> tuple[str, Any, Any, tuple[str, ...]]:
+    from claude_bridge.prompt import (
+        SYSTEM_PROMPT,
+        SUPPORTED_SETUP_TARGETS,
+        build_target_config,
+        generate_mcp_setup_guide,
+    )
+
+    return SYSTEM_PROMPT, build_target_config, generate_mcp_setup_guide, SUPPORTED_SETUP_TARGETS
+
+
+def _benchmark_runtime() -> tuple[Any, Any, Any]:
+    from claude_bridge.benchmarking import (
+        compare_benchmark_to_baseline,
+        load_benchmark_profile,
+        run_index_and_relevance_benchmark,
+    )
+
+    return (
+        run_index_and_relevance_benchmark,
+        compare_benchmark_to_baseline,
+        load_benchmark_profile,
+    )
+
+
 def _write_desktop_config(
     config_path: Path,
     *,
@@ -83,6 +118,7 @@ def _write_desktop_config(
     client_managed_approval: bool,
     approval_preset: str | None = None,
 ) -> Path:
+    _, build_target_config, _, _ = _prompt_runtime()
     config = _load_desktop_config(config_path)
     servers = config.get("mcpServers")
     if servers is None:
@@ -91,8 +127,9 @@ def _write_desktop_config(
     if not isinstance(servers, dict):
         raise ValueError("Claude Desktop config field 'mcpServers' must be a JSON object")
 
-    generated_config = build_desktop_config(
+    generated_config = build_target_config(
         project_dir.resolve(),
+        target="claude-desktop",
         allowed_roots=allowed_roots,
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
@@ -106,6 +143,52 @@ def _write_desktop_config(
         raise ValueError("Generated desktop config is missing the 'claude-bridge' entry")
     servers["claude-bridge"] = bridge_entry
 
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return config_path
+
+
+def _default_target_config_path(project_dir: Path, target: str) -> Path:
+    safe_target = target.replace("-", "_")
+    return project_dir.resolve() / f".claude-bridge.{safe_target}.json"
+
+
+def _target_display_name(target: str) -> str:
+    return {
+        "claude-desktop": "Claude Desktop",
+        "generic-stdio": "generic-stdio",
+        "vscode": "VS Code",
+    }.get(target, target)
+
+
+def _write_target_config(
+    config_path: Path,
+    *,
+    target: str,
+    project_dir: Path,
+    allowed_roots: list[Path],
+    auto_approve: bool,
+    client_managed_approval: bool,
+    approval_preset: str | None = None,
+) -> Path:
+    if target == "claude-desktop":
+        return _write_desktop_config(
+            config_path,
+            project_dir=project_dir,
+            allowed_roots=allowed_roots,
+            auto_approve=auto_approve,
+            client_managed_approval=client_managed_approval,
+            approval_preset=approval_preset,
+        )
+    _, build_target_config, _, _ = _prompt_runtime()
+    config = build_target_config(
+        project_dir.resolve(),
+        target=target,
+        allowed_roots=allowed_roots,
+        auto_approve=auto_approve,
+        client_managed_approval=client_managed_approval,
+        approval_preset=approval_preset,
+    )
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return config_path
@@ -127,6 +210,7 @@ def start(
     ),
 ) -> None:
     """Start the MCP bridge server (stdio transport)."""
+    _, _, set_config = _server_runtime()
     extra_roots = [path.resolve() for path in allow_root] if allow_root else []
     resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
         approval_preset=approval_preset,
@@ -160,6 +244,11 @@ def setup(
     allow_root: list[Path] = typer.Option(
         None, "--allow-root", help="Additional allowed workspace root"
     ),
+    target: str = typer.Option(
+        "claude-desktop",
+        "--target",
+        help="Setup target: claude-desktop, generic-stdio, or vscode",
+    ),
     approval_preset: str | None = typer.Option(
         None, "--approval-preset", help=_approval_help_suffix()
     ),
@@ -170,7 +259,13 @@ def setup(
         False, help="Render config assuming the MCP client handles approvals"
     ),
 ) -> None:
-    """Print Claude Desktop setup instructions and system prompt."""
+    """Print setup instructions and system prompt for a supported MCP target."""
+    system_prompt, _, generate_mcp_setup_guide, supported_targets = _prompt_runtime()
+    if target not in supported_targets:
+        raise typer.BadParameter(
+            f"Unsupported target: {target}. Choose one of: {', '.join(supported_targets)}"
+        )
+    display_target = _target_display_name(target)
     resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
         approval_preset=approval_preset,
         auto_approve=auto_approve,
@@ -182,11 +277,12 @@ def setup(
                 ("Claude Bridge ", "bold cyan"),
                 (f"MCP Server v{__version__}", "dim"),
             ),
-            title="Setup",
+            title=f"Setup ({target})",
             border_style="cyan",
         )
     )
     console.print(f"Project directory: [green]{project_dir.resolve()}[/green]")
+    console.print(f"Target: [cyan]{target}[/cyan]")
     if resolved_preset is not None:
         console.print(f"Approval preset: [cyan]{resolved_preset}[/cyan]")
     if allow_root:
@@ -204,24 +300,26 @@ def setup(
             "client-managed approval or explicitly turn on auto-approve in a trusted local environment."
         )
 
-    console.print("\n[bold]Claude Desktop Setup:[/bold]")
+    heading = "Claude Desktop Setup" if target == "claude-desktop" else "MCP Setup"
+    console.print(f"\n[bold]{heading}:[/bold]")
     console.print(
         Panel(
             generate_mcp_setup_guide(
                 project_dir.resolve(),
+                target=target,
                 allowed_roots=[project_dir.resolve(), *([path.resolve() for path in allow_root] if allow_root else [])],
                 auto_approve=resolved_auto_approve,
                 client_managed_approval=resolved_client_managed,
                 approval_preset=resolved_preset,
             ),
-            title="Copy into Claude Desktop config",
+            title=f"Copy into {display_target} config",
             border_style="green",
         )
     )
     console.print("\n[bold]System Prompt:[/bold]")
     console.print(
         Panel(
-            escape(SYSTEM_PROMPT),
+            escape(system_prompt),
             title="Add to Claude.ai Project Instructions",
             border_style="blue",
         )
@@ -236,8 +334,13 @@ def install(
     allow_root: list[Path] = typer.Option(
         None, "--allow-root", help="Additional allowed workspace root"
     ),
+    target: str = typer.Option(
+        "claude-desktop",
+        "--target",
+        help="Install target: claude-desktop, generic-stdio, or vscode",
+    ),
     config_path: Path = typer.Option(
-        None, "--config-path", help="Override Claude Desktop config path"
+        None, "--config-path", help="Override target config path"
     ),
     approval_preset: str | None = typer.Option(
         None, "--approval-preset", help=_approval_help_suffix()
@@ -249,10 +352,24 @@ def install(
         True, help="Write config assuming Claude Desktop handles approval prompts"
     ),
 ) -> None:
-    """Install or update Claude Bridge inside Claude Desktop config."""
+    """Install or write Claude Bridge config for a supported MCP target."""
+    _, _, _, supported_targets = _prompt_runtime()
+    if target not in supported_targets:
+        raise typer.BadParameter(
+            f"Unsupported target: {target}. Choose one of: {', '.join(supported_targets)}"
+        )
+    display_target = _target_display_name(target)
     resolved_project_dir = project_dir.resolve()
     resolved_allowed_roots = [resolved_project_dir, *([path.resolve() for path in allow_root] if allow_root else [])]
-    resolved_config_path = config_path.resolve() if config_path is not None else _default_claude_desktop_config_path()
+    resolved_config_path = (
+        config_path.resolve()
+        if config_path is not None
+        else (
+            _default_claude_desktop_config_path()
+            if target == "claude-desktop"
+            else _default_target_config_path(resolved_project_dir, target)
+        )
+    )
     resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
         approval_preset=approval_preset,
         auto_approve=auto_approve,
@@ -260,8 +377,9 @@ def install(
     )
 
     try:
-        written_path = _write_desktop_config(
+        written_path = _write_target_config(
             resolved_config_path,
+            target=target,
             project_dir=resolved_project_dir,
             allowed_roots=resolved_allowed_roots,
             auto_approve=resolved_auto_approve,
@@ -276,7 +394,7 @@ def install(
         Panel.fit(
             Text.assemble(
                 ("Claude Bridge ", "bold cyan"),
-                ("installed for Claude Desktop", "green"),
+                (f"installed for {display_target}", "green"),
             ),
             title="Install",
             border_style="green",
@@ -284,6 +402,7 @@ def install(
     )
     console.print(f"Config updated: [green]{written_path}[/green]")
     console.print(f"Project directory: [green]{resolved_project_dir}[/green]")
+    console.print(f"Target: [cyan]{target}[/cyan]")
     if resolved_preset is not None:
         console.print(f"Approval preset: [cyan]{resolved_preset}[/cyan]")
     if len(resolved_allowed_roots) > 1:
@@ -292,12 +411,17 @@ def install(
             + ", ".join(f"[green]{path}[/green]" for path in resolved_allowed_roots[1:])
         )
     if resolved_client_managed:
-        console.print("[yellow]Approval mode:[/yellow] Claude Desktop manages approval prompts.")
+        console.print("[yellow]Approval mode:[/yellow] Config expects the MCP client to manage approvals.")
     elif resolved_auto_approve:
         console.print("[red]Approval mode:[/red] Auto-approve enabled for trusted local use.")
     else:
         console.print("[yellow]Approval mode:[/yellow] Fail-closed until approval handling is enabled.")
-    console.print("Restart Claude Desktop completely, then start a new chat.")
+    if target == "claude-desktop":
+        console.print("Restart Claude Desktop completely, then start a new chat.")
+    elif target == "vscode":
+        console.print("Reload VS Code or restart the MCP extension host, then open a new MCP-enabled chat.")
+    else:
+        console.print("Reload the target MCP client and verify the Claude Bridge tools appear.")
 
 
 @app.command()
@@ -318,6 +442,12 @@ def benchmark(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Benchmark indexing and relevance ranking on a real repository."""
+    _, _, set_config = _server_runtime()
+    (
+        run_index_and_relevance_benchmark,
+        compare_benchmark_to_baseline,
+        load_benchmark_profile,
+    ) = _benchmark_runtime()
     resolved_project_dir = project_dir.resolve()
     set_config(project_dir=resolved_project_dir, auto_approve=True)
     selected_path = path
@@ -441,6 +571,15 @@ def audit(
     )
     console.print(f"Total records: [green]{summary['total_records']}[/green]")
     console.print(f"Failures: [yellow]{summary['failure_count']}[/yellow]")
+    telemetry = summary.get("telemetry", {})
+    if isinstance(telemetry, dict):
+        console.print(
+            "Telemetry: "
+            f"~{telemetry.get('total_estimated_tokens', 0)} tokens, "
+            f"{telemetry.get('total_input_chars', 0)} input chars, "
+            f"{telemetry.get('total_output_chars', 0)} output chars, "
+            f"{telemetry.get('truncated_results', 0)} truncated results"
+        )
     if summary["tool_counts"]:
         console.print("Tool counts:")
         for tool_name, count in sorted(summary["tool_counts"].items()):
@@ -462,6 +601,7 @@ def doctor(
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory to inspect"),
 ) -> None:
     """Run lightweight environment and configuration checks."""
+    current_config, _, _ = _server_runtime()
     resolved_project_dir = project_dir.resolve()
     config_snapshot = current_config()
     desktop_config_path = _default_claude_desktop_config_path()

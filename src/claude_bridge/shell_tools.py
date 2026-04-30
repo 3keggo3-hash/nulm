@@ -13,11 +13,27 @@ from typing import Any, Awaitable, Callable
 
 from claude_bridge.tool_utils import json_response, require_approval
 
-_INTERACTIVE_COMMANDS = {"python", "python3", "bash", "sh", "zsh", "vim", "vi", "nano"}
+_INTERACTIVE_COMMANDS = {
+    "python",
+    "python3",
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "ksh",
+    "tcsh",
+    "elvish",
+    "nu",
+    "nushell",
+    "vim",
+    "vi",
+    "nano",
+}
 _DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore"}
 _MAX_SHELL_OUTPUT_CHARS = 12000
 _MAX_PROCESS_OUTPUT_READ_CHARS = 12000
 _MAX_PROCESS_SESSIONS = 16
+_MAX_PROCESS_OUTPUT_CHARS = 200000
 
 
 class _ProcessSession:
@@ -47,6 +63,10 @@ class _ProcessSession:
         self.stdin_closed = False
         self.stdout_done = False
         self.stderr_done = False
+        self.input_chars = 0
+        self.input_events = 0
+        self.last_input_at: float | None = None
+        self.last_output_at: float | None = None
 
     def mark_stream_done(self, *, is_stderr: bool) -> None:
         with self.lock:
@@ -63,7 +83,23 @@ class _ProcessSession:
             lines = chunk.splitlines(keepends=True)
             chunk = "".join(f"[stderr] {line}" if line.strip() else line for line in lines)
         with self.lock:
+            if len(self.output) >= _MAX_PROCESS_OUTPUT_CHARS:
+                return
+            remaining = _MAX_PROCESS_OUTPUT_CHARS - len(self.output)
+            if len(chunk) > remaining:
+                chunk = chunk[:remaining] + "\n... [output truncated]"
             self.output += chunk
+            self.last_output_at = time.time()
+
+    def record_input(self, text: str) -> None:
+        with self.lock:
+            self.input_chars += len(text)
+            self.input_events += 1
+            self.last_input_at = time.time()
+
+    def mark_stdin_closed(self) -> None:
+        with self.lock:
+            self.stdin_closed = True
 
     def snapshot(self) -> dict[str, Any]:
         self.refresh_status()
@@ -79,6 +115,13 @@ class _ProcessSession:
                 "started_at": self.started_at,
                 "completed_at": self.completed_at,
                 "output_chars": len(self.output),
+                "input_chars": self.input_chars,
+                "input_events": self.input_events,
+                "stdin_closed": self.stdin_closed,
+                "stdout_closed": self.stdout_done,
+                "stderr_closed": self.stderr_done,
+                "last_input_at": self.last_input_at,
+                "last_output_at": self.last_output_at,
                 "risk_level": self.risk_level,
                 "risk_reasons": list(self.risk_reasons),
             }
@@ -104,7 +147,14 @@ def _trim_process_sessions() -> None:
         ordered = sorted(_PROCESS_SESSIONS.values(), key=lambda session: session.started_at)
         for session in ordered[:-_MAX_PROCESS_SESSIONS]:
             if session.exit_code is None:
-                continue
+                try:
+                    session.process.terminate()
+                    session.process.wait(timeout=1)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        session.process.kill()
+                    except OSError:
+                        pass
             _PROCESS_SESSIONS.pop(session.session_id, None)
 
 
@@ -168,6 +218,23 @@ def _get_process_session(session_id: str) -> _ProcessSession | None:
         return _PROCESS_SESSIONS.get(session_id)
 
 
+def _command_basename(token: str) -> str:
+    return Path(token).name.lower()
+
+
+def _interactive_target(tokens: list[str]) -> str | None:
+    if not tokens:
+        return None
+    head = _command_basename(tokens[0])
+    if head != "env":
+        return head
+    for token in tokens[1:]:
+        if "=" in token:
+            continue
+        return _command_basename(token)
+    return None
+
+
 def is_interactive_command(command: str) -> bool:
     try:
         tokens = shlex.split(command)
@@ -175,9 +242,18 @@ def is_interactive_command(command: str) -> bool:
         return False
     if not tokens:
         return False
-    head = tokens[0]
+    head = _interactive_target(tokens)
+    if head is None:
+        return False
     if head in {"python", "python3"}:
-        return len(tokens) == 1
+        executable_index = 0
+        if _command_basename(tokens[0]) == "env":
+            for index, token in enumerate(tokens[1:], start=1):
+                if "=" in token:
+                    continue
+                executable_index = index
+                break
+        return len(tokens) == executable_index + 1
     return head in _INTERACTIVE_COMMANDS
 
 
@@ -231,16 +307,13 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     if not tokens:
         return None
 
-    head = tokens[0].lower()
+    head = _command_basename(tokens[0])
     lower_tokens = [token.lower() for token in tokens]
     normalized = normalize_command_for_safety(stripped)
     shell_construct = _find_unquoted_shell_construct(stripped)
     if shell_construct is not None:
         return shell_construct
-    control_tokens_present = any(
-        token in {"|", "&&", ";"} or any(op in token for op in {"|", "&&", ";"})
-        for token in lower_tokens
-    )
+    control_tokens_present = any(token in {"|", "&&", ";"} for token in lower_tokens)
 
     if head == "sudo":
         return "sudo"
@@ -266,6 +339,16 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
             return "wget to shell"
     if head == "dd" and any(token.startswith("if=") for token in lower_tokens[1:]):
         return "dd if="
+    _WRAPPER_COMMANDS = {"nohup", "setsid", "script", "timeout"}
+    if head in _WRAPPER_COMMANDS:
+        return f"{head} wrapper"
+    if head == "find" and any(
+        token.startswith("-exec") or token == "-delete" or token.startswith("+")
+        for token in lower_tokens[1:]
+    ):
+        return "find -exec"
+    if head == "xargs" and len(lower_tokens) > 1:
+        return "xargs"
     if head == "rm":
         option_chars = "".join(
             token.lstrip("-") for token in lower_tokens[1:] if token.startswith("-")
@@ -351,7 +434,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             },
         }
 
-    head = tokens[0].lower()
+    head = _interactive_target(tokens) or tokens[0].lower()
     if (
         head in {"pytest", "ls", "cat"}
         or tokens[:3] == ["python3", "-m", "pytest"]
@@ -596,12 +679,19 @@ async def read_process_output(session_id: str, offset: int = 0, limit: int = 400
             "running": session.exit_code is None,
             "exit_code": session.exit_code,
             "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
             "next_offset": offset + len(output) if has_more else None,
             "total_output_chars": total_output_chars,
             "output": output,
             "output_complete": session.exit_code is not None and not has_more,
+            "input_chars": session.input_chars,
+            "input_events": session.input_events,
+            "stdin_closed": session.stdin_closed,
             "stdout_closed": session.stdout_done,
             "stderr_closed": session.stderr_done,
+            "last_input_at": session.last_input_at,
+            "last_output_at": session.last_output_at,
         }
     return json_response(True, "Process output loaded", details=details)
 
@@ -668,6 +758,7 @@ _MAX_INTERACT_INPUT_CHARS = 4000
 async def interact_with_process(
     session_id: str,
     input: str,
+    close_stdin: bool = False,
     *,
     request_approval: Callable[[str, dict[str, Any]], Awaitable[bool]],
 ) -> str:
@@ -697,12 +788,18 @@ async def interact_with_process(
 
     rejection = await require_approval(
         "interact_with_process",
-        {"session_id": session_id, "command": session.command, "input_length": len(input)},
+        {
+            "session_id": session_id,
+            "command": session.command,
+            "input_length": len(input),
+            "close_stdin": close_stdin,
+        },
         rejection_message="Process input rejected by user",
         rejection_details={
             "session_id": session_id,
             "command": session.command,
             "input_length": len(input),
+            "close_stdin": close_stdin,
         },
         request_approval_fn=request_approval,
     )
@@ -710,16 +807,28 @@ async def interact_with_process(
         return rejection
 
     stdin_stream = session.process.stdin
-    if stdin_stream is None or stdin_stream.closed:
+    if stdin_stream is None:
         return json_response(
             False,
             "Process stdin is not available",
             code="stdin_unavailable",
             details={"session_id": session_id},
         )
+    if stdin_stream.closed or session.stdin_closed:
+        return json_response(
+            False,
+            "Process stdin is closed",
+            code="stdin_closed",
+            details={"session_id": session_id},
+        )
     try:
-        stdin_stream.write(input)
-        stdin_stream.flush()
+        if input:
+            stdin_stream.write(input)
+            stdin_stream.flush()
+            session.record_input(input)
+        if close_stdin:
+            stdin_stream.close()
+            session.mark_stdin_closed()
     except (OSError, BrokenPipeError) as exc:
         return json_response(
             False,
@@ -730,11 +839,16 @@ async def interact_with_process(
 
     return json_response(
         True,
-        "Input sent to process",
+        "Process interaction completed",
         details={
             "session_id": session_id,
             "command": session.command,
             "input_length": len(input),
+            "close_stdin": close_stdin,
             "pid": session.process.pid,
+            "input_chars": session.input_chars,
+            "input_events": session.input_events,
+            "stdin_closed": session.stdin_closed,
+            "last_input_at": session.last_input_at,
         },
     )

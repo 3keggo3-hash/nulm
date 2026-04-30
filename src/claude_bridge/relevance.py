@@ -9,9 +9,12 @@ from typing import Any
 
 _TOKEN_SPLIT_PATTERN = re.compile(r"[^a-zA-Z0-9]+")
 _CAMEL_CASE_PATTERN = re.compile(r"(?<!^)(?=[A-Z])")
+_PRESERVE_IDENTIFIER_PATTERN = re.compile(r"^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_]+$")
 _MAX_RELEVANCE_CACHE_ENTRIES = 128
 _RELEVANCE_CACHE: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
 _RELEVANCE_CACHE_LOCK = threading.RLock()
+_SHORTLIST_MULTIPLIER = 8
+_MIN_SHORTLIST_SIZE = 24
 
 
 def query_terms(query: str) -> list[str]:
@@ -25,6 +28,13 @@ def _tokenize_text(value: str) -> set[str]:
     segmented = _CAMEL_CASE_PATTERN.sub(" ", stripped)
     direct_tokens = {token.lower() for token in _TOKEN_SPLIT_PATTERN.split(segmented) if token}
     expanded_tokens = set(direct_tokens)
+    preserved_tokens = {
+        cleaned.lower()
+        for chunk in stripped.split()
+        for cleaned in [_PRESERVE_IDENTIFIER_PATTERN.sub("", chunk)]
+        if cleaned
+    }
+    expanded_tokens.update(preserved_tokens)
     for token in _TOKEN_SPLIT_PATTERN.split(stripped):
         if not token:
             continue
@@ -52,109 +62,145 @@ def rank_indexed_files(
         cached = _RELEVANCE_CACHE.get(cache_key)
         if cached is not None:
             _RELEVANCE_CACHE.move_to_end(cache_key)
+            cached_terms = list(cached["terms"])
+            cached_results_all = list(cached["results"])
+            cached_total_results = int(cached["total_results"])
+        else:
+            cached_terms = []
+            cached_results_all = []
+            cached_total_results = 0
     if cached is not None:
-        cached_results = cached["results"] if limit is None else cached["results"][:limit]
+        cached_results = cached_results_all if limit is None else cached_results_all[:limit]
         return {
             "query": query,
-            "terms": list(cached["terms"]),
+            "terms": cached_terms,
             "results": cached_results,
-            "total_results": cached["total_results"],
+            "total_results": cached_total_results,
             "cached": True,
+            "strategy": "two_phase_token_scoring",
         }
 
     terms = query_terms(query)
-    results: list[dict[str, Any]] = []
+    if not terms:
+        return {
+            "query": query,
+            "terms": [],
+            "results": [],
+            "total_results": 0,
+            "cached": False,
+            "strategy": "two_phase_token_scoring",
+        }
+
+    candidates: list[dict[str, Any]] = []
 
     for item in index_payload["files"]:
         functions = item["functions"]
         classes = item["classes"]
         imports = item["imports"]
         parser_backend = item.get("parser_backend", "fallback")
-        function_tokens = _tokenize_names(functions)
-        class_tokens = _tokenize_names(classes)
-        import_tokens = _tokenize_names(imports)
-        path_tokens = _tokenize_text(item["path"])
-        content_tokens = _tokenize_text(item["content"])
+        function_tokens = set(item.get("function_tokens", [])) or _tokenize_names(functions)
+        class_tokens = set(item.get("class_tokens", [])) or _tokenize_names(classes)
+        import_tokens = set(item.get("import_tokens", [])) or _tokenize_names(imports)
+        path_tokens = set(item.get("path_tokens", [])) or _tokenize_text(item["path"])
+        content_tokens = set(item.get("content_tokens", []))
+        if not content_tokens:
+            content_tokens = _tokenize_text(str(item.get("content", "")))
         haystacks = {
             "path": item["path"].lower(),
             "functions": " ".join(name.lower() for name in functions),
             "classes": " ".join(name.lower() for name in classes),
             "imports": " ".join(name.lower() for name in imports),
-            "content": item["content"].lower(),
         }
-        matched_terms: list[str] = []
-        score = 0
-        matched_fields: set[str] = set()
+        phase_one_score = 0
+        phase_one_fields: set[str] = set()
+        phase_one_matched_terms: set[str] = set()
+        content_term_hits = 0
+        content_matched_terms: set[str] = set()
 
         for term in terms:
             term_score = 0
-            symbol_match = False
-            token_match = False
-
             if term in haystacks["path"]:
                 term_score += 5
-                matched_fields.add("path")
+                phase_one_fields.add("path")
             if term in path_tokens:
                 term_score += 2
-                matched_fields.add("path")
+                phase_one_fields.add("path")
 
             if term in haystacks["functions"]:
                 term_score += 4
-                symbol_match = True
-                matched_fields.add("functions")
+                phase_one_fields.add("functions")
             if term in function_tokens:
-                term_score += 3
-                symbol_match = True
-                token_match = True
-                matched_fields.add("functions")
+                term_score += 4
+                phase_one_fields.add("functions")
 
             if term in haystacks["classes"]:
                 term_score += 4
-                symbol_match = True
-                matched_fields.add("classes")
+                phase_one_fields.add("classes")
             if term in class_tokens:
-                term_score += 3
-                symbol_match = True
-                token_match = True
-                matched_fields.add("classes")
+                term_score += 4
+                phase_one_fields.add("classes")
 
             if term in haystacks["imports"]:
                 term_score += 2
-                symbol_match = True
-                matched_fields.add("imports")
+                phase_one_fields.add("imports")
             if term in import_tokens:
-                term_score += 2
-                symbol_match = True
-                token_match = True
-                matched_fields.add("imports")
-
-            if term in haystacks["content"]:
-                term_score += 1
-                matched_fields.add("content")
+                term_score += 3
+                phase_one_fields.add("imports")
             if term in content_tokens:
-                term_score += 1
-                matched_fields.add("content")
-
-            if symbol_match and parser_backend == "tree_sitter":
-                term_score += 2
-            if token_match:
-                term_score += 1
+                content_term_hits += 1
+                content_matched_terms.add(term)
             if term_score:
-                matched_terms.append(term)
-                score += term_score
+                if parser_backend == "tree_sitter":
+                    term_score += 2
+                phase_one_score += term_score
+                phase_one_matched_terms.add(term)
+
+        if phase_one_score or content_term_hits:
+            candidates.append(
+                {
+                    "path": item["path"],
+                    "parser_backend": parser_backend,
+                    "phase_one_score": phase_one_score,
+                    "phase_one_fields": sorted(phase_one_fields),
+                    "phase_one_matched_terms": sorted(phase_one_matched_terms),
+                    "content_term_hits": content_term_hits,
+                    "content_matched_terms": sorted(content_matched_terms),
+                }
+            )
+
+    shortlist_size = max(_MIN_SHORTLIST_SIZE, (limit or len(candidates) or 1) * _SHORTLIST_MULTIPLIER)
+    candidates.sort(
+        key=lambda entry: (
+            -int(entry["phase_one_score"]),
+            -int(entry["content_term_hits"]),
+            str(entry["path"]),
+        )
+    )
+    shortlisted = candidates[:shortlist_size]
+
+    results: list[dict[str, Any]] = []
+    for candidate in shortlisted:
+        matched_fields = set(candidate["phase_one_fields"])
+        matched_terms = set(candidate["phase_one_matched_terms"])
+        score = int(candidate["phase_one_score"])
+        if candidate["content_term_hits"]:
+            score += int(candidate["content_term_hits"])
+            matched_fields.add("content")
+        matched_terms.update(candidate["content_matched_terms"])
 
         if score:
-            if len(matched_terms) > 1:
-                score += len(matched_terms)
+            unique_terms = sorted(matched_terms)
+            if len(unique_terms) > 1:
+                score += len(unique_terms)
             if len(matched_fields) > 1:
                 score += len(matched_fields)
             results.append(
                 {
-                    "path": item["path"],
+                    "path": candidate["path"],
                     "score": score,
-                    "matched_terms": matched_terms,
+                    "matched_terms": unique_terms,
                     "matched_fields": sorted(matched_fields),
-                    "parser_backend": parser_backend,
+                    "parser_backend": candidate["parser_backend"],
                 }
             )
 
@@ -165,6 +211,7 @@ def rank_indexed_files(
         "results": results if limit is None else results[:limit],
         "total_results": len(results),
         "cached": False,
+        "strategy": "two_phase_token_scoring",
     }
     with _RELEVANCE_CACHE_LOCK:
         _RELEVANCE_CACHE[cache_key] = {

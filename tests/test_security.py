@@ -226,6 +226,21 @@ class TestShellSecurity:
         assert payload["ok"] is False
         assert payload["code"] == "interactive_command_unsupported"
 
+    async def test_env_python_rejected_as_interactive(self, temp_project):
+        payload = parse_payload(await mcp_server.run_shell("env python3"))
+        assert payload["ok"] is False
+        assert payload["code"] == "interactive_command_unsupported"
+
+    async def test_env_shell_rejected_as_interactive(self, temp_project):
+        payload = parse_payload(await mcp_server.run_shell("env FOO=1 bash"))
+        assert payload["ok"] is False
+        assert payload["code"] == "interactive_command_unsupported"
+
+    async def test_absolute_python_path_rejected_as_interactive(self, temp_project):
+        payload = parse_payload(await mcp_server.run_shell("/usr/bin/python3"))
+        assert payload["ok"] is False
+        assert payload["code"] == "interactive_command_unsupported"
+
     async def test_python_inline_command_allowed(self, temp_project):
         payload = parse_payload(await mcp_server.run_shell("python3 -c 'print(42)'"))
         assert payload["ok"] is True

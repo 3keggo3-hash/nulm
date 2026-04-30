@@ -12,8 +12,11 @@ from typing import Any, Awaitable, Callable
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
+from claude_bridge.smart import budget_metadata
+from claude_bridge.smart import count_tokens_for_path as smart_count_tokens_for_path
 from claude_bridge.tool_utils import path_outside_project_details
 from claude_bridge.workflow_presets import (
+    prompt_shortcut_catalog,
     SUPPORTED_WORKFLOW_MODES,
     WORKFLOW_DISCOVERY_TERMS,
     WORKFLOW_EXAMPLES,
@@ -33,7 +36,9 @@ _CONTEXT_PACK_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
 _WORKFLOW_PLAN_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
 
 
-def _touch_cache_entry(cache: OrderedDict[tuple[str, ...], str], key: tuple[str, ...]) -> str | None:
+def _touch_cache_entry(
+    cache: OrderedDict[tuple[str, ...], str], key: tuple[str, ...]
+) -> str | None:
     value = cache.get(key)
     if value is not None:
         cache.move_to_end(key)
@@ -63,7 +68,7 @@ def _workflow_cache_dir() -> Path:
 
 def _workflow_cache_file(prefix: str, key: tuple[str, ...]) -> Path:
     digest = sha256("|".join(key).encode("utf-8")).hexdigest()
-    return _workflow_cache_dir() / f"{prefix}-{digest}.json"
+    return _workflow_cache_dir() / f"{prefix}-v{_WORKFLOW_CACHE_VERSION}-{digest}.json"
 
 
 def _load_disk_cached_response(prefix: str, key: tuple[str, ...]) -> str | None:
@@ -156,6 +161,31 @@ def _build_context_pack_error(
     return json_response(False, message, code=code, details=details or {"path": target})
 
 
+def _safe_json_response_load(
+    raw: str,
+    *,
+    json_response: Callable[..., str],
+    tool_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, json_response(
+            False,
+            f"{tool_name} returned invalid JSON",
+            code="invalid_tool_payload",
+            details={"tool": tool_name, "error": str(exc)},
+        )
+    if not isinstance(payload, dict):
+        return None, json_response(
+            False,
+            f"{tool_name} returned a non-object payload",
+            code="invalid_tool_payload",
+            details={"tool": tool_name, "payload_type": type(payload).__name__},
+        )
+    return payload, None
+
+
 def _display_path(
     path: Path,
     *,
@@ -180,11 +210,52 @@ def _workflow_state_signature(resolved: Path, project_root: Path) -> str:
     signatures = [_path_signature(resolved)]
     for extra in supplemental_review_targets(resolved, project_root):
         signatures.append(_path_signature(extra))
-    for doc_name in ("README.md", "README.rst", "pyproject.toml", "package.json", "Cargo.toml", "go.mod"):
+    for doc_name in (
+        "README.md",
+        "README.rst",
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+    ):
         candidate = project_root / doc_name
         if candidate.exists():
             signatures.append(_path_signature(candidate))
     return "|".join(signatures)
+
+
+def _selected_file_budget(
+    selected_files: list[str],
+    *,
+    budget_tokens: int,
+    resolve_path: Callable[[str], Path],
+) -> dict[str, Any]:
+    file_estimates: list[dict[str, Any]] = []
+    total_tokens = 0
+    for selected in selected_files:
+        try:
+            resolved = resolve_path(selected)
+        except PermissionError:
+            continue
+        if not resolved.exists() or not resolved.is_file():
+            continue
+        info = smart_count_tokens_for_path(resolved)
+        estimated_tokens = int(info.get("tokens") or max(1, int(info.get("chars", 0)) // 4 or 1))
+        total_tokens += estimated_tokens
+        file_estimates.append(
+            {
+                "path": selected,
+                "estimated_tokens": estimated_tokens,
+            }
+        )
+    return {
+        "file_estimates": file_estimates,
+        **budget_metadata(
+            estimated_tokens=total_tokens,
+            budget_tokens=budget_tokens,
+            recommended_next_step="Read only the highest-signal files first, or lower max_files to stay within budget.",
+        ),
+    }
 
 
 def _select_context_candidates(
@@ -215,7 +286,14 @@ def _select_context_candidates(
                 )
             return selected_files, None
 
-        relevant_payload = json.loads(await find_relevant_files(query=goal, path=target, limit=max_files))
+        relevant_raw = await find_relevant_files(query=goal, path=target, limit=max_files)
+        relevant_payload, parse_error = _safe_json_response_load(
+            relevant_raw,
+            json_response=json_response,
+            tool_name="find_relevant_files",
+        )
+        if parse_error is not None or relevant_payload is None:
+            return [], parse_error
         if not relevant_payload.get("ok", False):
             return [], json_response(
                 False,
@@ -225,7 +303,9 @@ def _select_context_candidates(
             )
         for item in relevant_payload.get("details", {}).get("results", []):
             best_match = item["path"]
-            read_target = f"{target.rstrip('/')}/{best_match}" if target not in {".", ""} else best_match
+            read_target = (
+                f"{target.rstrip('/')}/{best_match}" if target not in {".", ""} else best_match
+            )
             selected_files.append(read_target)
         return selected_files, None
 
@@ -246,7 +326,9 @@ def _collect_test_files(
         return []
     candidates = iter_searchable_files(project_root, project_root, None)
     relative_target_root = (
-        resolved.relative_to(project_root) if resolved.is_dir() else resolved.parent.relative_to(project_root)
+        resolved.relative_to(project_root)
+        if resolved.is_dir()
+        else resolved.parent.relative_to(project_root)
     )
     scored = sorted(
         (
@@ -297,7 +379,15 @@ async def _execute_workflow_first_step(
     read_targets_for_plan: list[str] = []
     if resolved.is_file():
         performed = ["read_file"]
-        results = [json.loads(await read_file(target))]
+        read_raw = await read_file(target)
+        read_payload, parse_error = _safe_json_response_load(
+            read_raw,
+            json_response=json_response,
+            tool_name="read_file",
+        )
+        if parse_error is not None or read_payload is None:
+            return None, parse_error
+        results = [read_payload]
         read_targets_for_plan.append(target)
         extra_targets = supplemental_review_targets(resolved, project_root)
         for extra in extra_targets:
@@ -309,7 +399,15 @@ async def _execute_workflow_first_step(
                 path_from_active_root=path_from_active_root,
             )
             read_targets_for_plan.append(extra_target)
-            results.append(json.loads(await read_file(extra_target)))
+            extra_read_raw = await read_file(extra_target)
+            extra_read_payload, parse_error = _safe_json_response_load(
+                extra_read_raw,
+                json_response=json_response,
+                tool_name="read_file",
+            )
+            if parse_error is not None or extra_read_payload is None:
+                return None, parse_error
+            results.append(extra_read_payload)
         execution: dict[str, Any] = {"performed_actions": performed, "results": results}
         if mode == "agent_loop":
             execution["loop_plan"] = build_agent_loop_execution_plan(
@@ -322,10 +420,27 @@ async def _execute_workflow_first_step(
         return execution, None
 
     performed = ["list_directory", "find_relevant_files"]
-    results = [json.loads(await list_directory(target))]
-    relevant_payload = json.loads(
-        await find_relevant_files(query=option or WORKFLOW_DISCOVERY_TERMS[mode], path=target, limit=3)
+    list_raw = await list_directory(target)
+    list_payload, parse_error = _safe_json_response_load(
+        list_raw,
+        json_response=json_response,
+        tool_name="list_directory",
     )
+    if parse_error is not None or list_payload is None:
+        return None, parse_error
+    results = [list_payload]
+    relevant_raw = await find_relevant_files(
+        query=option or WORKFLOW_DISCOVERY_TERMS[mode],
+        path=target,
+        limit=max(max_iterations, 3),
+    )
+    relevant_payload, parse_error = _safe_json_response_load(
+        relevant_raw,
+        json_response=json_response,
+        tool_name="find_relevant_files",
+    )
+    if parse_error is not None or relevant_payload is None:
+        return None, parse_error
     results.append(relevant_payload)
     if not relevant_payload.get("ok", False):
         return {"performed_actions": performed, "results": results}, json_response(
@@ -335,9 +450,11 @@ async def _execute_workflow_first_step(
             details=relevant_payload.get("details", {}),
         )
     read_targets: list[str] = []
-    for item in relevant_payload["details"].get("results", [])[:3]:
+    for item in relevant_payload["details"].get("results", [])[: max(max_iterations, 3)]:
         best_match = item["path"]
-        read_target = f"{target.rstrip('/')}/{best_match}" if target not in {".", ""} else best_match
+        read_target = (
+            f"{target.rstrip('/')}/{best_match}" if target not in {".", ""} else best_match
+        )
         if read_target not in read_targets:
             read_targets.append(read_target)
     for extra in supplemental_review_targets(resolved, project_root):
@@ -352,10 +469,20 @@ async def _execute_workflow_first_step(
     if read_targets:
         read_targets_for_plan.extend(read_targets)
         performed.append("read_file")
-        results.append({"ok": True, "message": "Planned read targets", "details": {"targets": read_targets}})
+        results.append(
+            {"ok": True, "message": "Planned read targets", "details": {"targets": read_targets}}
+        )
         for read_target in read_targets:
             performed.append("read_file")
-            results.append(json.loads(await read_file(read_target)))
+            read_raw = await read_file(read_target)
+            read_payload, parse_error = _safe_json_response_load(
+                read_raw,
+                json_response=json_response,
+                tool_name="read_file",
+            )
+            if parse_error is not None or read_payload is None:
+                return None, parse_error
+            results.append(read_payload)
     execution = {"performed_actions": performed, "results": results}
     if mode == "agent_loop":
         execution["loop_plan"] = build_agent_loop_execution_plan(
@@ -378,14 +505,19 @@ def detect_project_type(path: Path, project_root: Path) -> str:
     if (project_root / "package.json").exists():
         if (project_root / "vite.config.ts").exists() or (project_root / "vite.config.js").exists():
             return "vite"
-        if (project_root / "next.config.js").exists() or (project_root / "next.config.mjs").exists():
+        if (project_root / "next.config.js").exists() or (
+            project_root / "next.config.mjs"
+        ).exists():
             return "nextjs"
         return "node"
     if (project_root / "Cargo.toml").exists():
         return "rust"
     if (project_root / "go.mod").exists():
         return "go"
-    if any((project_root / name).exists() for name in ("pyproject.toml", "requirements.txt", "setup.py")):
+    if any(
+        (project_root / name).exists()
+        for name in ("pyproject.toml", "requirements.txt", "setup.py")
+    ):
         return "python"
     return "unknown"
 
@@ -514,7 +646,10 @@ def _risk_notes_for_project_type(project_type: str) -> list[str]:
             "Module boundaries and package tests can affect behavior outside the current folder.",
         ],
     }
-    return notes.get(project_type, ["Cross-check config, tests, and entrypoints before assuming the target is isolated."])
+    return notes.get(
+        project_type,
+        ["Cross-check config, tests, and entrypoints before assuming the target is isolated."],
+    )
 
 
 def suggest_validation_commands(resolved: Path, project_root: Path) -> list[str]:
@@ -552,7 +687,10 @@ async def build_validation_suggestions(
         resolved = resolve_path(target)
     except PermissionError as exc:
         return json_response(
-            False, str(exc), code="path_outside_project", details=path_outside_project_details(target),
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(target),
         )
 
     if not resolved.exists():
@@ -587,6 +725,7 @@ def build_context_pack(
     include_tests: bool,
     include_git_diff: bool,
     include_docs: bool,
+    budget_tokens: int,
     resolve_path: Callable[[str], Path],
     find_relevant_files: Callable[..., Awaitable[str]],
     path_from_active_root: Callable[[Path], str],
@@ -609,7 +748,12 @@ def build_context_pack(
         try:
             resolved = resolve_path(target)
         except PermissionError as exc:
-            return json_response(False, str(exc), code="path_outside_project", details=path_outside_project_details(target))
+            return json_response(
+                False,
+                str(exc),
+                code="path_outside_project",
+                details=path_outside_project_details(target),
+            )
         if not resolved.exists():
             return _build_context_pack_error(
                 target=target,
@@ -631,6 +775,7 @@ def build_context_pack(
             str(include_tests),
             str(include_git_diff),
             str(include_docs),
+            str(budget_tokens),
             state_signature,
         )
         with _WORKFLOW_CACHE_LOCK:
@@ -652,7 +797,6 @@ def build_context_pack(
                 path_from_active_root=path_from_active_root,
             )
             for path in _config_file_paths(resolved, project_root)
-            if Path(path).exists()
         ]
 
         selected_files, selection_error = await _select_context_candidates(
@@ -699,6 +843,26 @@ def build_context_pack(
         selected_files = _dedupe_paths(selected_files)[:max_files]
 
         git_status = git_status_snapshot(project_root) if include_git_diff else None
+        budget_info = _selected_file_budget(
+            selected_files,
+            budget_tokens=budget_tokens,
+            resolve_path=resolve_path,
+        )
+        if not budget_info.get("within_budget", True):
+            within_budget: list[str] = []
+            running = 0
+            for est in budget_info["file_estimates"]:
+                if running + est["estimated_tokens"] > budget_tokens:
+                    break
+                within_budget.append(est["path"])
+                running += est["estimated_tokens"]
+            if within_budget:
+                selected_files = within_budget
+                budget_info = _selected_file_budget(
+                    selected_files,
+                    budget_tokens=budget_tokens,
+                    resolve_path=resolve_path,
+                )
         details: dict[str, Any] = {
             "target": target,
             "goal": goal,
@@ -709,10 +873,14 @@ def build_context_pack(
             "validation_commands": validation_commands,
             "risk_notes": _risk_notes_for_project_type(project_type),
             "next_recommended_tools": ["read_file", "run_workflow", "find_relevant_files"],
+            "file_estimates": budget_info["file_estimates"],
         }
         if git_status is not None:
             details["git_status"] = git_status
         details["cached"] = False
+        details.update(
+            {key: value for key, value in budget_info.items() if key != "file_estimates"}
+        )
         response = json_response(True, f"Built context pack for {target}", details=details)
         with _WORKFLOW_CACHE_LOCK:
             _store_cache_entry(_CONTEXT_PACK_CACHE, cache_key, response)
@@ -786,8 +954,16 @@ async def run_agent_loop_step(
             details={"iteration": iteration, "max_iterations": max_iterations},
         )
 
-    patch_payload = json.loads(await patch_file(file=file, search=search, replace=replace))
-    if not patch_payload["ok"]:
+    try:
+        patch_payload = json.loads(await patch_file(file=file, search=search, replace=replace))
+    except (json.JSONDecodeError, TypeError):
+        return json_response(
+            False,
+            "Agent loop step failed: patch_file returned invalid JSON",
+            code="agent_loop_patch_failed",
+            details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
+        )
+    if not isinstance(patch_payload, dict) or not patch_payload.get("ok"):
         return json_response(
             False,
             "Agent loop step failed during patch phase",
@@ -800,10 +976,17 @@ async def run_agent_loop_step(
             },
         )
 
-    validation_payload = json.loads(await run_shell(validation_command))
-    validation_ok = validation_payload["ok"]
-    decision = "stop_success" if validation_ok else (
-        "continue" if iteration < max_iterations else "stop_failure"
+    try:
+        validation_payload = json.loads(await run_shell(validation_command))
+    except (json.JSONDecodeError, TypeError):
+        validation_ok = False
+        validation_payload = {"ok": False}
+    else:
+        validation_ok = bool(validation_payload.get("ok", False))
+    decision = (
+        "stop_success"
+        if validation_ok
+        else ("continue" if iteration < max_iterations else "stop_failure")
     )
 
     return json_response(
@@ -863,12 +1046,14 @@ def build_agent_loop_session_summary(
     if final_decision == "stop_success":
         next_recommended_action = "stop"
     elif final_decision == "stop_failure":
-        next_recommended_action = "inspect the last validation failure before planning another session"
+        next_recommended_action = (
+            "inspect the last validation failure before planning another session"
+        )
     else:
         next_recommended_action = "prepare the next smallest reversible patch"
 
-    validation_label = "passed" if last_validation_ok else (
-        "failed" if last_validation_ok is False else "not run"
+    validation_label = (
+        "passed" if last_validation_ok else ("failed" if last_validation_ok is False else "not run")
     )
     handoff_summary = (
         f"Executed {len(session_results)} step(s); final decision: {final_decision}. "
@@ -1017,7 +1202,7 @@ async def run_agent_loop_session(
                 replace=step["replace"],
                 validation_command=step["validation_command"],
                 iteration=iteration,
-                max_iterations=len(planned_steps),
+                max_iterations=max_iterations,
             )
         )
         session_results.append(step_result)
@@ -1262,12 +1447,68 @@ def register_prompts(mcp: FastMCP) -> None:
     ) -> Message:
         return Message(workflow_prompt("commit", target, style, "Turkish"), role="user")
 
+    def shadow_prompt(
+        target: str = ".",
+        focus: str = "challenge prior assumptions, verify from files, and be skeptical of earlier conclusions",
+    ) -> Message:
+        return Message(
+            workflow_prompt("review", target, focus, "Turkish")
+            + "\nTreat earlier assumptions as untrusted until the files confirm them.\n"
+            + "Prefer a cold, critical reread over agreement-seeking.",
+            role="user",
+        )
+
+    def benchmark_prompt(
+        target: str = ".",
+        focus: str = "startup cost, relevance latency, token efficiency, and cache behavior",
+    ) -> Message:
+        return Message(
+            "Prepare a benchmark-first investigation plan.\n"
+            f"Target: {target}\n"
+            f"Focus: {focus}\n"
+            "Response language: Turkish\n"
+            "Start with the cheapest signals first.\n"
+            "Separate measurement from interpretation.\n"
+            "Call out what can be learned without spending a full benchmark run yet.",
+            role="user",
+        )
+
+    def platform_prompt(
+        target: str = ".",
+        focus: str = "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
+    ) -> Message:
+        return Message(
+            "Audit cross-platform and editor compatibility.\n"
+            f"Target: {target}\n"
+            f"Focus: {focus}\n"
+            "Response language: Turkish\n"
+            "List platform assumptions, packaging risks, path issues, shell differences, and client integration gaps.\n"
+            "Prefer a matrix of concrete risks and verifications over vague advice.",
+            role="user",
+        )
+
+    def compact_prompt(
+        target: str = ".",
+        goal: str = "continue the task with a smaller, cheaper working context",
+    ) -> Message:
+        return Message(
+            "Shrink the active context before doing more work.\n"
+            f"Target: {target}\n"
+            f"Goal: {goal}\n"
+            "Response language: Turkish\n"
+            "Prefer the smallest useful set of files, the narrowest read windows, and the cheapest next step.\n"
+            "Call out what can be deferred until later if it does not fit the current budget.",
+            role="user",
+        )
+
     prompt_specs = [
         (
             "review",
             "Review code for bugs and missing tests.",
             [
-                PromptArgument(name="target", description="File or directory to review", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to review", required=False
+                ),
                 PromptArgument(name="focus", description="Specific review focus", required=False),
             ],
             review_prompt,
@@ -1276,7 +1517,9 @@ def register_prompts(mcp: FastMCP) -> None:
             "optimize",
             "Optimize code for performance and maintainability.",
             [
-                PromptArgument(name="target", description="File or directory to optimize", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to optimize", required=False
+                ),
                 PromptArgument(name="focus", description="Optimization focus", required=False),
             ],
             optimize_prompt,
@@ -1285,7 +1528,9 @@ def register_prompts(mcp: FastMCP) -> None:
             "orchestrate",
             "Turn a larger task into parallel workstreams plus an integration plan.",
             [
-                PromptArgument(name="target", description="File or directory to orchestrate", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to orchestrate", required=False
+                ),
                 PromptArgument(name="focus", description="How to split the work", required=False),
             ],
             orchestrate_prompt,
@@ -1294,8 +1539,12 @@ def register_prompts(mcp: FastMCP) -> None:
             "agent_loop",
             "Plan a bounded inspect-patch-validate loop for a focused coding task.",
             [
-                PromptArgument(name="target", description="File or directory for the loop", required=False),
-                PromptArgument(name="goal", description="What the loop should accomplish", required=False),
+                PromptArgument(
+                    name="target", description="File or directory for the loop", required=False
+                ),
+                PromptArgument(
+                    name="goal", description="What the loop should accomplish", required=False
+                ),
             ],
             agent_loop_prompt,
         ),
@@ -1303,7 +1552,9 @@ def register_prompts(mcp: FastMCP) -> None:
             "quality",
             "Evaluate code quality against a practical shipping standard.",
             [
-                PromptArgument(name="target", description="File or directory to evaluate", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to evaluate", required=False
+                ),
                 PromptArgument(name="focus", description="Specific quality focus", required=False),
             ],
             quality_prompt,
@@ -1312,8 +1563,12 @@ def register_prompts(mcp: FastMCP) -> None:
             "test",
             "Plan tests for the selected target.",
             [
-                PromptArgument(name="target", description="File or directory to test", required=False),
-                PromptArgument(name="test_style", description="Preferred testing style", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to test", required=False
+                ),
+                PromptArgument(
+                    name="test_style", description="Preferred testing style", required=False
+                ),
             ],
             test_prompt,
         ),
@@ -1321,8 +1576,12 @@ def register_prompts(mcp: FastMCP) -> None:
             "todo",
             "Scan for TODO-style markers and prioritize them.",
             [
-                PromptArgument(name="target", description="File or directory to scan", required=False),
-                PromptArgument(name="keywords", description="Keywords to search for", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to scan", required=False
+                ),
+                PromptArgument(
+                    name="keywords", description="Keywords to search for", required=False
+                ),
             ],
             todo_prompt,
         ),
@@ -1330,7 +1589,9 @@ def register_prompts(mcp: FastMCP) -> None:
             "explain",
             "Explain how a piece of code works.",
             [
-                PromptArgument(name="target", description="File or directory to explain", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to explain", required=False
+                ),
                 PromptArgument(name="audience", description="Audience level", required=False),
                 PromptArgument(name="language", description="Response language", required=False),
             ],
@@ -1340,10 +1601,62 @@ def register_prompts(mcp: FastMCP) -> None:
             "commit",
             "Summarize changes and suggest a commit message.",
             [
-                PromptArgument(name="target", description="File or directory to summarize", required=False),
-                PromptArgument(name="style", description="Preferred commit message style", required=False),
+                PromptArgument(
+                    name="target", description="File or directory to summarize", required=False
+                ),
+                PromptArgument(
+                    name="style", description="Preferred commit message style", required=False
+                ),
             ],
             commit_prompt,
+        ),
+        (
+            "compact",
+            "Shrink the active context and continue with a lower-cost plan.",
+            [
+                PromptArgument(
+                    name="target", description="File or directory to narrow", required=False
+                ),
+                PromptArgument(
+                    name="goal", description="What to preserve while compacting", required=False
+                ),
+            ],
+            compact_prompt,
+        ),
+        (
+            "shadow",
+            "Re-review a target skeptically and challenge prior assumptions.",
+            [
+                PromptArgument(
+                    name="target", description="File or directory to re-review", required=False
+                ),
+                PromptArgument(name="focus", description="Critical review focus", required=False),
+            ],
+            shadow_prompt,
+        ),
+        (
+            "benchmark",
+            "Prepare a benchmark-first investigation plan.",
+            [
+                PromptArgument(
+                    name="target", description="File or directory to assess", required=False
+                ),
+                PromptArgument(name="focus", description="Benchmark focus", required=False),
+            ],
+            benchmark_prompt,
+        ),
+        (
+            "platform",
+            "Audit cross-platform and editor compatibility gaps.",
+            [
+                PromptArgument(
+                    name="target", description="File or directory to assess", required=False
+                ),
+                PromptArgument(
+                    name="focus", description="Platform or client focus", required=False
+                ),
+            ],
+            platform_prompt,
         ),
     ]
 
@@ -1358,3 +1671,13 @@ def register_prompts(mcp: FastMCP) -> None:
                 context_kwarg=None,
             )
         )
+
+
+def build_prompt_catalog_payload() -> dict[str, Any]:
+    catalog = prompt_shortcut_catalog()
+    return {
+        "shortcuts": catalog["shortcuts"],
+        "client_side_only": catalog["client_side_only"],
+        "notes": catalog["notes"],
+        "recommended_path": "Use an MCP prompt or slash UI when the client exposes it; fall back to run_workflow or a natural-language request only when necessary.",
+    }

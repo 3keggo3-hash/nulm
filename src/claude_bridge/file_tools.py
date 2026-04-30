@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable
 
 from claude_bridge.git_ops import git_commit
 from claude_bridge.indexing import iter_searchable_files
+from claude_bridge.smart import DEFAULT_CONTEXT_BUDGET_TOKENS, budget_metadata, estimate_token_count
 from claude_bridge.tool_utils import (
     find_secret_patterns,
     infer_project_root,
@@ -87,7 +88,9 @@ def _estimate_patch_risk(file_path: str, original: str, updated: str) -> dict[st
     touches_secrets = any(
         lowered_path.endswith(suffix) for suffix in (".env", ".pem", ".key", ".p12", ".pfx")
     )
-    public_api_change_possible = "def " in original or "class " in original
+    public_api_change_possible = lowered_path.endswith(".py") and (
+        "def " in original or "class " in original
+    )
     large_deletion = removed >= 25
     reasons: list[str] = []
     if touches_config:
@@ -265,15 +268,22 @@ def _run_ripgrep_search(
         absolute_path = Path(path_text)
         if not absolute_path.is_absolute():
             absolute_path = (root / absolute_path).resolve()
+        else:
+            absolute_path = absolute_path.resolve()
+        if not is_within_root(absolute_path, root):
+            continue
         if sensitive_path_reason(absolute_path) is not None:
             continue
         line_number = int(data.get("line_number", 0) or 0)
         line_text = str(data.get("lines", {}).get("text", ""))
-        relative_path = (
-            absolute_path.relative_to(display_root).as_posix()
-            if target.is_dir()
-            else absolute_path.name
-        )
+        try:
+            relative_path = (
+                absolute_path.relative_to(display_root).as_posix()
+                if target.is_dir()
+                else absolute_path.name
+            )
+        except ValueError:
+            continue
         unique_files.add(relative_path)
         if match_count < offset:
             match_count += 1
@@ -389,7 +399,12 @@ def _build_preview_patch_result(
     }
 
 
-async def read_file(path: str, offset: int = 0, limit: int = _MAX_READ_FILE_LINES) -> str:
+async def read_file(
+    path: str,
+    offset: int = 0,
+    limit: int = _MAX_READ_FILE_LINES,
+    budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
+) -> str:
     try:
         target = resolve_path(path)
     except PermissionError as exc:
@@ -433,7 +448,16 @@ async def read_file(path: str, offset: int = 0, limit: int = _MAX_READ_FILE_LINE
             details={"path": path},
         )
 
-    preview = _slice_text_lines(content, offset=offset, limit=min(max(1, limit), _MAX_READ_FILE_LINES))
+    preview = _slice_text_lines(
+        content, offset=offset, limit=min(max(1, limit), _MAX_READ_FILE_LINES)
+    )
+    budget = budget_metadata(
+        estimated_tokens=estimate_token_count(preview["content"]),
+        budget_tokens=budget_tokens,
+        recommended_next_step=(
+            "Use read_file with a narrower offset/limit or switch to find_relevant_files before reading more."
+        ),
+    )
     return json_response(
         True,
         f"Read file: {path}",
@@ -447,6 +471,7 @@ async def read_file(path: str, offset: int = 0, limit: int = _MAX_READ_FILE_LINE
             "line_limit": preview["line_limit"],
             "offset": preview["offset"],
             "has_more": preview["has_more"],
+            **budget,
         },
     )
 
@@ -455,6 +480,7 @@ async def read_multiple_files(
     paths: list[str],
     offset: int = 0,
     limit: int = _MAX_READ_FILE_LINES,
+    budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
 ) -> str:
     if not paths:
         return json_response(
@@ -472,6 +498,7 @@ async def read_multiple_files(
         )
 
     files: list[dict[str, Any]] = []
+    estimated_total_tokens = 0
     for path in paths:
         try:
             target = resolve_path(path)
@@ -520,10 +547,19 @@ async def read_multiple_files(
                 **preview,
             }
         )
+        estimated_total_tokens += estimate_token_count(preview["content"])
     return json_response(
         True,
         f"Read {len(files)} files",
-        details={"files": files, "requested_paths": len(paths)},
+        details={
+            "files": files,
+            "requested_paths": len(paths),
+            **budget_metadata(
+                estimated_tokens=estimated_total_tokens,
+                budget_tokens=budget_tokens,
+                recommended_next_step="Prefer narrow_context or build_context_pack before reading more files.",
+            ),
+        },
     )
 
 
@@ -672,6 +708,13 @@ async def write_file(
             previous_content = safe_read_text(target)
         except (OSError, UnicodeDecodeError):
             previous_content = None
+    if target.exists() and target.is_dir():
+        return json_response(
+            False,
+            f"Not a file: {path}",
+            code="not_a_file",
+            details={"path": path},
+        )
     try:
         _write_text_exact(target, content)
     except OSError as exc:
@@ -706,13 +749,9 @@ async def write_file(
     )
     warning = None
     if previous_exists:
-        warning = (
-            "Prefer patch_file for existing files when making targeted edits so the model can keep changes small and reviewable."
-        )
+        warning = "Prefer patch_file for existing files when making targeted edits so the model can keep changes small and reviewable."
     elif len(content.splitlines()) > _WRITE_FILE_WARNING_LINES:
-        warning = (
-            f"Content is {len(content.splitlines())} lines. For large changes, prefer smaller patch_file edits when possible."
-        )
+        warning = f"Content is {len(content.splitlines())} lines. For large changes, prefer smaller patch_file edits when possible."
 
     return json_response(
         True,
@@ -737,6 +776,7 @@ async def search_in_files(
     include_glob: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
 ) -> str:
     stripped = query.strip()
     if not stripped:
@@ -793,6 +833,12 @@ async def search_in_files(
         limit=limit,
     )
     if rg_payload is not None:
+        estimated_tokens = estimate_token_count(
+            "\n".join(
+                f"{item['path']}:{item['line_number']}:{item['line']}"
+                for item in rg_payload["results"]
+            )
+        )
         return json_response(
             True,
             f"Search completed for query: {query}",
@@ -808,12 +854,17 @@ async def search_in_files(
                 "truncated": rg_payload["truncated"],
                 "files_searched": rg_payload["files_searched"],
                 "search_backend": rg_payload["search_backend"],
+                **budget_metadata(
+                    estimated_tokens=estimated_tokens,
+                    budget_tokens=budget_tokens,
+                    recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
+                ),
             },
         )
 
     try:
         files = iter_searchable_files(
-            target if target.is_dir() else target,
+            target,
             project_root,
             is_within_root=is_within_root,
             is_binary_bytes=is_binary_bytes,
@@ -850,7 +901,9 @@ async def search_in_files(
         except (OSError, UnicodeDecodeError):
             continue
         files_searched += 1
-        relative_path = file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
+        relative_path = (
+            file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
+        )
         for line_number, line in enumerate(content.splitlines(), start=1):
             if not pattern.search(line):
                 continue
@@ -886,6 +939,15 @@ async def search_in_files(
             "truncated": truncated,
             "files_searched": files_searched,
             "search_backend": "python",
+            **budget_metadata(
+                estimated_tokens=estimate_token_count(
+                    "\n".join(
+                        f"{item['path']}:{item['line_number']}:{item['line']}" for item in results
+                    )
+                ),
+                budget_tokens=budget_tokens,
+                recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
+            ),
         },
     )
 
@@ -1154,7 +1216,9 @@ async def undo_last_patch(
     )
     details["undo_git"] = git_result
     details["restored_to_exists"] = previous_exists
-    details["restored_bytes"] = len(previous_content.encode("utf-8")) if previous_content is not None else 0
+    details["restored_bytes"] = (
+        len(previous_content.encode("utf-8")) if previous_content is not None else 0
+    )
 
     global _LAST_BRIDGE_CHANGE
     with _LAST_BRIDGE_CHANGE_LOCK:

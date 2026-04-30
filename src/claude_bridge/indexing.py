@@ -15,9 +15,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from pathspec import PathSpec
+from claude_bridge.relevance import _tokenize_names, _tokenize_text
 
 _INDEX_CACHE: dict[str, dict[str, Any]] = {}
 _INDEX_CACHE_LOCK = threading.RLock()
+_MAX_INDEX_CACHE_ENTRIES = 32
 _MAX_SEARCH_FILE_BYTES = 512 * 1024
 _DISK_CACHE_VERSION = 1
 _MAX_DISK_CACHE_FILES = 32
@@ -101,8 +103,12 @@ _GO_STRUCT_PATTERN = re.compile(
     re.MULTILINE,
 )
 _GO_IMPORT_BLOCK_PATTERN = re.compile(r"import\s*\((.*?)\)", re.DOTALL)
-_GO_IMPORT_LINE_PATTERN = re.compile(r'^\s*(?:[A-Za-z_][A-Za-z0-9_]*\s+)?\"([^\"]+)\"', re.MULTILINE)
-_GO_SINGLE_IMPORT_PATTERN = re.compile(r'^\s*import\s+(?:[A-Za-z_][A-Za-z0-9_]*\s+)?\"([^\"]+)\"', re.MULTILINE)
+_GO_IMPORT_LINE_PATTERN = re.compile(
+    r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*\s+)?\"([^\"]+)\"", re.MULTILINE
+)
+_GO_SINGLE_IMPORT_PATTERN = re.compile(
+    r"^\s*import\s+(?:[A-Za-z_][A-Za-z0-9_]*\s+)?\"([^\"]+)\"", re.MULTILINE
+)
 _JAVA_KOTLIN_CLASS_PATTERN = re.compile(
     r"^\s*(?:public\s+|private\s+|protected\s+|internal\s+|open\s+|final\s+|abstract\s+|sealed\s+)*"
     r"(?:class|interface|enum|object)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
@@ -128,7 +134,9 @@ _CS_FUNCTION_PATTERN = re.compile(
 )
 _CS_IMPORT_PATTERN = re.compile(r"^\s*using\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;", re.MULTILINE)
 _RUBY_CLASS_PATTERN = re.compile(r"^\s*(?:class|module)\s+([A-Za-z_][A-Za-z0-9_:]*)", re.MULTILINE)
-_RUBY_FUNCTION_PATTERN = re.compile(r"^\s*def\s+(?:self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)", re.MULTILINE)
+_RUBY_FUNCTION_PATTERN = re.compile(
+    r"^\s*def\s+(?:self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)", re.MULTILINE
+)
 _RUBY_IMPORT_PATTERN = re.compile(r"^\s*require(?:_relative)?\s+[\"']([^\"']+)[\"']", re.MULTILINE)
 _PHP_CLASS_PATTERN = re.compile(
     r"^\s*(?:final\s+|abstract\s+)?(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
@@ -270,35 +278,53 @@ def _extract_go_symbols(_: Path, source: str) -> dict[str, Any]:
 def _extract_java_symbols(_: Path, source: str) -> dict[str, Any]:
     functions = sorted({match.group(1) for match in _JAVA_FUNCTION_PATTERN.finditer(source)})
     classes = sorted({match.group(1) for match in _JAVA_KOTLIN_CLASS_PATTERN.finditer(source)})
-    imports = sorted({_normalize_dotted_import(match.group(1)) for match in _JAVA_KOTLIN_IMPORT_PATTERN.finditer(source)})
+    imports = sorted(
+        {
+            _normalize_dotted_import(match.group(1))
+            for match in _JAVA_KOTLIN_IMPORT_PATTERN.finditer(source)
+        }
+    )
     return {"functions": functions, "classes": classes, "imports": imports, "language": "java"}
 
 
 def _extract_kotlin_symbols(_: Path, source: str) -> dict[str, Any]:
     functions = sorted({match.group(1) for match in _KOTLIN_FUNCTION_PATTERN.finditer(source)})
     classes = sorted({match.group(1) for match in _JAVA_KOTLIN_CLASS_PATTERN.finditer(source)})
-    imports = sorted({_normalize_dotted_import(match.group(1)) for match in _JAVA_KOTLIN_IMPORT_PATTERN.finditer(source)})
+    imports = sorted(
+        {
+            _normalize_dotted_import(match.group(1))
+            for match in _JAVA_KOTLIN_IMPORT_PATTERN.finditer(source)
+        }
+    )
     return {"functions": functions, "classes": classes, "imports": imports, "language": "kotlin"}
 
 
 def _extract_csharp_symbols(_: Path, source: str) -> dict[str, Any]:
     functions = sorted({match.group(1) for match in _CS_FUNCTION_PATTERN.finditer(source)})
     classes = sorted({match.group(1) for match in _CS_CLASS_PATTERN.finditer(source)})
-    imports = sorted({match.group(1).split(".")[0] for match in _CS_IMPORT_PATTERN.finditer(source)})
+    imports = sorted(
+        {match.group(1).split(".")[0] for match in _CS_IMPORT_PATTERN.finditer(source)}
+    )
     return {"functions": functions, "classes": classes, "imports": imports, "language": "csharp"}
 
 
 def _extract_ruby_symbols(_: Path, source: str) -> dict[str, Any]:
     functions = sorted({match.group(1) for match in _RUBY_FUNCTION_PATTERN.finditer(source)})
-    classes = sorted({match.group(1).split("::")[-1] for match in _RUBY_CLASS_PATTERN.finditer(source)})
-    imports = sorted({_normalize_js_ts_import(match.group(1)) for match in _RUBY_IMPORT_PATTERN.finditer(source)})
+    classes = sorted(
+        {match.group(1).split("::")[-1] for match in _RUBY_CLASS_PATTERN.finditer(source)}
+    )
+    imports = sorted(
+        {_normalize_js_ts_import(match.group(1)) for match in _RUBY_IMPORT_PATTERN.finditer(source)}
+    )
     return {"functions": functions, "classes": classes, "imports": imports, "language": "ruby"}
 
 
 def _extract_php_symbols(_: Path, source: str) -> dict[str, Any]:
     functions = sorted({match.group(1) for match in _PHP_FUNCTION_PATTERN.finditer(source)})
     classes = sorted({match.group(1) for match in _PHP_CLASS_PATTERN.finditer(source)})
-    imports = sorted({match.group(1).split("\\")[0] for match in _PHP_IMPORT_PATTERN.finditer(source)})
+    imports = sorted(
+        {match.group(1).split("\\")[0] for match in _PHP_IMPORT_PATTERN.finditer(source)}
+    )
     return {"functions": functions, "classes": classes, "imports": imports, "language": "php"}
 
 
@@ -456,7 +482,12 @@ _TREE_SITTER_RULES_BY_LANGUAGE = {
     "kotlin": {
         **_DEFAULT_TREE_SITTER_RULES,
         "functions": {"function_declaration", "getter", "setter", "secondary_constructor"},
-        "classes": {"class_declaration", "object_declaration", "interface_declaration", "type_alias"},
+        "classes": {
+            "class_declaration",
+            "object_declaration",
+            "interface_declaration",
+            "type_alias",
+        },
         "imports": {"import_header"},
         "function_fields": ("name", "identifier"),
         "class_fields": ("name", "identifier", "type"),
@@ -465,7 +496,12 @@ _TREE_SITTER_RULES_BY_LANGUAGE = {
     "c_sharp": {
         **_DEFAULT_TREE_SITTER_RULES,
         "functions": {"method_declaration", "constructor_declaration", "local_function_statement"},
-        "classes": {"class_declaration", "interface_declaration", "struct_declaration", "enum_declaration"},
+        "classes": {
+            "class_declaration",
+            "interface_declaration",
+            "struct_declaration",
+            "enum_declaration",
+        },
         "imports": {"using_directive"},
         "function_fields": ("name", "identifier"),
         "class_fields": ("name", "identifier"),
@@ -527,13 +563,28 @@ def get_cached_index(cache_key: str) -> dict[str, Any] | None:
 def set_cached_index(cache_key: str, snapshot: tuple[Any, ...], payload: dict[str, Any]) -> None:
     with _INDEX_CACHE_LOCK:
         _INDEX_CACHE[cache_key] = {"snapshot": snapshot, "payload": payload}
+        while len(_INDEX_CACHE) > _MAX_INDEX_CACHE_ENTRIES:
+            oldest_key = next(iter(_INDEX_CACHE))
+            _INDEX_CACHE.pop(oldest_key, None)
 
 
 def public_index_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         **{key: value for key, value in payload.items() if not key.startswith("_")},
         "files": [
-            {key: value for key, value in item.items() if key != "content"}
+            {
+                key: value
+                for key, value in item.items()
+                if key
+                not in {
+                    "content",
+                    "path_tokens",
+                    "function_tokens",
+                    "class_tokens",
+                    "import_tokens",
+                    "content_tokens",
+                }
+            }
             for item in payload["files"]
         ],
     }
@@ -616,6 +667,23 @@ def _file_signature(file: Path, root: Path) -> dict[str, Any]:
     }
 
 
+def _token_metadata_for_index_entry(
+    *,
+    relative_path: str,
+    functions: list[str],
+    classes: list[str],
+    imports: list[str],
+    content: str,
+) -> dict[str, list[str]]:
+    return {
+        "path_tokens": sorted(_tokenize_text(relative_path)),
+        "function_tokens": sorted(_tokenize_names(functions)),
+        "class_tokens": sorted(_tokenize_names(classes)),
+        "import_tokens": sorted(_tokenize_names(imports)),
+        "content_tokens": sorted(_tokenize_text(content)),
+    }
+
+
 def _snapshot_key(snapshot: tuple[Any, ...]) -> str:
     return sha256(repr(snapshot).encode("utf-8")).hexdigest()
 
@@ -681,24 +749,29 @@ def iter_source_files(
     root: Path,
     project_root: Path,
     *,
+    max_depth: int = 12,
     is_within_root: Callable[[Path, Path], bool],
 ) -> list[Path]:
     patterns = read_gitignore_patterns(project_root)
     spec = build_gitignore_spec(patterns)
     files: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            dirnames.clear()
             continue
-        resolved_path = path.resolve()
-        if not is_within_root(resolved_path, project_root):
-            continue
-        if any(part in _SKIP_DIRS for part in path.parts):
-            continue
-        if path.suffix not in _INDEXABLE_SUFFIXES:
-            continue
-        if is_ignored(path, root, project_root, patterns, spec):
-            continue
-        files.append(path)
+        for filename in filenames:
+            file_path = Path(dirpath) / filename
+            resolved_path = file_path.resolve()
+            if not is_within_root(resolved_path, project_root):
+                continue
+            if any(part in _SKIP_DIRS for part in file_path.parts):
+                continue
+            if file_path.suffix not in _INDEXABLE_SUFFIXES:
+                continue
+            if is_ignored(file_path, root, project_root, patterns, spec):
+                continue
+            files.append(file_path)
     return sorted(files)
 
 
@@ -706,6 +779,7 @@ def iter_searchable_files(
     root: Path,
     project_root: Path,
     *,
+    max_depth: int = 12,
     is_within_root: Callable[[Path, Path], bool],
     is_binary_bytes: Callable[[bytes], bool],
     include_glob: str | None = None,
@@ -713,26 +787,39 @@ def iter_searchable_files(
     patterns = read_gitignore_patterns(project_root)
     spec = build_gitignore_spec(patterns)
     files: list[Path] = []
-    iterator = root.rglob("*") if root.is_dir() else [root]
-    for path in iterator:
-        if not path.is_file():
+    if not root.is_dir():
+        if root.is_file():
+            try:
+                raw = root.read_bytes()
+            except OSError:
+                return []
+            if len(raw) <= _MAX_SEARCH_FILE_BYTES and not is_binary_bytes(raw):
+                if not is_ignored(root, project_root, project_root, patterns, spec):
+                    files.append(root)
+        return sorted(files)
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth > max_depth:
+            dirnames.clear()
             continue
-        resolved_path = path.resolve()
-        if not is_within_root(resolved_path, project_root):
-            continue
-        if any(part in _SKIP_DIRS for part in path.parts):
-            continue
-        if include_glob and not fnmatch.fnmatch(path.name, include_glob):
-            continue
-        if is_ignored(path, root if root.is_dir() else project_root, project_root, patterns, spec):
-            continue
-        try:
-            raw = path.read_bytes()
-        except OSError:
-            continue
-        if len(raw) > _MAX_SEARCH_FILE_BYTES or is_binary_bytes(raw):
-            continue
-        files.append(path)
+        for filename in filenames:
+            file_path = Path(dirpath) / filename
+            resolved_path = file_path.resolve()
+            if not is_within_root(resolved_path, project_root):
+                continue
+            if any(part in _SKIP_DIRS for part in file_path.parts):
+                continue
+            if include_glob and not fnmatch.fnmatch(file_path.name, include_glob):
+                continue
+            if is_ignored(file_path, root, project_root, patterns, spec):
+                continue
+            try:
+                raw = file_path.read_bytes()
+            except OSError:
+                continue
+            if len(raw) > _MAX_SEARCH_FILE_BYTES or is_binary_bytes(raw):
+                continue
+            files.append(file_path)
     return sorted(files)
 
 
@@ -778,7 +865,9 @@ def _tree_sitter_node_text(source_bytes: bytes, node: Any) -> str:
         return ""
 
 
-def _tree_sitter_identifier_text(source_bytes: bytes, node: Any, field_names: tuple[str, ...]) -> str:
+def _tree_sitter_identifier_text(
+    source_bytes: bytes, node: Any, field_names: tuple[str, ...]
+) -> str:
     child_by_field_name = getattr(node, "child_by_field_name", None)
     if callable(child_by_field_name):
         for field_name in field_names:
@@ -945,23 +1034,44 @@ def build_index(
             and cached_file.get("mtime_ns") == signature["mtime_ns"]
             and cached_file.get("size") == signature["size"]
         ):
+            content = str(cached_file.get("content", ""))
+            functions = list(cached_file["functions"])
+            classes = list(cached_file["classes"])
+            imports = list(cached_file["imports"])
+            token_metadata = {
+                "path_tokens": list(cached_file.get("path_tokens", [])),
+                "function_tokens": list(cached_file.get("function_tokens", [])),
+                "class_tokens": list(cached_file.get("class_tokens", [])),
+                "import_tokens": list(cached_file.get("import_tokens", [])),
+                "content_tokens": list(cached_file.get("content_tokens", [])),
+            }
+            if (
+                "content_tokens" not in cached_file or "path_tokens" not in cached_file
+            ) and content:
+                token_metadata = _token_metadata_for_index_entry(
+                    relative_path=relative_path,
+                    functions=functions,
+                    classes=classes,
+                    imports=imports,
+                    content=content,
+                )
             entry = {
                 "path": relative_path,
-                "functions": list(cached_file["functions"]),
-                "classes": list(cached_file["classes"]),
-                "imports": list(cached_file["imports"]),
+                "functions": functions,
+                "classes": classes,
+                "imports": imports,
                 "language": cached_file["language"],
                 "parser_backend": cached_file["parser_backend"],
-                "content": cached_file["content"],
+                **token_metadata,
             }
             next_file_cache[relative_path] = {
                 **signature,
-                "functions": list(cached_file["functions"]),
-                "classes": list(cached_file["classes"]),
-                "imports": list(cached_file["imports"]),
+                "functions": functions,
+                "classes": classes,
+                "imports": imports,
                 "language": cached_file["language"],
                 "parser_backend": cached_file["parser_backend"],
-                "content": cached_file["content"],
+                **token_metadata,
             }
         else:
             try:
@@ -972,6 +1082,13 @@ def build_index(
                 symbols, parser_backend = extract_symbols_with_backend(file, source)
             except SyntaxError:
                 continue
+            token_metadata = _token_metadata_for_index_entry(
+                relative_path=relative_path,
+                functions=list(symbols["functions"]),
+                classes=list(symbols["classes"]),
+                imports=list(symbols["imports"]),
+                content=source,
+            )
             entry = {
                 "path": relative_path,
                 "functions": symbols["functions"],
@@ -979,7 +1096,7 @@ def build_index(
                 "imports": symbols["imports"],
                 "language": symbols["language"],
                 "parser_backend": parser_backend,
-                "content": source,
+                **token_metadata,
             }
             next_file_cache[relative_path] = {
                 **signature,
@@ -988,7 +1105,7 @@ def build_index(
                 "imports": list(symbols["imports"]),
                 "language": symbols["language"],
                 "parser_backend": parser_backend,
-                "content": source,
+                **token_metadata,
             }
         if file.suffix == ".py":
             python_file_count += 1

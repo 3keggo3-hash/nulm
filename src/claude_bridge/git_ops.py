@@ -17,6 +17,7 @@ def git_commit(file_path: str, *, project_dir: Path, message: str | None = None)
         cwd=project_dir,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     if top_level.returncode == 0:
         repo_root = Path(top_level.stdout.strip()).resolve()
@@ -26,6 +27,7 @@ def git_commit(file_path: str, *, project_dir: Path, message: str | None = None)
             cwd=project_dir,
             capture_output=True,
             text=True,
+            timeout=30,
         )
         result["init"] = init.returncode == 0
         result["output"] += init.stdout + init.stderr
@@ -35,9 +37,14 @@ def git_commit(file_path: str, *, project_dir: Path, message: str | None = None)
         if target_path.is_absolute():
             relative_file = target_path.resolve().relative_to(repo_root).as_posix()
         else:
-            relative_file = ((project_dir / target_path).resolve()).relative_to(repo_root).as_posix()
+            relative_file = (
+                ((project_dir / target_path).resolve()).relative_to(repo_root).as_posix()
+            )
     except ValueError as exc:
         result["output"] += f"Resolved path is outside git repo root: {exc}"
+        return result
+    if ".." in relative_file.split("/"):
+        result["output"] += "Path traversal detected: relative path references outside project"
         return result
 
     add = subprocess.run(
@@ -45,6 +52,7 @@ def git_commit(file_path: str, *, project_dir: Path, message: str | None = None)
         cwd=repo_root,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     result["add"] = add.returncode == 0
     result["output"] += add.stdout + add.stderr
@@ -54,6 +62,7 @@ def git_commit(file_path: str, *, project_dir: Path, message: str | None = None)
         cwd=repo_root,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     result["commit"] = commit.returncode == 0
     result["output"] += commit.stdout + commit.stderr
@@ -66,6 +75,7 @@ def git_status_snapshot(project_dir: Path) -> dict[str, Any]:
         cwd=project_dir,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     return {
         "ok": result.returncode == 0,

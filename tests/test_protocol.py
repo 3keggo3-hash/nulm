@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from claude_bridge import insights as insights_module
 from claude_bridge import indexing as indexing_module
 from claude_bridge import server as mcp_server
 from claude_bridge import workflow_tools as workflow_tools_module
@@ -52,6 +53,8 @@ class TestReadTool:
         payload = parse_payload(await mcp_server.read_file("test.txt"))
         assert payload["ok"] is True
         assert payload["details"]["content"] == "hello world"
+        assert payload["details"]["estimated_tokens"] >= 1
+        assert payload["details"]["context_budget_tokens"] == 4000
         assert "onboarding" in payload["details"]
 
     async def test_read_missing_file(self, temp_project):
@@ -189,6 +192,7 @@ class TestSearchTool:
         assert payload["details"]["results"][0]["path"] == "a.py"
         assert payload["details"]["results"][0]["line_number"] == 1
         assert payload["details"]["search_backend"] in {"ripgrep", "python"}
+        assert payload["details"]["estimated_tokens"] >= 1
 
     async def test_search_in_files_respects_include_glob(self, temp_project):
         src = temp_project / "src"
@@ -303,6 +307,8 @@ class TestIndexTool:
         indexed = payload["details"]["files"][0]
         assert indexed["path"] == "module.py"
         assert "content" not in indexed
+        assert "content_tokens" not in indexed
+        assert "path_tokens" not in indexed
         assert indexed["classes"] == ["Greeter"]
         assert indexed["functions"] == ["hello"]
         assert indexed["imports"] == ["os"]
@@ -892,6 +898,7 @@ class TestRelevantFilesTool:
         )
 
         assert payload["ok"] is True
+        assert payload["details"]["strategy"] == "two_phase_token_scoring"
         assert payload["details"]["results"][0]["path"] == "auth_service.py"
         assert "login" in payload["details"]["results"][0]["matched_terms"]
 
@@ -918,6 +925,8 @@ class TestRelevantFilesTool:
         )
 
         assert payload["ok"] is True
+        assert payload["details"]["strategy"] == "two_phase_token_scoring"
+        assert payload["details"]["context_budget_tokens"] == 4000
         assert payload["details"]["results"][0]["path"] == "auth_service.py"
 
     async def test_find_relevant_files_prefers_tree_sitter_symbol_matches(self, monkeypatch):
@@ -1155,6 +1164,9 @@ class TestProcessTool:
             await asyncio.sleep(0.05)
         assert output is not None
         assert "hello-world" in output["details"]["output"]
+        assert output["details"]["input_events"] == 1
+        assert output["details"]["input_chars"] == len("hello-world\n")
+        assert output["details"]["stdin_closed"] is False
 
     async def test_interact_with_process_rejects_missing_session(self, temp_project):
         payload = parse_payload(await mcp_server.interact_with_process("missing", input="test"))
@@ -1168,6 +1180,41 @@ class TestProcessTool:
         result = parse_payload(await mcp_server.interact_with_process(session_id, input=long_input))
         assert result["ok"] is False
         assert result["code"] == "input_too_long"
+
+    async def test_interact_with_process_can_close_stdin(self, temp_project):
+        payload = parse_payload(
+            await mcp_server.start_process(
+                "python3 -u -c 'import sys; data = sys.stdin.read(); print(data.upper())'"
+            )
+        )
+        assert payload["ok"] is True
+        session_id = payload["details"]["session_id"]
+
+        interact = parse_payload(
+            await mcp_server.interact_with_process(
+                session_id,
+                input="hello eof",
+                close_stdin=True,
+            )
+        )
+        assert interact["ok"] is True
+        assert interact["details"]["stdin_closed"] is True
+        assert interact["details"]["input_events"] == 1
+        assert interact["details"]["input_chars"] == len("hello eof")
+
+        output = None
+        for _ in range(20):
+            candidate = parse_payload(
+                await mcp_server.read_process_output(session_id, offset=0, limit=200)
+            )
+            if candidate["details"]["running"] is False:
+                output = candidate
+                break
+            await asyncio.sleep(0.05)
+        assert output is not None
+        assert "HELLO EOF" in output["details"]["output"]
+        assert output["details"]["stdin_closed"] is True
+        assert output["details"]["has_more"] is False
 
 
 class TestPatchTool:
@@ -1444,11 +1491,24 @@ class TestWorkflowTool:
         assert len(payload["details"]["examples"]) >= 2
         assert len(payload["details"]["warnings"]) >= 2
         assert payload["details"]["quality_bar"][0] == "correctness"
+        assert payload["details"]["prompt_entrypoint"] == "review"
+        assert "matching MCP prompt/slash entrypoint" in payload["details"]["low_token_hint"]
         assert "Target: src/" in payload["details"]["prompt"]
         assert "Focus: bugs and missing tests" in payload["details"]["prompt"]
         assert (
             "Do not stop after finding a single matching constant" in payload["details"]["prompt"]
         )
+
+    async def test_prompt_shortcuts_reports_catalog_and_client_side_limits(self, temp_project):
+        payload = parse_payload(await mcp_server.prompt_shortcuts())
+        assert payload["ok"] is True
+        shortcut_names = [item["name"] for item in payload["details"]["shortcuts"]]
+        assert "compact" in shortcut_names
+        assert "shadow" in shortcut_names
+        assert "platform" in shortcut_names
+        client_only_names = [item["name"] for item in payload["details"]["client_side_only"]]
+        assert "/model" in client_only_names
+        assert "Lowest-token path is a client-native MCP prompt" in payload["details"]["notes"][0]
 
     async def test_quality_workflow_returns_prompt(self, temp_project):
         payload = parse_payload(
@@ -1716,6 +1776,8 @@ class TestWorkflowTool:
         assert "python3 -m pytest" in payload["details"]["validation_commands"]
         assert "README.md" in payload["details"]["selected_files"]
         assert "git_status" in payload["details"]
+        assert payload["details"]["estimated_tokens"] >= 1
+        assert payload["details"]["file_estimates"]
         assert payload["details"]["cached"] is False
 
         second = parse_payload(
@@ -1856,6 +1918,28 @@ class TestWorkflowTool:
         assert payload["ok"] is False
         assert payload["code"] == "path_not_found"
 
+    async def test_build_context_pack_handles_invalid_find_relevant_payload(
+        self, temp_project, monkeypatch
+    ):
+        src_dir = temp_project / "src"
+        src_dir.mkdir()
+
+        async def _invalid_find_relevant_files(*args, **kwargs):
+            return "{not-json"
+
+        monkeypatch.setattr(mcp_server, "find_relevant_files", _invalid_find_relevant_files)
+
+        payload = parse_payload(
+            await mcp_server.build_context_pack(
+                target="src",
+                goal="inspect auth flow",
+                max_files=4,
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_tool_payload"
+
     async def test_build_context_pack_uses_secondary_allowed_root_context(self, temp_project):
         secondary_root = temp_project.parent / f"{temp_project.name}-secondary-root"
         secondary_root.mkdir()
@@ -1889,6 +1973,53 @@ class TestWorkflowTool:
             str((secondary_root / "client.spec.ts").resolve()) in payload["details"]["test_files"]
         )
         assert "npm test" in payload["details"]["validation_commands"]
+
+    async def test_narrow_context_respects_budget(self, temp_project):
+        src_dir = temp_project / "src"
+        src_dir.mkdir()
+        (temp_project / "pyproject.toml").write_text('[project]\nname = "bridge"\n')
+        (src_dir / "auth.py").write_text("def login_user():\n    return True\n" * 50)
+        (src_dir / "billing.py").write_text("def charge_card():\n    return True\n" * 50)
+
+        payload = parse_payload(
+            await mcp_server.narrow_context(
+                goal="understand auth flow",
+                target="src",
+                budget_tokens=40,
+                max_files=4,
+                include_tests=False,
+                include_docs=False,
+            )
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["context_budget_tokens"] == 40
+        assert payload["details"]["selected_files"]
+        assert payload["details"]["budget_spent"] <= 40
+        assert "source_context_pack_files" in payload["details"]
+
+    async def test_narrow_context_handles_invalid_context_pack_payload(
+        self, temp_project, monkeypatch
+    ):
+        async def _invalid_context_pack(**kwargs):
+            return "{not-json"
+
+        monkeypatch.setattr(
+            mcp_server,
+            "_workflow_runtime",
+            lambda: (None, _invalid_context_pack, None, None, None),
+        )
+
+        payload = parse_payload(
+            await mcp_server.narrow_context(
+                goal="understand auth flow",
+                target=".",
+                budget_tokens=40,
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_tool_payload"
 
     async def test_run_workflow_returns_structured_error_for_path_outside_project(
         self, temp_project
@@ -2059,7 +2190,58 @@ class TestAuditTools:
         tool_names = [record["tool_name"] for record in payload["details"]["records"]]
         assert "list_directory" in tool_names
         assert "read_file" in tool_names
+        record = payload["details"]["records"][0]
+        assert "telemetry" in record
+        assert record["telemetry"]["estimated_total_tokens"] >= 1
         assert audit_dir.exists()
+
+    async def test_session_insights_returns_telemetry_summary(self, temp_project, monkeypatch):
+        audit_dir = temp_project / ".audit"
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        await mcp_server.read_file("missing.txt")
+        await mcp_server.list_directory(".")
+
+        payload = parse_payload(await mcp_server.session_insights(limit=10))
+
+        assert payload["ok"] is True
+        telemetry = payload["details"]["telemetry"]
+        assert telemetry["total_estimated_tokens"] >= 1
+        assert telemetry["total_input_chars"] >= 1
+        assert telemetry["total_output_chars"] >= 1
+        assert "list_directory" in telemetry["tool_estimated_tokens"]
+
+    async def test_usage_insights_lists_top_cost_tools(self, temp_project, monkeypatch):
+        audit_dir = temp_project / ".audit"
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        await mcp_server.list_directory(".")
+        await mcp_server.read_file("missing.txt")
+
+        payload = parse_payload(await mcp_server.usage_insights(limit=10))
+
+        assert payload["ok"] is True
+        assert payload["details"]["top_cost_tools"]
+        assert payload["details"]["recommended_next_step"]
+
+    async def test_bridge_status_reports_budget_profile(self, temp_project):
+        payload = parse_payload(await mcp_server.bridge_status())
+
+        assert payload["ok"] is True
+        assert payload["details"]["context_budget_profile"] == "balanced"
+        assert payload["details"]["context_budget_tokens"] == 4000
+        assert payload["details"]["intent_compaction_enabled"] is False
+        assert "session_telemetry" in payload["details"]
+
+    async def test_tools_overview_groups_low_cost_tools(self, temp_project):
+        payload = parse_payload(await mcp_server.tools_overview())
+
+        assert payload["ok"] is True
+        assert "compact_user_intent" in payload["details"]["groups"]["low_cost_context"]
+        assert "narrow_context" in payload["details"]["groups"]["low_cost_context"]
+        assert payload["details"]["notes"]
 
 
 class TestConfigTools:
@@ -2074,6 +2256,9 @@ class TestConfigTools:
         assert payload["details"]["approval_preset"] == "power-user"
         assert payload["details"]["auto_approve"] is True
         assert "approval_presets" in payload["details"]
+        assert "budget_profiles" in payload["details"]
+        assert "context_budget_profile" in payload["details"]["editable_keys"]
+        assert "intent_compaction_enabled" in payload["details"]["editable_keys"]
         assert "shell_timeout" in payload["details"]["editable_keys"]
 
     async def test_set_config_value_updates_shell_timeout(self, temp_project):
@@ -2116,3 +2301,111 @@ class TestConfigTools:
         assert disable_payload["ok"] is True
         assert disable_payload["details"]["onboarding_enabled"] is False
         assert "onboarding" not in read_payload["details"]
+
+    async def test_set_config_value_can_enable_intent_compaction(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        payload = parse_payload(
+            await mcp_server.set_config_value("intent_compaction_enabled", True)
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["intent_compaction_enabled"] is True
+
+    async def test_compact_user_intent_returns_canonical_summary(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        payload = parse_payload(
+            await mcp_server.compact_user_intent(
+                "Türkçe review isteği: src/claude_bridge/server.py dosyasını daha ucuz ve platform uyumlu şekilde incele"
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["canonical_intent"]["target_hint"] == "src/claude_bridge/server.py"
+        assert "cross_platform" in details["canonical_intent"]["constraints"]
+        assert details["intent_compaction_enabled"] is False
+
+    async def test_compact_user_intent_reflects_enabled_mode(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+        await mcp_server.set_config_value("intent_compaction_enabled", True)
+
+        payload = parse_payload(
+            await mcp_server.compact_user_intent("Review src/claude_bridge for low token cost")
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["intent_compaction_enabled"] is True
+        assert payload["details"]["mode_behavior"] == "active"
+
+
+class TestInsightsTools:
+    async def test_todo_scan_skips_banner_style_hash_lines(self, temp_project):
+        (temp_project / "notes.py").write_text(
+            "# TODO #\n# normal comment TODO should count\nvalue = 1  # FIXME: adjust later\n",
+            encoding="utf-8",
+        )
+
+        payload = parse_payload(await mcp_server.todo_scan("."))
+
+        assert payload["ok"] is True
+        findings = payload["details"]["findings"]
+        assert len(findings) == 3
+        assert any(item["content"] == "# TODO #" for item in findings)
+
+    async def test_dependency_insights_detects_nested_local_package(self, temp_project):
+        package_dir = temp_project / "src" / "feature"
+        package_dir.mkdir(parents=True)
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        (temp_project / "consumer.py").write_text("import feature\n", encoding="utf-8")
+
+        payload = parse_payload(await mcp_server.dependency_insights("."))
+
+        assert payload["ok"] is True
+        most_connected = payload["details"]["most_connected"]
+        consumer = next(item for item in most_connected if item["file"] == "consumer.py")
+        assert "feature" in consumer["imports"]
+
+    async def test_bridge_doodle_uses_standard_audit_enrichment(self, temp_project):
+        payload = parse_payload(await mcp_server.bridge_doodle())
+
+        assert payload["ok"] is True
+        assert "onboarding" in payload["details"]
+
+    def test_save_note_stores_data_outside_project_root(self, temp_project, monkeypatch):
+        notes_dir = temp_project.parent / "bridge-notes"
+        monkeypatch.setenv("CLAUDE_BRIDGE_NOTES_DIR", str(notes_dir))
+
+        saved = insights_module.save_note(temp_project, "secret note")
+
+        assert saved["ok"] is True
+        assert not (temp_project / ".claude-bridge-notes.json").exists()
+        assert any(notes_dir.glob("*.json"))
+
+        notes = insights_module.read_notes(temp_project)
+        assert notes["total"] >= 1
+        assert notes["notes"][-1]["note"] == "secret note"
+
+    def test_human_size_handles_large_values(self):
+        assert insights_module._human_size(1024 * 1024) == "1.0 MB"
+
+
+class TestSmartTools:
+    async def test_compact_user_intent_reports_summary_delta_separately(self, temp_project):
+        payload = parse_payload(
+            await mcp_server.compact_user_intent(
+                "Review src/claude_bridge/server.py and fix the auth flow with low token cost"
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert (
+            details["estimated_token_delta"]
+            == details["estimated_compact_summary_tokens"] - details["estimated_original_tokens"]
+        )
+        assert (
+            details["estimated_prompt_overhead_tokens"]
+            == details["estimated_compact_tokens"] - details["estimated_compact_summary_tokens"]
+        )

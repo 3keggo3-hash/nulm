@@ -48,6 +48,10 @@ dev = [
 treesitter = [
     "tree-sitter-language-pack>=0.2.0",
 ]
+smart = [
+    "tiktoken>=0.7.0",
+    "charset-normalizer>=3.0.0",
+]
 
 [project.scripts]
 claude-bridge = "claude_bridge.cli:main"

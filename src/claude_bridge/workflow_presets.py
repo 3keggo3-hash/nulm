@@ -16,6 +16,111 @@ SUPPORTED_WORKFLOW_MODES = {
     "commit",
 }
 
+PROMPT_SHORTCUTS = [
+    {
+        "name": "compact",
+        "category": "low-cost",
+        "description": "Shrink the working context and continue with a tighter budget-aware plan.",
+        "token_strategy": "Use when the session is getting expensive and you want a smaller working set.",
+        "chat_fallback": '/compact target="src/" goal="continue with lower token cost"',
+    },
+    {
+        "name": "review",
+        "category": "workflow",
+        "description": "Review code for bugs and missing tests.",
+        "token_strategy": "Prefer MCP prompt UI or slash menu instead of typing a long request.",
+        "chat_fallback": '/review target="src/" focus="bugs and missing tests"',
+    },
+    {
+        "name": "shadow",
+        "category": "critical-review",
+        "description": "Re-review a target skeptically and challenge prior assumptions before accepting conclusions.",
+        "token_strategy": "Use as a prompt entrypoint when you want a fresh, critical pass with minimal chat overhead.",
+        "chat_fallback": '/shadow target="src/" focus="challenge prior assumptions"',
+    },
+    {
+        "name": "optimize",
+        "category": "workflow",
+        "description": "Optimize code for performance and maintainability.",
+        "token_strategy": "Use the prompt entrypoint to avoid spending a separate planning turn.",
+        "chat_fallback": '/optimize target="src/" focus="performance and readability"',
+    },
+    {
+        "name": "orchestrate",
+        "category": "workflow",
+        "description": "Split a large task into workstreams and integration gates.",
+        "token_strategy": "Useful when the client exposes MCP prompts directly.",
+        "chat_fallback": '/orchestrate target="src/" focus="split by modules"',
+    },
+    {
+        "name": "agent_loop",
+        "category": "workflow",
+        "description": "Design a bounded inspect-patch-validate loop.",
+        "token_strategy": "Cheaper than re-explaining the loop each time in chat.",
+        "chat_fallback": '/agent_loop target="src/" goal="fix the failing behavior"',
+    },
+    {
+        "name": "quality",
+        "category": "workflow",
+        "description": "Evaluate shipping quality and regression safety.",
+        "token_strategy": "Start from the prompt catalog entry to reduce prompt repetition.",
+        "chat_fallback": '/quality target="src/" focus="correctness and regression safety"',
+    },
+    {
+        "name": "test",
+        "category": "workflow",
+        "description": "Design or improve regression tests.",
+        "token_strategy": "Saves one reasoning turn versus typing the full framing every time.",
+        "chat_fallback": '/test target="src/" test_style="regression tests"',
+    },
+    {
+        "name": "todo",
+        "category": "workflow",
+        "description": "Scan and prioritize TODO-style markers.",
+        "token_strategy": "Better as a direct prompt entrypoint than a natural-language request.",
+        "chat_fallback": '/todo target="." keywords="TODO, FIXME"',
+    },
+    {
+        "name": "explain",
+        "category": "workflow",
+        "description": "Explain code for a chosen audience.",
+        "token_strategy": "Avoids re-sending the audience and style framing each time.",
+        "chat_fallback": '/explain target="src/..." audience="junior developer"',
+    },
+    {
+        "name": "commit",
+        "category": "workflow",
+        "description": "Summarize changes and suggest a commit message.",
+        "token_strategy": "Small but useful saving when repeated often.",
+        "chat_fallback": '/commit target="." style="short imperative"',
+    },
+    {
+        "name": "benchmark",
+        "category": "ops",
+        "description": "Ask for a benchmark-oriented investigation plan before running heavier checks.",
+        "token_strategy": "Use prompt entrypoint first, then run the benchmark tool only if needed.",
+        "chat_fallback": '/benchmark target="src/" focus="startup and relevance latency"',
+    },
+    {
+        "name": "platform",
+        "category": "ops",
+        "description": "Audit Linux, Windows, and editor compatibility gaps.",
+        "token_strategy": "Keeps platform-review framing concise and reusable.",
+        "chat_fallback": '/platform target="." focus="Linux, Windows, VS Code"',
+    },
+]
+
+CLIENT_SIDE_ONLY_SHORTCUTS = [
+    {
+        "name": "/model",
+        "reason": "Model switching belongs to the MCP client or host app, not the Claude Bridge server.",
+    },
+    {
+        "name": "/clear",
+        "reason": "Conversation clearing is controlled by the client conversation UI.",
+    },
+]
+
 WORKFLOW_PROMPT_TEMPLATES = {
     "review": (
         "Review the target for bugs, regressions, edge cases, and missing tests.\n"
@@ -250,5 +355,17 @@ def build_agent_loop_policy(max_iterations: int) -> dict[str, Any]:
             "no obvious regression introduced",
             "tests or validation command executed when useful",
             "remaining risks explicitly called out",
+        ],
+    }
+
+
+def prompt_shortcut_catalog() -> dict[str, Any]:
+    return {
+        "shortcuts": [dict(item) for item in PROMPT_SHORTCUTS],
+        "client_side_only": [dict(item) for item in CLIENT_SIDE_ONLY_SHORTCUTS],
+        "notes": [
+            "Lowest-token path is a client-native MCP prompt or slash UI, if the client exposes it.",
+            "Typing a natural-language request into chat still consumes a model turn before tools run.",
+            "Claude Bridge can provide prompt entrypoints, but it cannot force the client to skip chat routing.",
         ],
     }

@@ -18,6 +18,10 @@ _SUMMARY_MAX_ITEMS = 20
 _SUMMARY_MAX_DEPTH = 3
 
 
+def _estimate_tokens(value: str) -> int:
+    return max(1, (len(value) + 3) // 4) if value else 0
+
+
 def _audit_dir() -> Path:
     override = os.environ.get("CLAUDE_BRIDGE_AUDIT_DIR", "").strip()
     if override:
@@ -100,18 +104,56 @@ def _result_summary(result: str) -> tuple[dict[str, Any], str]:
     return summary, sha256(result.encode("utf-8")).hexdigest()
 
 
+def _has_truncation_marker(value: Any, *, depth: int = 0) -> bool:
+    if depth >= _SUMMARY_MAX_DEPTH:
+        return False
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "truncated" and item is True:
+                return True
+            if key.endswith("_truncated") and item is True:
+                return True
+            if _has_truncation_marker(item, depth=depth + 1):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_has_truncation_marker(item, depth=depth + 1) for item in value)
+    return False
+
+
+def _telemetry_summary(params: dict[str, Any], result: str) -> dict[str, Any]:
+    params_summary = _summarize_value(params)
+    params_json = json.dumps(params_summary, ensure_ascii=False, sort_keys=True)
+    result_chars = len(result)
+    params_chars = len(params_json)
+    try:
+        payload = json.loads(result)
+    except json.JSONDecodeError:
+        payload = None
+    return {
+        "input_chars": params_chars,
+        "output_chars": result_chars,
+        "estimated_input_tokens": _estimate_tokens(params_json),
+        "estimated_output_tokens": _estimate_tokens(result),
+        "estimated_total_tokens": _estimate_tokens(params_json) + _estimate_tokens(result),
+        "result_truncated": _has_truncation_marker(payload) if isinstance(payload, dict) else False,
+    }
+
+
 def log_tool_call(tool_name: str, params: dict[str, Any], result: str, *, duration_ms: float) -> None:
     session_id = current_session_id()
     summary, result_hash = _result_summary(result)
+    params_summary = _summarize_value(params)
     record = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "session_id": session_id,
         "tool_name": tool_name,
-        "params": _summarize_value(params),
-        "params_hash": sha256(json.dumps(_summarize_value(params), ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
+        "params": params_summary,
+        "params_hash": sha256(json.dumps(params_summary, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
         "duration_ms": round(duration_ms, 3),
         "result": summary,
         "result_hash": result_hash,
+        "telemetry": _telemetry_summary(params, result),
     }
 
     path = _session_file(session_id)
@@ -180,12 +222,30 @@ def summarize_session(session_id: str | None = None, *, limit: int = 20) -> dict
     recent = get_recent_tool_calls(limit=limit, session_id=session_id)
     counts: dict[str, int] = {}
     failure_count = 0
+    total_duration_ms = 0.0
+    total_input_chars = 0
+    total_output_chars = 0
+    total_estimated_tokens = 0
+    truncated_results = 0
+    tool_token_totals: dict[str, int] = {}
     for record in recent["records"]:
         tool_name = str(record.get("tool_name", "unknown"))
         counts[tool_name] = counts.get(tool_name, 0) + 1
+        total_duration_ms += float(record.get("duration_ms", 0.0) or 0.0)
         result = record.get("result", {})
         if isinstance(result, dict) and not result.get("ok", False):
             failure_count += 1
+        telemetry = record.get("telemetry", {})
+        if isinstance(telemetry, dict):
+            input_chars = int(telemetry.get("input_chars", 0) or 0)
+            output_chars = int(telemetry.get("output_chars", 0) or 0)
+            estimated_total_tokens = int(telemetry.get("estimated_total_tokens", 0) or 0)
+            total_input_chars += input_chars
+            total_output_chars += output_chars
+            total_estimated_tokens += estimated_total_tokens
+            tool_token_totals[tool_name] = tool_token_totals.get(tool_name, 0) + estimated_total_tokens
+            if telemetry.get("result_truncated") is True:
+                truncated_results += 1
     return {
         "session_id": recent["session_id"],
         "recent_records": recent["records"],
@@ -193,6 +253,15 @@ def summarize_session(session_id: str | None = None, *, limit: int = 20) -> dict
         "returned_records": recent["returned_records"],
         "tool_counts": counts,
         "failure_count": failure_count,
+        "telemetry": {
+            "total_duration_ms": round(total_duration_ms, 3),
+            "avg_duration_ms": round(total_duration_ms / max(1, len(recent["records"])), 3),
+            "total_input_chars": total_input_chars,
+            "total_output_chars": total_output_chars,
+            "total_estimated_tokens": total_estimated_tokens,
+            "truncated_results": truncated_results,
+            "tool_estimated_tokens": tool_token_totals,
+        },
     }
 
 

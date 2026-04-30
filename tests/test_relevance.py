@@ -81,6 +81,7 @@ class TestRelevanceScoring:
         second = rank_indexed_files(payload, query="auth login", limit=1)
         assert first["cached"] is False
         assert second["cached"] is True
+        assert second["strategy"] == "two_phase_token_scoring"
 
     def test_rank_indexed_files_evicts_old_cache_entries(self, monkeypatch):
         monkeypatch.setattr(relevance_module, "_MAX_RELEVANCE_CACHE_ENTRIES", 2)
@@ -102,3 +103,37 @@ class TestRelevanceScoring:
 
         assert len(relevance_module._RELEVANCE_CACHE) == 2
         assert ("s1", "auth") not in relevance_module._RELEVANCE_CACHE
+
+    def test_rank_indexed_files_prefers_precomputed_tokens_without_content(self):
+        payload = {
+            "files": [
+                {
+                    "path": "docs/auth_flow.md",
+                    "functions": [],
+                    "classes": [],
+                    "imports": [],
+                    "path_tokens": ["docs", "auth", "flow", "md"],
+                    "function_tokens": [],
+                    "class_tokens": [],
+                    "import_tokens": [],
+                    "content_tokens": ["user", "login", "auth", "session"],
+                    "parser_backend": "fallback",
+                },
+                {
+                    "path": "misc/notes.txt",
+                    "functions": [],
+                    "classes": [],
+                    "imports": [],
+                    "path_tokens": ["misc", "notes", "txt"],
+                    "function_tokens": [],
+                    "class_tokens": [],
+                    "import_tokens": [],
+                    "content_tokens": ["random", "notes"],
+                    "parser_backend": "fallback",
+                },
+            ]
+        }
+
+        ranked = rank_indexed_files(payload, query="user login", limit=2)
+        assert ranked["results"][0]["path"] == "docs/auth_flow.md"
+        assert ranked["results"][0]["matched_fields"] == ["content"]
