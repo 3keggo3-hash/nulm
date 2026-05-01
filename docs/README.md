@@ -5,6 +5,10 @@ Bu klasor, proje icin kalici ve referans niteligindeki dokumantasyonu toplar.
 Mevcut belgeler:
 
 - `progression.md`
+- `competitive-analysis-template.md`
+- `competitive-analysis-desktopcommander.md`
+- `competitive-development-plan.md`
+- `optional-dependencies.md`
 - `performance-and-completion-audit.md`
 - `publishing-checklist.md`
 - `roadmap.md`
