@@ -1,4 +1,5 @@
 """Tests for CLI setup and desktop integration helpers."""
+
 import json
 from pathlib import Path
 
@@ -7,7 +8,6 @@ from typer.testing import CliRunner
 from claude_bridge import cli
 from claude_bridge.prompt import build_desktop_config, build_target_config, generate_mcp_setup_guide
 from claude_bridge import server as mcp_server
-
 
 runner = CliRunner()
 
@@ -35,7 +35,9 @@ class TestDesktopConfig:
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "0"
         assert server["env"]["PYTHONUNBUFFERED"] == "1"
 
-    def test_build_desktop_config_can_explicitly_enable_client_managed_approval(self, tmp_path: Path):
+    def test_build_desktop_config_can_explicitly_enable_client_managed_approval(
+        self, tmp_path: Path
+    ):
         config = build_desktop_config(
             tmp_path,
             python_executable="/usr/bin/python3",
@@ -304,3 +306,6 @@ class TestCLI:
         assert "Claude Bridge" in result.stdout
         assert "doctor" in result.stdout.lower()
         assert "Python version is supported" in result.stdout
+        assert "claude_bridge package importable" in result.stdout
+        assert "pytest-asyncio plugin available" in result.stdout
+        assert "tiktoken package available" in result.stdout

@@ -243,9 +243,16 @@ Bu repo artık sadece birim testlerle değil, birkaç farklı kalite kapısıyla
 Yerelde hızlı doğrulama için:
 
 ```bash
+pip install -e .[dev]
+claude-bridge doctor --project-dir .
 pytest
 claude-bridge benchmark --project-dir . --path src --query "auth session login"
 ```
+
+`doctor` komutu Python sürümünü, paketin import edilebilirliğini, dev araçlarını
+(`pytest`, `pytest-asyncio`, `ruff`, `black`, `mypy`) ve opsiyonel smart /
+Tree-sitter bağımlılıklarını kontrol eder. Eksik opsiyonel paketler core
+kullanımı engellemez; çıktı hangi extra'nın kurulması gerektiğini gösterir.
 
 `agent_loop` modu ise daha küçük ve kontrollü işler içindir:
 

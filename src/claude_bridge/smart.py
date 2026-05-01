@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
+_DetectEncodingBytes = Callable[[bytes], Any]
 
 _tiktoken: Any | None = None
 _TIKTOKEN_AVAILABLE = False
@@ -19,7 +20,7 @@ except ImportError:
     pass
 
 _CHARSET_NORMALIZER_AVAILABLE = False
-_detect_encoding_bytes: Any | None = None
+_detect_encoding_bytes: _DetectEncodingBytes | None = None
 _PATH_TOKEN_RE = re.compile(r"^[\w./-]+\.[A-Za-z0-9]+$|^[\w./-]+/[\w./-]*$")
 _WORD_RE = re.compile(r"[A-Za-z0-9_./-]+", re.UNICODE)
 _STOPWORDS = {
@@ -58,8 +59,11 @@ _MODE_HINTS = {
     "fix": {"fix", "bug", "hata", "duzelt", "düzelt"},
 }
 try:
-    from charset_normalizer import from_bytes as _detect_encoding_bytes
+    from charset_normalizer import (  # type: ignore[import-not-found]
+        from_bytes as _imported_detect_encoding_bytes,
+    )
 
+    _detect_encoding_bytes = _imported_detect_encoding_bytes
     _CHARSET_NORMALIZER_AVAILABLE = True
 except ImportError:
     pass

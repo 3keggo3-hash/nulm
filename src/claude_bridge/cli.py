@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -18,6 +17,7 @@ from rich.text import Text
 from claude_bridge import __version__
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
+from claude_bridge.doctor import build_doctor_report
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
 console = Console()
@@ -144,7 +144,9 @@ def _write_desktop_config(
     servers["claude-bridge"] = bridge_entry
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    config_path.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return config_path
 
 
@@ -190,7 +192,9 @@ def _write_target_config(
         approval_preset=approval_preset,
     )
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    config_path.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return config_path
 
 
@@ -252,9 +256,7 @@ def setup(
     approval_preset: str | None = typer.Option(
         None, "--approval-preset", help=_approval_help_suffix()
     ),
-    auto_approve: bool = typer.Option(
-        False, help="Render config with auto-approve enabled"
-    ),
+    auto_approve: bool = typer.Option(False, help="Render config with auto-approve enabled"),
     client_managed_approval: bool = typer.Option(
         False, help="Render config assuming the MCP client handles approvals"
     ),
@@ -287,13 +289,16 @@ def setup(
         console.print(f"Approval preset: [cyan]{resolved_preset}[/cyan]")
     if allow_root:
         console.print(
-            "Allowed roots: "
-            + ", ".join(f"[green]{path.resolve()}[/green]" for path in allow_root)
+            "Allowed roots: " + ", ".join(f"[green]{path.resolve()}[/green]" for path in allow_root)
         )
     if resolved_auto_approve:
-        console.print("[red bold]WARNING:[/red bold] Auto-approve is enabled in the example config.")
+        console.print(
+            "[red bold]WARNING:[/red bold] Auto-approve is enabled in the example config."
+        )
     if resolved_client_managed:
-        console.print("[yellow bold]NOTE:[/yellow bold] Example config delegates approval to the MCP client.")
+        console.print(
+            "[yellow bold]NOTE:[/yellow bold] Example config delegates approval to the MCP client."
+        )
     if not resolved_auto_approve and not resolved_client_managed:
         console.print(
             "[yellow bold]NOTE:[/yellow bold] Approval-requiring tools will fail closed until you either enable "
@@ -307,7 +312,10 @@ def setup(
             generate_mcp_setup_guide(
                 project_dir.resolve(),
                 target=target,
-                allowed_roots=[project_dir.resolve(), *([path.resolve() for path in allow_root] if allow_root else [])],
+                allowed_roots=[
+                    project_dir.resolve(),
+                    *([path.resolve() for path in allow_root] if allow_root else []),
+                ],
                 auto_approve=resolved_auto_approve,
                 client_managed_approval=resolved_client_managed,
                 approval_preset=resolved_preset,
@@ -339,9 +347,7 @@ def install(
         "--target",
         help="Install target: claude-desktop, generic-stdio, or vscode",
     ),
-    config_path: Path = typer.Option(
-        None, "--config-path", help="Override target config path"
-    ),
+    config_path: Path = typer.Option(None, "--config-path", help="Override target config path"),
     approval_preset: str | None = typer.Option(
         None, "--approval-preset", help=_approval_help_suffix()
     ),
@@ -360,7 +366,10 @@ def install(
         )
     display_target = _target_display_name(target)
     resolved_project_dir = project_dir.resolve()
-    resolved_allowed_roots = [resolved_project_dir, *([path.resolve() for path in allow_root] if allow_root else [])]
+    resolved_allowed_roots = [
+        resolved_project_dir,
+        *([path.resolve() for path in allow_root] if allow_root else []),
+    ]
     resolved_config_path = (
         config_path.resolve()
         if config_path is not None
@@ -411,24 +420,28 @@ def install(
             + ", ".join(f"[green]{path}[/green]" for path in resolved_allowed_roots[1:])
         )
     if resolved_client_managed:
-        console.print("[yellow]Approval mode:[/yellow] Config expects the MCP client to manage approvals.")
+        console.print(
+            "[yellow]Approval mode:[/yellow] Config expects the MCP client to manage approvals."
+        )
     elif resolved_auto_approve:
         console.print("[red]Approval mode:[/red] Auto-approve enabled for trusted local use.")
     else:
-        console.print("[yellow]Approval mode:[/yellow] Fail-closed until approval handling is enabled.")
+        console.print(
+            "[yellow]Approval mode:[/yellow] Fail-closed until approval handling is enabled."
+        )
     if target == "claude-desktop":
         console.print("Restart Claude Desktop completely, then start a new chat.")
     elif target == "vscode":
-        console.print("Reload VS Code or restart the MCP extension host, then open a new MCP-enabled chat.")
+        console.print(
+            "Reload VS Code or restart the MCP extension host, then open a new MCP-enabled chat."
+        )
     else:
         console.print("Reload the target MCP client and verify the Claude Bridge tools appear.")
 
 
 @app.command()
 def benchmark(
-    project_dir: Path = typer.Option(
-        Path.cwd(), help="Root directory to benchmark"
-    ),
+    project_dir: Path = typer.Option(Path.cwd(), help="Root directory to benchmark"),
     profile_file: Path = typer.Option(
         None, "--profile-file", help="Optional benchmark profile JSON file"
     ),
@@ -531,8 +544,7 @@ def benchmark(
         f"worst {payload['query_worst_duration_ms']} ms"
     )
     console.print(
-        "Parser backends: "
-        + ", ".join(payload["index_summary"]["parser_backends"] or ["none"])
+        "Parser backends: " + ", ".join(payload["index_summary"]["parser_backends"] or ["none"])
     )
     console.print("Top results: " + ", ".join(top_paths))
     if comparison is not None:
@@ -602,40 +614,12 @@ def doctor(
 ) -> None:
     """Run lightweight environment and configuration checks."""
     current_config, _, _ = _server_runtime()
-    resolved_project_dir = project_dir.resolve()
-    config_snapshot = current_config()
-    desktop_config_path = _default_claude_desktop_config_path()
-    checks: list[tuple[str, bool, str]] = []
-
-    checks.append(("Project directory exists", resolved_project_dir.exists(), str(resolved_project_dir)))
-    checks.append(("Project directory is a folder", resolved_project_dir.is_dir(), str(resolved_project_dir)))
-    checks.append(
-        (
-            "Python version is supported",
-            sys.version_info >= (3, 8),
-            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-        )
-    )
-    checks.append(
-        (
-            "Tree-sitter package available",
-            importlib.util.find_spec("tree_sitter_language_pack") is not None,
-            "Optional but recommended for richer indexing",
-        )
-    )
-    checks.append(
-        (
-            "Claude Desktop config present",
-            desktop_config_path.exists(),
-            str(desktop_config_path),
-        )
-    )
-    checks.append(
-        (
-            "Git repository detected",
-            (resolved_project_dir / ".git").exists(),
-            "Useful for auto-commit and history-aware workflows",
-        )
+    report = build_doctor_report(
+        project_dir=project_dir,
+        config_snapshot=current_config(),
+        desktop_config_path=_default_claude_desktop_config_path(),
+        python_executable=sys.executable,
+        python_version=(sys.version_info.major, sys.version_info.minor, sys.version_info.micro),
     )
 
     console.print(
@@ -645,21 +629,21 @@ def doctor(
             border_style="green",
         )
     )
-    console.print(f"Project directory: [green]{resolved_project_dir}[/green]")
-    if config_snapshot.get("approval_preset"):
-        console.print(f"Approval preset: [cyan]{config_snapshot['approval_preset']}[/cyan]")
+    console.print(f"Project directory: [green]{report.project_dir}[/green]")
+    if report.approval_preset:
+        console.print(f"Approval preset: [cyan]{report.approval_preset}[/cyan]")
     else:
         console.print("Approval preset: [yellow]not set[/yellow]")
     console.print(
         "Approval mode: "
-        f"auto_approve={config_snapshot['auto_approve']}, "
-        f"client_managed_approval={config_snapshot['client_managed_approval']}"
+        f"auto_approve={report.auto_approve}, "
+        f"client_managed_approval={report.client_managed_approval}"
     )
-    console.print(f"Onboarding enabled: {config_snapshot['onboarding_enabled']}")
+    console.print(f"Onboarding enabled: {report.onboarding_enabled}")
 
-    for label, ok, detail in checks:
-        status = "[green]✓[/green]" if ok else "[red]✗[/red]"
-        console.print(f"{status} {label}: {detail}")
+    for check in report.checks:
+        status = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
+        console.print(f"{status} {check.label}: {check.detail}")
 
 
 def main() -> None:
