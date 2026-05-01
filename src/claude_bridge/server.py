@@ -58,6 +58,7 @@ from claude_bridge.file_tools import (
 from claude_bridge.file_tools import (
     write_file as _file_write_file,
 )
+from claude_bridge.file_tool_server import register_file_tools
 from claude_bridge.git_ops import git_commit, git_status_snapshot
 from claude_bridge.indexing import (
     build_index as _index_build_index,
@@ -168,15 +169,30 @@ from claude_bridge.workflow_presets import (
     prompt_shortcut_catalog as _prompt_shortcut_catalog,
     workflow_prompt as _workflow_prompt,
 )
+from claude_bridge.shell_tool_server import register_shell_tools
+from claude_bridge.workflow_tool_server import register_workflow_tools
+from claude_bridge.workflow_tools import (
+    build_context_pack as _build_context_pack_impl,
+)
+from claude_bridge.workflow_tools import (
+    build_validation_suggestions as _build_validation_suggestions_impl,
+)
+from claude_bridge.workflow_tools import (
+    run_agent_loop_session as _run_agent_loop_session_impl,
+)
+from claude_bridge.workflow_tools import (
+    run_agent_loop_step as _run_agent_loop_step_impl,
+)
+from claude_bridge.workflow_tools import (
+    run_workflow as _run_workflow_impl,
+)
 
 mcp = FastMCP("Claude Bridge")
-
 
 def _effective_budget_tokens() -> int:
     profile_name = current_config().get("context_budget_profile", "balanced")
     profile = BUDGET_PROFILES.get(profile_name, {})
     return int(profile.get("context_budget_tokens", _DEFAULT_CONTEXT_BUDGET_TOKENS))
-
 
 def _tool_options(
     description: str,
@@ -193,7 +209,6 @@ def _tool_options(
             openWorldHint=open_world,
         )
     return options
-
 
 def set_config(
     project_dir: Path,
@@ -218,7 +233,6 @@ def set_config(
     clear_index_cache()
     _clear_last_bridge_change()
 
-
 def configure_from_env(*, force_auto_approve: bool | None = None) -> None:
     """Load runtime configuration from environment variables."""
     reset_audit_session()
@@ -228,7 +242,6 @@ def configure_from_env(*, force_auto_approve: bool | None = None) -> None:
     clear_index_cache()
     _clear_last_bridge_change()
 
-
 def _build_index(path: str) -> dict[str, Any]:
     return _index_build_index(
         path,
@@ -237,10 +250,8 @@ def _build_index(path: str) -> dict[str, Any]:
         is_within_root=_is_within_root,
     )
 
-
 def _iter_source_files(root: Path, project_root: Path) -> list[Path]:
     return _index_iter_source_files(root, project_root, is_within_root=_is_within_root)
-
 
 def _iter_searchable_files(
     root: Path, project_root: Path, include_glob: str | None = None
@@ -253,7 +264,6 @@ def _iter_searchable_files(
         include_glob=include_glob,
     )
 
-
 def _git_commit(
     file_path: str,
     project_dir: Path | None = None,
@@ -265,10 +275,8 @@ def _git_commit(
         message=message,
     )
 
-
 def _git_status_snapshot(project_dir: Path | None = None) -> dict[str, Any]:
     return git_status_snapshot(project_dir or _project_dir())
-
 
 def _audit_tool_call(
     tool_name: str, params: dict[str, Any], result: str, *, started_at: float
@@ -285,7 +293,6 @@ def _audit_tool_call(
         duration_ms=(time.perf_counter() - started_at) * 1000,
     )
     return enriched_result
-
 
 def _safe_json_object_load(raw: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
@@ -306,673 +313,60 @@ def _safe_json_object_load(raw: str) -> tuple[dict[str, Any] | None, dict[str, A
         }
     return payload, None
 
-
-def _workflow_runtime() -> tuple[Any, Any, Any, Any, Any]:
-    from claude_bridge.workflow_tools import (
-        build_context_pack,
-        build_validation_suggestions,
-        run_agent_loop_session,
-        run_agent_loop_step,
-        run_workflow,
-    )
-
-    return (
-        run_agent_loop_step,
-        build_context_pack,
-        build_validation_suggestions,
-        run_agent_loop_session,
-        run_workflow,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Read a file inside the configured workspace. Use this after you know which file matters. "
-        "Prefer targeted reads over broad exploration, and expect large files to be truncated for context safety.",
-        read_only=True,
-    )
+_FILE_TOOLS = register_file_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    resolve_path=_resolve_path,
+    json_response=_json_response,
+    effective_budget_tokens=_effective_budget_tokens,
+    read_file_impl=_file_read_file,
+    read_multiple_files_impl=_file_read_multiple_files,
+    list_directory_impl=_file_list_directory,
+    write_file_impl=_file_write_file,
+    search_in_files_impl=_file_search_in_files,
+    patch_file_impl=_file_patch_file,
+    preview_patch_impl=_file_preview_patch,
+    undo_last_patch_impl=_file_undo_last_patch,
+    git_commit_fn=lambda *a, **kw: _git_commit(*a, **kw),
+    request_approval_fn=lambda *a, **kw: _request_approval(*a, **kw),
 )
-async def read_file(
-    path: str,
-    offset: int = 0,
-    limit: int = 200,
-    budget_tokens: int | None = None,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    result = await _file_read_file(path, offset=offset, limit=limit, budget_tokens=bt)
-    return _audit_tool_call(
-        "read_file",
-        {"path": path, "offset": offset, "limit": limit, "budget_tokens": bt},
-        result,
-        started_at=started_at,
-    )
+read_file = _FILE_TOOLS["read_file"]
+read_multiple_files = _FILE_TOOLS["read_multiple_files"]
+list_directory = _FILE_TOOLS["list_directory"]
+write_file = _FILE_TOOLS["write_file"]
+search_in_files = _FILE_TOOLS["search_in_files"]
+patch_file = _FILE_TOOLS["patch_file"]
+preview_patch = _FILE_TOOLS["preview_patch"]
+undo_last_patch = _FILE_TOOLS["undo_last_patch"]
 
 
-@mcp.tool(
-    **_tool_options(
-        "Read multiple files at once. Use this when you need to compare or cross-reference a small set of files more efficiently than repeated read_file calls.",
-        read_only=True,
-    )
+_SHELL_TOOLS = register_shell_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    analyze_shell_command_impl=_analyze_shell_command_impl,
+    run_shell_impl=_run_shell_impl,
+    start_process_impl=_start_process_impl,
+    read_process_output_impl=_read_process_output_impl,
+    list_process_sessions_impl=_list_process_sessions_impl,
+    kill_process_impl=_kill_process_impl,
+    interact_with_process_impl=_interact_with_process_impl,
+    request_approval=_request_approval,
+    project_dir=_project_dir,
+    shell_timeout=_shell_timeout,
 )
-async def read_multiple_files(
-    paths: list[str],
-    offset: int = 0,
-    limit: int = 200,
-    budget_tokens: int | None = None,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    result = await _file_read_multiple_files(paths, offset=offset, limit=limit, budget_tokens=bt)
-    return _audit_tool_call(
-        "read_multiple_files",
-        {"paths": paths, "offset": offset, "limit": limit, "budget_tokens": bt},
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "List a directory inside the configured workspace. Use this first to understand structure before reading or editing files. "
-        "Prefer narrow paths over listing the whole repository.",
-        read_only=True,
-    )
-)
-async def list_directory(path: str = ".") -> str:
-    started_at = time.perf_counter()
-    result = await _file_list_directory(path)
-    return _audit_tool_call("list_directory", {"path": path}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "Write a new file or overwrite an existing one with approval. Prefer this for creating new files. "
-        "For existing files, prefer patch_file so edits stay small, auditable, and easier to validate.",
-        destructive=True,
-    )
-)
-async def write_file(
-    path: str,
-    content: str,
-    overwrite: bool = False,
-    create_parents: bool = False,
-) -> str:
-    started_at = time.perf_counter()
-    result = await _file_write_file(
-        path,
-        content,
-        overwrite=overwrite,
-        create_parents=create_parents,
-        git_commit_fn=_git_commit,
-    )
-    return _audit_tool_call(
-        "write_file",
-        {
-            "path": path,
-            "content": content,
-            "overwrite": overwrite,
-            "create_parents": create_parents,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Search text across project files without dropping to shell. Use this to narrow the candidate files before reading them. "
-        "Prefer this over broad shell grep commands when exploring code. Use offset and limit to page through large result sets.",
-        read_only=True,
-    )
-)
-async def search_in_files(
-    query: str,
-    path: str = ".",
-    regex: bool = False,
-    case_sensitive: bool = False,
-    include_glob: str | None = None,
-    offset: int = 0,
-    limit: int = 50,
-    budget_tokens: int | None = None,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    result = await _file_search_in_files(
-        query,
-        path=path,
-        regex=regex,
-        case_sensitive=case_sensitive,
-        include_glob=include_glob,
-        offset=offset,
-        limit=limit,
-        budget_tokens=bt,
-    )
-    return _audit_tool_call(
-        "search_in_files",
-        {
-            "query": query,
-            "path": path,
-            "regex": regex,
-            "case_sensitive": case_sensitive,
-            "include_glob": include_glob,
-            "offset": offset,
-            "limit": limit,
-            "budget_tokens": bt,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-def _is_interactive_command(command: str) -> bool:
-    return _analyze_shell_command_impl(command).get("code") == "interactive_command_unsupported"
-
-
-def _normalize_command_for_safety(command: str) -> str:
-    details = _analyze_shell_command_impl(command).get("details", {})
-    return str(details.get("normalized_command", command.strip().lower()))
-
-
-def _blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
-    analysis = _analyze_shell_command_impl(stripped)
-    if analysis.get("code") == "blocked_command":
-        details = analysis.get("details", {})
-        if isinstance(details, dict):
-            blocked_pattern = details.get("blocked_pattern")
-            return blocked_pattern if isinstance(blocked_pattern, str) else None
-    return None
-
-
-@mcp.tool(
-    **_tool_options(
-        "Analyze a shell command without executing it. Use this before risky commands or when you need to explain command risk to the user.",
-        read_only=True,
-    )
-)
-async def analyze_shell_command(command: str) -> str:
-    started_at = time.perf_counter()
-    analysis = _analyze_shell_command_impl(command)
-    result = _json_response(
-        analysis["ok"],
-        analysis["message"],
-        code=analysis.get("code"),
-        details=analysis["details"],
-    )
-    return _audit_tool_call(
-        "analyze_shell_command", {"command": command}, result, started_at=started_at
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Run a non-interactive shell command with approval. Prefer read-only or validation commands such as pytest, ruff, git status, or ls. "
-        "Never use this to bypass file tools, and inspect failures before retrying with a different command.",
-        destructive=True,
-        open_world=True,
-    )
-)
-async def run_shell(command: str) -> str:
-    started_at = time.perf_counter()
-    result = await _run_shell_impl(
-        command,
-        request_approval=_request_approval,
-        project_dir=_project_dir,
-        shell_timeout=_shell_timeout,
-    )
-    return _audit_tool_call("run_shell", {"command": command}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "Start a long-running non-interactive process with approval. Use this for watchers, dev servers, or commands that may exceed run_shell timeout.",
-        destructive=True,
-        open_world=True,
-    )
-)
-async def start_process(command: str) -> str:
-    started_at = time.perf_counter()
-    result = await _start_process_impl(
-        command,
-        request_approval=_request_approval,
-        project_dir=_project_dir,
-    )
-    return _audit_tool_call("start_process", {"command": command}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "Read paginated output from a previously started process session. Use offset and limit to fetch the next output window without rerunning the command.",
-        read_only=True,
-    )
-)
-async def read_process_output(session_id: str, offset: int = 0, limit: int = 4000) -> str:
-    started_at = time.perf_counter()
-    result = await _read_process_output_impl(session_id=session_id, offset=offset, limit=limit)
-    return _audit_tool_call(
-        "read_process_output",
-        {"session_id": session_id, "offset": offset, "limit": limit},
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "List active and recent process sessions started by Claude Bridge. Use this to find session ids before reading output or terminating a process.",
-        read_only=True,
-    )
-)
-async def list_process_sessions() -> str:
-    started_at = time.perf_counter()
-    result = await _list_process_sessions_impl()
-    return _audit_tool_call("list_process_sessions", {}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "Terminate a Claude Bridge managed process session by id. Use this to stop a watcher or server that you started earlier.",
-        destructive=True,
-    )
-)
-async def kill_process(session_id: str) -> str:
-    started_at = time.perf_counter()
-    result = await _kill_process_impl(session_id=session_id, request_approval=_request_approval)
-    return _audit_tool_call(
-        "kill_process", {"session_id": session_id}, result, started_at=started_at
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Send input to a running process session. Optionally close stdin to deliver EOF "
-        "for commands that wait on end-of-input before exiting.",
-        destructive=True,
-        open_world=True,
-    )
-)
-async def interact_with_process(session_id: str, input: str = "", close_stdin: bool = False) -> str:
-    started_at = time.perf_counter()
-    result = await _interact_with_process_impl(
-        session_id=session_id,
-        input=input,
-        close_stdin=close_stdin,
-        request_approval=_request_approval,
-    )
-    return _audit_tool_call(
-        "interact_with_process",
-        {
-            "session_id": session_id,
-            "input_length": len(input),
-            "close_stdin": close_stdin,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Apply a targeted SEARCH/REPLACE patch to an existing file. Prefer this over write_file for edits. "
-        "Keep SEARCH text small but unique so the replacement is deterministic and easy to review.",
-        destructive=True,
-    )
-)
-async def patch_file(file: str, search: str, replace: str) -> str:
-    started_at = time.perf_counter()
-    result = await _file_patch_file(file, search, replace, git_commit_fn=_git_commit)
-    return _audit_tool_call(
-        "patch_file",
-        {"file": file, "search": search, "replace": replace},
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Preview a SEARCH/REPLACE patch without changing the file. Use this before applying non-trivial edits or when you need to explain risk.",
-        read_only=True,
-    )
-)
-async def preview_patch(file: str, search: str, replace: str) -> str:
-    started_at = time.perf_counter()
-    result = await _file_preview_patch(file, search, replace)
-    return _audit_tool_call(
-        "preview_patch",
-        {"file": file, "search": search, "replace": replace},
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Undo the last Claude Bridge managed file change using the stored snapshot. Use this only when the last Bridge action should be reverted.",
-        destructive=True,
-    )
-)
-async def undo_last_patch(confirm: bool = False) -> str:
-    started_at = time.perf_counter()
-    result = await _file_undo_last_patch(
-        confirm=confirm,
-        request_approval_fn=_request_approval,
-        git_commit_fn=_git_commit,
-    )
-    return _audit_tool_call("undo_last_patch", {"confirm": confirm}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "Run one bounded agent-loop step: patch once, validate once, then decide. Use this for small corrective loops, not broad refactors.",
-        destructive=True,
-    )
-)
-async def run_agent_loop_step(
-    file: str,
-    search: str,
-    replace: str,
-    validation_command: str,
-    iteration: int = 1,
-    max_iterations: int = 3,
-) -> str:
-    started_at = time.perf_counter()
-    _run_agent_loop_step_impl, _, _, _, _ = _workflow_runtime()
-    result = await _run_agent_loop_step_impl(
-        file=file,
-        search=search,
-        replace=replace,
-        validation_command=validation_command,
-        iteration=iteration,
-        max_iterations=max_iterations,
-        patch_file=patch_file,
-        run_shell=run_shell,
-        json_response=_json_response,
-    )
-    return _audit_tool_call(
-        "run_agent_loop_step",
-        {
-            "file": file,
-            "search": search,
-            "replace": replace,
-            "validation_command": validation_command,
-            "iteration": iteration,
-            "max_iterations": max_iterations,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Build a framework-aware context pack for a target and goal. Use this before deep analysis to gather focused files, tests, and docs.",
-        read_only=True,
-    )
-)
-async def build_context_pack(
-    target: str = ".",
-    goal: str = "understand the current task",
-    max_files: int = 8,
-    include_tests: bool = True,
-    include_git_diff: bool = True,
-    include_docs: bool = True,
-    budget_tokens: int | None = None,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    _, _build_context_pack_impl, _, _, _ = _workflow_runtime()
-    result = await _build_context_pack_impl(
-        target=target,
-        goal=goal,
-        max_files=max_files,
-        include_tests=include_tests,
-        include_git_diff=include_git_diff,
-        include_docs=include_docs,
-        budget_tokens=bt,
-        resolve_path=_resolve_path,
-        find_relevant_files=find_relevant_files,
-        path_from_active_root=_path_from_active_root,
-        project_dir=_project_dir,
-        infer_project_root=_infer_project_root,
-        iter_searchable_files=_iter_searchable_files,
-        git_status_snapshot=_git_status_snapshot,
-        json_response=_json_response,
-    )
-    return _audit_tool_call(
-        "build_context_pack",
-        {
-            "target": target,
-            "goal": goal,
-            "max_files": max_files,
-            "include_tests": include_tests,
-            "include_git_diff": include_git_diff,
-            "include_docs": include_docs,
-            "budget_tokens": bt,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Build a budget-aware narrow context plan for a goal. Use this when you want the smallest useful set of files before deeper reading.",
-        read_only=True,
-    )
-)
-async def narrow_context(
-    goal: str,
-    target: str = ".",
-    budget_tokens: int | None = None,
-    max_files: int = 8,
-    include_tests: bool = True,
-    include_docs: bool = True,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    _, _build_context_pack_impl, _, _, _ = _workflow_runtime()
-    if bt < 1:
-        result = _json_response(
-            False,
-            "budget_tokens must be at least 1",
-            code="invalid_budget_tokens",
-            details={"budget_tokens": bt},
-        )
-        return _audit_tool_call(
-            "narrow_context",
-            {
-                "goal": goal,
-                "target": target,
-                "budget_tokens": bt,
-                "max_files": max_files,
-                "include_tests": include_tests,
-                "include_docs": include_docs,
-            },
-            result,
-            started_at=started_at,
-        )
-
-    context_pack = await _build_context_pack_impl(
-        target=target,
-        goal=goal,
-        max_files=max_files,
-        include_tests=include_tests,
-        include_git_diff=False,
-        include_docs=include_docs,
-        budget_tokens=bt,
-        resolve_path=_resolve_path,
-        find_relevant_files=find_relevant_files,
-        path_from_active_root=_path_from_active_root,
-        project_dir=_project_dir,
-        infer_project_root=_infer_project_root,
-        iter_searchable_files=_iter_searchable_files,
-        git_status_snapshot=_git_status_snapshot,
-        json_response=_json_response,
-    )
-    payload, parse_error = _safe_json_object_load(context_pack)
-    if parse_error is not None:
-        result = _json_response(
-            False,
-            parse_error["message"],
-            code=parse_error["code"],
-            details=parse_error["details"],
-        )
-        return _audit_tool_call(
-            "narrow_context",
-            {
-                "goal": goal,
-                "target": target,
-                "budget_tokens": bt,
-                "max_files": max_files,
-                "include_tests": include_tests,
-                "include_docs": include_docs,
-            },
-            result,
-            started_at=started_at,
-        )
-    if payload is None:
-        result = _json_response(
-            False,
-            "Context pack returned no payload",
-            code="invalid_context_pack",
-            details={"target": target},
-        )
-        return _audit_tool_call(
-            "narrow_context",
-            {
-                "goal": goal,
-                "target": target,
-                "budget_tokens": bt,
-                "max_files": max_files,
-                "include_tests": include_tests,
-                "include_docs": include_docs,
-            },
-            result,
-            started_at=started_at,
-        )
-    if not payload.get("ok", False):
-        return _audit_tool_call(
-            "narrow_context",
-            {
-                "goal": goal,
-                "target": target,
-                "budget_tokens": bt,
-                "max_files": max_files,
-                "include_tests": include_tests,
-                "include_docs": include_docs,
-            },
-            context_pack,
-            started_at=started_at,
-        )
-
-    details = payload.get("details", {})
-    file_estimates = list(details.get("file_estimates", [])) if isinstance(details, dict) else []
-    chosen: list[dict[str, Any]] = []
-    omitted: list[dict[str, Any]] = []
-    running_total = 0
-    for item in file_estimates:
-        estimated_tokens = int(item.get("estimated_tokens", 0))
-        if running_total + estimated_tokens > bt:
-            omitted.append(item)
-            continue
-        chosen.append(item)
-        running_total += estimated_tokens
-
-    result = _json_response(
-        True,
-        f"Narrow context prepared for {target}",
-        details={
-            "target": target,
-            "goal": goal,
-            "selected_files": [item["path"] for item in chosen],
-            "selected_file_estimates": chosen,
-            "omitted_files": [item["path"] for item in omitted],
-            "omitted_file_estimates": omitted,
-            "source_context_pack_files": details.get("selected_files", []),
-            "project_type": details.get("project_type"),
-            "next_recommended_tools": ["read_file", "read_multiple_files", "build_context_pack"],
-            **_smart_budget_metadata(
-                estimated_tokens=running_total,
-                budget_tokens=bt,
-                recommended_next_step=(
-                    "Read the selected files first; if they are insufficient, raise budget_tokens or ask for a narrower goal."
-                ),
-            ),
-        },
-    )
-    return _audit_tool_call(
-        "narrow_context",
-        {
-            "goal": goal,
-            "target": target,
-            "budget_tokens": bt,
-            "max_files": max_files,
-            "include_tests": include_tests,
-            "include_docs": include_docs,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Suggest framework-aware validation commands for a target. Use this before or after edits when you need likely tests, lint, or build commands.",
-        read_only=True,
-    )
-)
-async def suggest_validation_commands(target: str = ".") -> str:
-    started_at = time.perf_counter()
-    _, _, _build_validation_suggestions_impl, _, _ = _workflow_runtime()
-    result = await _build_validation_suggestions_impl(
-        target=target,
-        resolve_path=_resolve_path,
-        infer_project_root=_infer_project_root,
-        json_response=_json_response,
-    )
-    return _audit_tool_call(
-        "suggest_validation_commands", {"target": target}, result, started_at=started_at
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Run a bounded multi-step agent-loop session from a planned JSON step list. Prefer short, reviewable sequences with clear validation steps.",
-        destructive=True,
-    )
-)
-async def run_agent_loop_session(
-    steps_json: str | None = None,
-    steps: list[dict[str, Any]] | None = None,
-    max_iterations: int = 3,
-    compact_threshold: int = 4,
-    keep_recent_results: int = 2,
-) -> str:
-    started_at = time.perf_counter()
-    _, _, _, _run_agent_loop_session_impl, _ = _workflow_runtime()
-    result = await _run_agent_loop_session_impl(
-        steps_json=steps_json,
-        steps=steps,
-        max_iterations=max_iterations,
-        compact_threshold=compact_threshold,
-        keep_recent_results=keep_recent_results,
-        run_agent_loop_step=run_agent_loop_step,
-        json_response=_json_response,
-    )
-    return _audit_tool_call(
-        "run_agent_loop_session",
-        {
-            "steps_json": steps_json,
-            "steps": steps,
-            "max_iterations": max_iterations,
-            "compact_threshold": compact_threshold,
-            "keep_recent_results": keep_recent_results,
-        },
-        result,
-        started_at=started_at,
-    )
-
+analyze_shell_command = _SHELL_TOOLS["analyze_shell_command"]
+run_shell = _SHELL_TOOLS["run_shell"]
+start_process = _SHELL_TOOLS["start_process"]
+read_process_output = _SHELL_TOOLS["read_process_output"]
+list_process_sessions = _SHELL_TOOLS["list_process_sessions"]
+kill_process = _SHELL_TOOLS["kill_process"]
+interact_with_process = _SHELL_TOOLS["interact_with_process"]
+_is_interactive_command = _SHELL_TOOLS["_is_interactive_command"]
+_normalize_command_for_safety = _SHELL_TOOLS["_normalize_command_for_safety"]
+_blocked_command_reason = _SHELL_TOOLS["_blocked_command_reason"]
 
 @mcp.tool(
     **_tool_options(
@@ -1024,7 +418,6 @@ async def index_codebase(path: str = ".") -> str:
         details=_public_index_payload(payload),
     )
     return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
-
 
 @mcp.tool(
     **_tool_options(
@@ -1106,6 +499,38 @@ async def find_relevant_files(
         },
     )
     return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
+_WORKFLOW_TOOLS = register_workflow_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    run_agent_loop_step_impl=_run_agent_loop_step_impl,
+    build_context_pack_impl=_build_context_pack_impl,
+    build_validation_suggestions_impl=_build_validation_suggestions_impl,
+    run_agent_loop_session_impl=_run_agent_loop_session_impl,
+    run_workflow_impl=_run_workflow_impl,
+    patch_file_getter=lambda: patch_file,
+    run_shell_getter=lambda: run_shell,
+    read_file_getter=lambda: read_file,
+    list_directory_getter=lambda: list_directory,
+    find_relevant_files_getter=lambda: find_relevant_files,
+    resolve_path=_resolve_path,
+    path_from_active_root=_path_from_active_root,
+    project_dir=_project_dir,
+    infer_project_root=_infer_project_root,
+    iter_searchable_files=_iter_searchable_files,
+    git_status_snapshot=_git_status_snapshot,
+    effective_budget_tokens=_effective_budget_tokens,
+    safe_json_object_load=_safe_json_object_load,
+    smart_budget_metadata=_smart_budget_metadata,
+)
+run_agent_loop_step = _WORKFLOW_TOOLS["run_agent_loop_step"]
+build_context_pack = _WORKFLOW_TOOLS["build_context_pack"]
+narrow_context = _WORKFLOW_TOOLS["narrow_context"]
+suggest_validation_commands = _WORKFLOW_TOOLS["suggest_validation_commands"]
+run_agent_loop_session = _WORKFLOW_TOOLS["run_agent_loop_session"]
+run_workflow = _WORKFLOW_TOOLS["run_workflow"]
+
 
 
 @mcp.tool(
@@ -1129,7 +554,6 @@ async def get_recent_tool_calls(limit: int = 20, tool_name: str | None = None) -
         started_at=started_at,
     )
 
-
 @mcp.tool(
     **_tool_options(
         "Show session-level telemetry such as approximate token usage, input/output sizes, truncation count, and tool-level cost hotspots.",
@@ -1151,7 +575,6 @@ async def session_insights(limit: int = 50) -> str:
         result,
         started_at=started_at,
     )
-
 
 @mcp.tool(
     **_tool_options(
@@ -1195,7 +618,6 @@ async def usage_insights(limit: int = 50) -> str:
         started_at=started_at,
     )
 
-
 @mcp.tool(
     **_tool_options(
         "Show the most useful current runtime status in one place: workspace, budget profile, approvals, smart features, and recent telemetry.",
@@ -1227,7 +649,6 @@ async def bridge_status() -> str:
         },
     )
     return _audit_tool_call("bridge_status", {}, result, started_at=started_at)
-
 
 @mcp.tool(
     **_tool_options(
@@ -1280,7 +701,6 @@ async def tools_overview() -> str:
     )
     return _audit_tool_call("tools_overview", {}, result, started_at=started_at)
 
-
 @mcp.tool(
     **_tool_options(
         "Show the current Claude Bridge runtime configuration, including approval mode and active preset. Use this before changing config values.",
@@ -1311,7 +731,6 @@ async def get_config() -> str:
         },
     )
     return _audit_tool_call("get_config", {}, result, started_at=started_at)
-
 
 @mcp.tool(
     **_tool_options(
@@ -1346,7 +765,6 @@ async def set_config_value(key: str, value: Any) -> str:
     return _audit_tool_call(
         "set_config_value", {"key": key, "value": value}, result, started_at=started_at
     )
-
 
 @mcp.tool(
     **_tool_options(
@@ -1385,7 +803,6 @@ async def compact_user_intent(
         started_at=started_at,
     )
 
-
 @mcp.tool(
     **_tool_options(
         "Show the active project root and the full list of allowed roots. Use this when a path fails or before switching workspaces.",
@@ -1412,7 +829,6 @@ async def workspace_status() -> str:
         },
     )
     return _audit_tool_call("workspace_status", {}, result, started_at=started_at)
-
 
 @mcp.tool(
     **_tool_options(
@@ -1474,65 +890,6 @@ async def switch_project_root(path: str) -> str:
 
 @mcp.tool(
     **_tool_options(
-        "Generate a workflow prompt and optional safe first step. Use this to structure review, optimize, test, or explain tasks before making changes.",
-        read_only=True,
-    )
-)
-async def run_workflow(
-    mode: str,
-    target: str = ".",
-    option: str | None = None,
-    language: str = "Turkish",
-    execute: bool = False,
-    max_iterations: int = 3,
-) -> str:
-    started_at = time.perf_counter()
-    _, _, _, _, _run_workflow_impl = _workflow_runtime()
-    result = await _run_workflow_impl(
-        mode=mode,
-        target=target,
-        option=option,
-        language=language,
-        execute=execute,
-        max_iterations=max_iterations,
-        resolve_path=_resolve_path,
-        read_file=read_file,
-        list_directory=list_directory,
-        find_relevant_files=find_relevant_files,
-        path_from_active_root=_path_from_active_root,
-        project_dir=_project_dir,
-        infer_project_root=_infer_project_root,
-        json_response=_json_response,
-    )
-    try:
-        payload = _json.loads(result)
-    except _json.JSONDecodeError:
-        payload = None
-    if isinstance(payload, dict) and payload.get("ok") is True:
-        details = payload.get("details")
-        if isinstance(details, dict):
-            details["prompt_entrypoint"] = mode
-            details["low_token_hint"] = (
-                "Prefer the matching MCP prompt/slash entrypoint when the client exposes prompts directly."
-            )
-            result = _json.dumps(payload, ensure_ascii=False)
-    return _audit_tool_call(
-        "run_workflow",
-        {
-            "mode": mode,
-            "target": target,
-            "option": option,
-            "language": language,
-            "execute": execute,
-            "max_iterations": max_iterations,
-        },
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
         "List Claude Bridge prompt shortcuts and explain which ones can truly avoid a full chat planning turn. "
         "Use this when you want lower-token entrypoints such as MCP prompts or slash-style shortcuts.",
         read_only=True,
@@ -1553,7 +910,6 @@ async def prompt_shortcuts() -> str:
         details=details,
     )
     return _audit_tool_call("prompt_shortcuts", {}, result, started_at=started_at)
-
 
 _SMART_TOOLS = register_smart_tools(
     mcp=mcp,
@@ -1600,7 +956,6 @@ dependency_insights = _INSIGHTS_TOOLS["dependency_insights"]
 bridge_save_note = _INSIGHTS_TOOLS["bridge_save_note"]
 bridge_read_notes = _INSIGHTS_TOOLS["bridge_read_notes"]
 bridge_doodle = _INSIGHTS_TOOLS["bridge_doodle"]
-
 
 def _register_prompts() -> None:
     def _message(text: str) -> Message:
@@ -1870,10 +1225,8 @@ def _register_prompts() -> None:
             )
         )
 
-
 def run_mcp_server() -> None:
     """Run the Claude Bridge MCP server over stdio."""
     mcp.run(transport="stdio")
-
 
 _register_prompts()

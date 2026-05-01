@@ -2004,14 +2004,40 @@ class TestWorkflowTool:
         async def _invalid_context_pack(**kwargs):
             return "{not-json"
 
-        monkeypatch.setattr(
-            mcp_server,
-            "_workflow_runtime",
-            lambda: (None, _invalid_context_pack, None, None, None),
+        # Re-register workflow tools with a fake build_context_pack_impl
+        # that returns invalid JSON, then call the returned narrow_context
+        # directly to verify the error path is exercised.
+        tools = mcp_server.register_workflow_tools(
+            mcp=mcp_server.mcp,
+            tool_options=mcp_server._tool_options,
+            audit_tool_call=mcp_server._audit_tool_call,
+            json_response=mcp_server._json_response,
+            run_agent_loop_step_impl=mcp_server._run_agent_loop_step_impl,
+            build_context_pack_impl=_invalid_context_pack,
+            build_validation_suggestions_impl=(
+                mcp_server._build_validation_suggestions_impl
+            ),
+            run_agent_loop_session_impl=mcp_server._run_agent_loop_session_impl,
+            run_workflow_impl=mcp_server._run_workflow_impl,
+            patch_file_getter=lambda: mcp_server.patch_file,
+            run_shell_getter=lambda: mcp_server.run_shell,
+            read_file_getter=lambda: mcp_server.read_file,
+            list_directory_getter=lambda: mcp_server.list_directory,
+            find_relevant_files_getter=lambda: mcp_server.find_relevant_files,
+            resolve_path=mcp_server._resolve_path,
+            path_from_active_root=mcp_server._path_from_active_root,
+            project_dir=mcp_server._project_dir,
+            infer_project_root=mcp_server._infer_project_root,
+            iter_searchable_files=mcp_server._iter_searchable_files,
+            git_status_snapshot=mcp_server._git_status_snapshot,
+            effective_budget_tokens=mcp_server._effective_budget_tokens,
+            safe_json_object_load=mcp_server._safe_json_object_load,
+            smart_budget_metadata=mcp_server._smart_budget_metadata,
         )
+        fake_narrow_context = tools["narrow_context"]
 
         payload = parse_payload(
-            await mcp_server.narrow_context(
+            await fake_narrow_context(
                 goal="understand auth flow",
                 target=".",
                 budget_tokens=40,
