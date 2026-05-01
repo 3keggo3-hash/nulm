@@ -15,12 +15,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from pathspec import PathSpec
+
 from claude_bridge.relevance import _tokenize_names, _tokenize_text
 
 _INDEX_CACHE: dict[str, dict[str, Any]] = {}
 _INDEX_CACHE_LOCK = threading.RLock()
 _MAX_INDEX_CACHE_ENTRIES = 32
 _MAX_SEARCH_FILE_BYTES = 512 * 1024
+_BINARY_SNIFF_BYTES = 512
 _DISK_CACHE_VERSION = 1
 _MAX_DISK_CACHE_FILES = 32
 _MAX_DISK_CACHE_AGE_SECONDS = 7 * 24 * 60 * 60
@@ -775,6 +777,22 @@ def iter_source_files(
     return sorted(files)
 
 
+def is_likely_binary(file_path: Path, n: int = _BINARY_SNIFF_BYTES) -> bool:
+    """Check if a file is likely binary by reading the first *n* bytes.
+
+    Only a null byte in the initial window is treated as a binary signal.
+    This avoids reading the entire file just for the binary check.
+    """
+    try:
+        with open(file_path, "rb") as fh:
+            head = fh.read(n)
+    except OSError:
+        return True
+    if not head:
+        return False
+    return b"\x00" in head
+
+
 def iter_searchable_files(
     root: Path,
     project_root: Path,
@@ -790,6 +808,8 @@ def iter_searchable_files(
     if not root.is_dir():
         if root.is_file():
             try:
+                if is_likely_binary(root):
+                    return []
                 raw = root.read_bytes()
             except OSError:
                 return []
@@ -814,6 +834,8 @@ def iter_searchable_files(
             if is_ignored(file_path, root, project_root, patterns, spec):
                 continue
             try:
+                if is_likely_binary(file_path):
+                    continue
                 raw = file_path.read_bytes()
             except OSError:
                 continue
