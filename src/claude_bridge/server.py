@@ -161,6 +161,12 @@ from claude_bridge.insights import (
 from claude_bridge.insights_tool_registration import register_insights_tools
 from claude_bridge.fun_content import generate_doodle as _generate_doodle
 from claude_bridge.meta_tool_server import register_meta_tools, register_prompts
+from claude_bridge.multi_format import (
+    read_image as _multi_format_read_image,
+)
+from claude_bridge.multi_format import (
+    read_pdf as _multi_format_read_pdf,
+)
 from claude_bridge.smart_tool_registration import register_smart_tools
 from claude_bridge.tool_utils import (
     set_active_project_dir as _set_active_project_dir,
@@ -345,6 +351,38 @@ search_in_files = _FILE_TOOLS["search_in_files"]
 patch_file = _FILE_TOOLS["patch_file"]
 preview_patch = _FILE_TOOLS["preview_patch"]
 undo_last_patch = _FILE_TOOLS["undo_last_patch"]
+
+
+@mcp.tool(
+    **_tool_options(
+        "Read a supported image in the configured workspace. Returns MIME type, "
+        "dimensions, byte size, and base64 content. Requires the optional "
+        "claude-bridge[multi-format] dependency set.",
+        read_only=True,
+    )
+)
+async def read_image(path: str) -> str:
+    started_at = time.perf_counter()
+    result = await _multi_format_read_image(path)
+    return _audit_tool_call("read_image", {"path": path}, result, started_at=started_at)
+
+
+@mcp.tool(
+    **_tool_options(
+        "Extract text from a PDF in the configured workspace with page pagination. "
+        "Requires the optional claude-bridge[multi-format] dependency set.",
+        read_only=True,
+    )
+)
+async def read_pdf(path: str, page_start: int = 1, page_end: int | None = None) -> str:
+    started_at = time.perf_counter()
+    result = await _multi_format_read_pdf(path, page_start=page_start, page_end=page_end)
+    return _audit_tool_call(
+        "read_pdf",
+        {"path": path, "page_start": page_start, "page_end": page_end},
+        result,
+        started_at=started_at,
+    )
 
 
 _SHELL_TOOLS = register_shell_tools(
