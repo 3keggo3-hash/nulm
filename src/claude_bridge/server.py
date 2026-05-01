@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 
 try:
     from mcp.types import ToolAnnotations
@@ -161,11 +160,18 @@ from claude_bridge.insights import (
 )
 from claude_bridge.insights_tool_registration import register_insights_tools
 from claude_bridge.fun_content import generate_doodle as _generate_doodle
+from claude_bridge.meta_tool_server import register_meta_tools, register_prompts
 from claude_bridge.smart_tool_registration import register_smart_tools
 from claude_bridge.tool_utils import (
     set_active_project_dir as _set_active_project_dir,
 )
 from claude_bridge.workflow_presets import (
+    PROMPT_ARGUMENTS as _PROMPT_ARGUMENTS,
+    PROMPT_SHORTCUTS as _PROMPT_SHORTCUTS,
+    WORKFLOW_DEFAULT_FOCUS as _WORKFLOW_DEFAULT_FOCUS,
+    _CUSTOM_PROMPT_DEFAULTS,
+    _PROMPT_CUSTOM_BUILDERS,
+    _PROMPT_FOCUS_ARG,
     prompt_shortcut_catalog as _prompt_shortcut_catalog,
     workflow_prompt as _workflow_prompt,
 )
@@ -532,384 +538,38 @@ run_agent_loop_session = _WORKFLOW_TOOLS["run_agent_loop_session"]
 run_workflow = _WORKFLOW_TOOLS["run_workflow"]
 
 
-
-@mcp.tool(
-    **_tool_options(
-        "Show recent Claude Bridge tool calls from the current or latest audit session. Use this to explain what the bridge did recently.",
-        read_only=True,
-    )
+_META_TOOLS = register_meta_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    get_recent_tool_calls_impl=_get_recent_tool_calls_impl,
+    summarize_session_impl=_summarize_session_impl,
+    current_config=current_config,
+    update_runtime_config=update_runtime_config,
+    approval_presets=APPROVAL_PRESETS,
+    budget_profiles=BUDGET_PROFILES,
+    smart_compact_intent=_smart_compact_intent,
+    smart_available=_smart_available,
+    project_dir=_project_dir,
+    allowed_roots=_allowed_roots,
+    infer_project_root=_infer_project_root,
+    set_active_project_dir=_set_active_project_dir,
+    path_outside_project_details=_path_outside_project_details,
+    reset_onboarding_state=reset_onboarding_state,
+    prompt_shortcut_catalog=_prompt_shortcut_catalog,
 )
-async def get_recent_tool_calls(limit: int = 20, tool_name: str | None = None) -> str:
-    started_at = time.perf_counter()
-    safe_limit = max(1, min(limit, 100))
-    result = _json_response(
-        True,
-        "Recent tool calls loaded",
-        details=_get_recent_tool_calls_impl(limit=safe_limit, tool_name=tool_name),
-    )
-    return _audit_tool_call(
-        "get_recent_tool_calls",
-        {"limit": safe_limit, "tool_name": tool_name},
-        result,
-        started_at=started_at,
-    )
-
-@mcp.tool(
-    **_tool_options(
-        "Show session-level telemetry such as approximate token usage, input/output sizes, truncation count, and tool-level cost hotspots.",
-        read_only=True,
-    )
-)
-async def session_insights(limit: int = 50) -> str:
-    started_at = time.perf_counter()
-    safe_limit = max(1, min(limit, 200))
-    summary = _summarize_session_impl(limit=safe_limit)
-    result = _json_response(
-        True,
-        "Session insights loaded",
-        details=summary,
-    )
-    return _audit_tool_call(
-        "session_insights",
-        {"limit": safe_limit},
-        result,
-        started_at=started_at,
-    )
-
-@mcp.tool(
-    **_tool_options(
-        "Show usage-focused telemetry with token hotspots and truncation signals. Use this when you want to reduce cost or identify noisy tools.",
-        read_only=True,
-    )
-)
-async def usage_insights(limit: int = 50) -> str:
-    started_at = time.perf_counter()
-    safe_limit = max(1, min(limit, 200))
-    summary = _summarize_session_impl(limit=safe_limit)
-    telemetry = summary.get("telemetry", {})
-    top_tools: list[dict[str, Any]] = []
-    if isinstance(telemetry, dict):
-        tool_estimated_tokens = telemetry.get("tool_estimated_tokens", {})
-        if isinstance(tool_estimated_tokens, dict):
-            top_tools = [
-                {"tool_name": str(tool_name), "estimated_tokens": int(tokens)}
-                for tool_name, tokens in sorted(
-                    tool_estimated_tokens.items(),
-                    key=lambda item: int(item[1]),
-                    reverse=True,
-                )
-            ]
-    result = _json_response(
-        True,
-        "Usage insights loaded",
-        details={
-            "session_id": summary["session_id"],
-            "telemetry": telemetry,
-            "top_cost_tools": top_tools,
-            "recommended_next_step": (
-                "Use narrow_context, compact, or a lower context budget profile if one tool is dominating token usage."
-            ),
-        },
-    )
-    return _audit_tool_call(
-        "usage_insights",
-        {"limit": safe_limit},
-        result,
-        started_at=started_at,
-    )
-
-@mcp.tool(
-    **_tool_options(
-        "Show the most useful current runtime status in one place: workspace, budget profile, approvals, smart features, and recent telemetry.",
-        read_only=True,
-    )
-)
-async def bridge_status() -> str:
-    started_at = time.perf_counter()
-    config_snapshot = current_config()
-    session_summary = _summarize_session_impl(limit=20)
-    smart_available = _smart_available()
-    profile_name = str(config_snapshot.get("context_budget_profile", "balanced"))
-    profile = BUDGET_PROFILES.get(profile_name, {})
-    result = _json_response(
-        True,
-        "Bridge status loaded",
-        details={
-            "active_project_dir": str(config_snapshot["project_dir"]),
-            "allowed_roots": [str(root) for root in config_snapshot["allowed_roots"]],
-            "approval_preset": config_snapshot["approval_preset"],
-            "auto_approve": config_snapshot["auto_approve"],
-            "client_managed_approval": config_snapshot["client_managed_approval"],
-            "context_budget_profile": profile_name,
-            "context_budget_tokens": profile.get("context_budget_tokens"),
-            "budget_profile_description": profile.get("description"),
-            "intent_compaction_enabled": config_snapshot["intent_compaction_enabled"],
-            "smart_features": smart_available,
-            "session_telemetry": session_summary.get("telemetry", {}),
-        },
-    )
-    return _audit_tool_call("bridge_status", {}, result, started_at=started_at)
-
-@mcp.tool(
-    **_tool_options(
-        "List the most useful Claude Bridge tools, grouped by purpose, with a note about lower-token entrypoints.",
-        read_only=True,
-    )
-)
-async def tools_overview() -> str:
-    started_at = time.perf_counter()
-    result = _json_response(
-        True,
-        "Tools overview loaded",
-        details={
-            "groups": {
-                "orientation": [
-                    "workspace_status",
-                    "list_directory",
-                    "tools_overview",
-                    "bridge_status",
-                ],
-                "low_cost_context": [
-                    "compact_user_intent",
-                    "find_relevant_files",
-                    "narrow_context",
-                    "build_context_pack",
-                    "read_file",
-                    "read_multiple_files",
-                ],
-                "analysis": ["run_workflow", "prompt_shortcuts", "project_insights", "todo_scan"],
-                "execution": [
-                    "run_shell",
-                    "start_process",
-                    "interact_with_process",
-                    "run_agent_loop_step",
-                ],
-                "telemetry": [
-                    "session_insights",
-                    "usage_insights",
-                    "get_recent_tool_calls",
-                    "smart_status",
-                ],
-            },
-            "notes": [
-                "Prefer prompt_shortcuts or MCP prompt UI for lower-token entrypoints.",
-                "Use compact_user_intent when you want to normalize a long request into a smaller internal task object.",
-                "Prefer narrow_context before broad read_file usage when cost matters.",
-                "Use usage_insights to see which tools are driving token-like cost the most.",
-            ],
-        },
-    )
-    return _audit_tool_call("tools_overview", {}, result, started_at=started_at)
-
-@mcp.tool(
-    **_tool_options(
-        "Show the current Claude Bridge runtime configuration, including approval mode and active preset. Use this before changing config values.",
-        read_only=True,
-    )
-)
-async def get_config() -> str:
-    started_at = time.perf_counter()
-    snapshot = current_config()
-    result = _json_response(
-        True,
-        "Runtime configuration loaded",
-        details={
-            **snapshot,
-            "project_dir": str(snapshot["project_dir"]),
-            "allowed_roots": [str(root) for root in snapshot["allowed_roots"]],
-            "approval_presets": APPROVAL_PRESETS,
-            "budget_profiles": BUDGET_PROFILES,
-            "editable_keys": [
-                "approval_preset",
-                "auto_approve",
-                "client_managed_approval",
-                "shell_timeout",
-                "onboarding_enabled",
-                "context_budget_profile",
-                "intent_compaction_enabled",
-            ],
-        },
-    )
-    return _audit_tool_call("get_config", {}, result, started_at=started_at)
-
-@mcp.tool(
-    **_tool_options(
-        "Update a single Claude Bridge runtime configuration value. Supported keys: approval_preset, auto_approve, client_managed_approval, shell_timeout, onboarding_enabled, context_budget_profile, intent_compaction_enabled.",
-        destructive=True,
-    )
-)
-async def set_config_value(key: str, value: Any) -> str:
-    started_at = time.perf_counter()
-    try:
-        updated = update_runtime_config(key, value)
-    except ValueError as exc:
-        result = _json_response(
-            False,
-            str(exc),
-            code="invalid_config_value",
-            details={"key": key, "value": value},
-        )
-        return _audit_tool_call(
-            "set_config_value", {"key": key, "value": value}, result, started_at=started_at
-        )
-
-    result = _json_response(
-        True,
-        f"Updated runtime config: {key}",
-        details={
-            **updated,
-            "project_dir": str(updated["project_dir"]),
-            "allowed_roots": [str(root) for root in updated["allowed_roots"]],
-        },
-    )
-    return _audit_tool_call(
-        "set_config_value", {"key": key, "value": value}, result, started_at=started_at
-    )
-
-@mcp.tool(
-    **_tool_options(
-        "Compact a natural-language request into a smaller canonical intent object. Enable this mode when you want cheaper internal routing without automatic translation.",
-        read_only=True,
-    )
-)
-async def compact_user_intent(
-    text: str,
-    preserve_language: bool = True,
-) -> str:
-    started_at = time.perf_counter()
-    enabled = bool(current_config().get("intent_compaction_enabled", False))
-    details = _smart_compact_intent(text, preserve_language=preserve_language)
-    details["intent_compaction_enabled"] = enabled
-    details["mode_behavior"] = (
-        "active"
-        if enabled
-        else "available but inactive until intent_compaction_enabled is turned on"
-    )
-    details["recommended_next_step"] = (
-        "Turn on intent_compaction_enabled if you want clients or future workflows to prefer this compact form by default."
-    )
-    result = _json_response(
-        True,
-        "User intent compacted",
-        details=details,
-    )
-    return _audit_tool_call(
-        "compact_user_intent",
-        {
-            "text_length": len(text),
-            "preserve_language": preserve_language,
-        },
-        result,
-        started_at=started_at,
-    )
-
-@mcp.tool(
-    **_tool_options(
-        "Show the active project root and the full list of allowed roots. Use this when a path fails or before switching workspaces.",
-        read_only=True,
-    )
-)
-async def workspace_status() -> str:
-    started_at = time.perf_counter()
-    result = _json_response(
-        True,
-        "Workspace status",
-        details={
-            "active_project_dir": str(_project_dir()),
-            "allowed_roots": [str(root) for root in _allowed_roots()],
-            "root_rules": {
-                "can_switch_to_subdirectories": True,
-                "explanation": (
-                    "Any existing subdirectory inside an allowed root can be selected as the active project root."
-                ),
-                "example": (
-                    "If '/Users/me/Desktop' is allowed, you can switch to '/Users/me/Desktop/tertis'."
-                ),
-            },
-        },
-    )
-    return _audit_tool_call("workspace_status", {}, result, started_at=started_at)
-
-@mcp.tool(
-    **_tool_options(
-        "Switch the active project root to another allowed directory. Use this only when the current task clearly belongs in a different allowed workspace.",
-        destructive=True,
-    )
-)
-async def switch_project_root(path: str) -> str:
-    started_at = time.perf_counter()
-    candidate = Path(path)
-    target = (
-        candidate.resolve() if candidate.is_absolute() else (_project_dir() / candidate).resolve()
-    )
-    if not target.exists():
-        result = _json_response(
-            False,
-            f"Directory not found: {path}",
-            code="directory_not_found",
-            details={"path": path},
-        )
-        return _audit_tool_call(
-            "switch_project_root", {"path": path}, result, started_at=started_at
-        )
-    if not target.is_dir():
-        result = _json_response(
-            False,
-            f"Not a directory: {path}",
-            code="not_a_directory",
-            details={"path": path},
-        )
-        return _audit_tool_call(
-            "switch_project_root", {"path": path}, result, started_at=started_at
-        )
-    try:
-        _infer_project_root(target)
-        _set_active_project_dir(target)
-    except PermissionError as exc:
-        result = _json_response(
-            False,
-            str(exc),
-            code="path_outside_project",
-            details=_path_outside_project_details(path),
-        )
-        return _audit_tool_call(
-            "switch_project_root", {"path": path}, result, started_at=started_at
-        )
-
-    result = _json_response(
-        True,
-        f"Active project root switched to: {target}",
-        details={
-            "active_project_dir": str(_project_dir()),
-            "allowed_roots": [str(root) for root in _allowed_roots()],
-            "switched_from_subdirectory_rule": True,
-        },
-    )
-    return _audit_tool_call("switch_project_root", {"path": path}, result, started_at=started_at)
-
-
-@mcp.tool(
-    **_tool_options(
-        "List Claude Bridge prompt shortcuts and explain which ones can truly avoid a full chat planning turn. "
-        "Use this when you want lower-token entrypoints such as MCP prompts or slash-style shortcuts.",
-        read_only=True,
-    )
-)
-async def prompt_shortcuts() -> str:
-    started_at = time.perf_counter()
-    catalog = _prompt_shortcut_catalog()
-    details = {
-        "shortcuts": catalog["shortcuts"],
-        "client_side_only": catalog["client_side_only"],
-        "notes": catalog["notes"],
-        "recommended_path": "Use an MCP prompt or slash UI when the client exposes it; fall back to run_workflow or a natural-language request only when necessary.",
-    }
-    result = _json_response(
-        True,
-        "Prompt shortcuts loaded",
-        details=details,
-    )
-    return _audit_tool_call("prompt_shortcuts", {}, result, started_at=started_at)
+get_recent_tool_calls = _META_TOOLS["get_recent_tool_calls"]
+session_insights = _META_TOOLS["session_insights"]
+usage_insights = _META_TOOLS["usage_insights"]
+bridge_status = _META_TOOLS["bridge_status"]
+tools_overview = _META_TOOLS["tools_overview"]
+get_config = _META_TOOLS["get_config"]
+set_config_value = _META_TOOLS["set_config_value"]
+compact_user_intent = _META_TOOLS["compact_user_intent"]
+workspace_status = _META_TOOLS["workspace_status"]
+switch_project_root = _META_TOOLS["switch_project_root"]
+prompt_shortcuts = _META_TOOLS["prompt_shortcuts"]
 
 _SMART_TOOLS = register_smart_tools(
     mcp=mcp,
@@ -957,276 +617,18 @@ bridge_save_note = _INSIGHTS_TOOLS["bridge_save_note"]
 bridge_read_notes = _INSIGHTS_TOOLS["bridge_read_notes"]
 bridge_doodle = _INSIGHTS_TOOLS["bridge_doodle"]
 
-def _register_prompts() -> None:
-    def _message(text: str) -> Message:
-        return Message(text, role="user")
-
-    def review_prompt(target: str = ".", focus: str = "bugs and missing tests") -> Message:
-        return _message(_workflow_prompt("review", target, focus, "Turkish"))
-
-    def optimize_prompt(target: str = ".", focus: str = "performance and readability") -> Message:
-        return _message(_workflow_prompt("optimize", target, focus, "Turkish"))
-
-    def orchestrate_prompt(
-        target: str = ".",
-        focus: str = "decompose into independent workstreams with clear ownership",
-    ) -> Message:
-        return _message(_workflow_prompt("orchestrate", target, focus, "Turkish"))
-
-    def agent_loop_prompt(
-        target: str = ".",
-        goal: str = "fix the current issue with small validated steps",
-    ) -> Message:
-        return _message(_workflow_prompt("agent_loop", target, goal, "Turkish"))
-
-    def quality_prompt(
-        target: str = ".",
-        focus: str = "correctness, regression safety, readability, tests, and verification depth",
-    ) -> Message:
-        return _message(_workflow_prompt("quality", target, focus, "Turkish"))
-
-    def test_prompt(target: str = ".", test_style: str = "regression tests") -> Message:
-        return _message(_workflow_prompt("test", target, test_style, "Turkish"))
-
-    def todo_prompt(target: str = ".", keywords: str = "TODO, FIXME, HACK, XXX") -> Message:
-        return _message(_workflow_prompt("todo", target, keywords, "Turkish"))
-
-    def explain_prompt(
-        target: str = ".",
-        audience: str = "a junior developer",
-        language: str = "Turkish",
-    ) -> Message:
-        return _message(_workflow_prompt("explain", target, audience, language))
-
-    def commit_prompt(
-        target: str = ".",
-        style: str = "short imperative commit message with a concise summary",
-    ) -> Message:
-        return _message(_workflow_prompt("commit", target, style, "Turkish"))
-
-    def compact_prompt(
-        target: str = ".",
-        goal: str = "continue the task with a smaller, cheaper working context",
-    ) -> Message:
-        return _message(
-            "Shrink the active context before doing more work.\n"
-            f"Target: {target}\n"
-            f"Goal: {goal}\n"
-            "Response language: Turkish\n"
-            "Prefer the smallest useful set of files, the narrowest read windows, and the cheapest next step.\n"
-            "Call out what can be deferred until later if it does not fit the current budget."
-        )
-
-    def shadow_prompt(
-        target: str = ".",
-        focus: str = "challenge prior assumptions, verify from files, and be skeptical of earlier conclusions",
-    ) -> Message:
-        return _message(
-            _workflow_prompt("review", target, focus, "Turkish")
-            + "\nTreat earlier assumptions as untrusted until the files confirm them.\n"
-            + "Prefer a cold, critical reread over agreement-seeking."
-        )
-
-    def benchmark_prompt(
-        target: str = ".",
-        focus: str = "startup cost, relevance latency, token efficiency, and cache behavior",
-    ) -> Message:
-        return _message(
-            "Prepare a benchmark-first investigation plan.\n"
-            f"Target: {target}\n"
-            f"Focus: {focus}\n"
-            "Response language: Turkish\n"
-            "Start with the cheapest signals first.\n"
-            "Separate measurement from interpretation.\n"
-            "Call out what can be learned without spending a full benchmark run yet."
-        )
-
-    def platform_prompt(
-        target: str = ".",
-        focus: str = "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
-    ) -> Message:
-        return _message(
-            "Audit cross-platform and editor compatibility.\n"
-            f"Target: {target}\n"
-            f"Focus: {focus}\n"
-            "Response language: Turkish\n"
-            "List platform assumptions, packaging risks, path issues, shell differences, and client integration gaps.\n"
-            "Prefer a matrix of concrete risks and verifications over vague advice."
-        )
-
-    prompt_specs = [
-        (
-            "review",
-            "Review code for bugs and missing tests.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to review", required=False
-                ),
-                PromptArgument(name="focus", description="Specific review focus", required=False),
-            ],
-            review_prompt,
-        ),
-        (
-            "optimize",
-            "Optimize code for performance and maintainability.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to optimize", required=False
-                ),
-                PromptArgument(name="focus", description="Optimization focus", required=False),
-            ],
-            optimize_prompt,
-        ),
-        (
-            "orchestrate",
-            "Turn a larger task into parallel workstreams plus an integration plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to orchestrate", required=False
-                ),
-                PromptArgument(name="focus", description="How to split the work", required=False),
-            ],
-            orchestrate_prompt,
-        ),
-        (
-            "agent_loop",
-            "Plan a bounded inspect-patch-validate loop for a focused coding task.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory for the loop", required=False
-                ),
-                PromptArgument(
-                    name="goal", description="What the loop should accomplish", required=False
-                ),
-            ],
-            agent_loop_prompt,
-        ),
-        (
-            "quality",
-            "Evaluate code quality against a practical shipping standard.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to evaluate", required=False
-                ),
-                PromptArgument(name="focus", description="Specific quality focus", required=False),
-            ],
-            quality_prompt,
-        ),
-        (
-            "test",
-            "Plan tests for the selected target.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to test", required=False
-                ),
-                PromptArgument(
-                    name="test_style", description="Preferred testing style", required=False
-                ),
-            ],
-            test_prompt,
-        ),
-        (
-            "todo",
-            "Scan for TODO-style markers and prioritize them.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to scan", required=False
-                ),
-                PromptArgument(
-                    name="keywords", description="Keywords to search for", required=False
-                ),
-            ],
-            todo_prompt,
-        ),
-        (
-            "explain",
-            "Explain how a piece of code works.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to explain", required=False
-                ),
-                PromptArgument(name="audience", description="Audience level", required=False),
-                PromptArgument(name="language", description="Response language", required=False),
-            ],
-            explain_prompt,
-        ),
-        (
-            "commit",
-            "Summarize changes and suggest a commit message.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to summarize", required=False
-                ),
-                PromptArgument(
-                    name="style", description="Preferred commit message style", required=False
-                ),
-            ],
-            commit_prompt,
-        ),
-        (
-            "compact",
-            "Shrink the active context and continue with a lower-cost plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to narrow", required=False
-                ),
-                PromptArgument(
-                    name="goal", description="What to preserve while compacting", required=False
-                ),
-            ],
-            compact_prompt,
-        ),
-        (
-            "shadow",
-            "Re-review a target skeptically and challenge prior assumptions.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to re-review", required=False
-                ),
-                PromptArgument(name="focus", description="Critical review focus", required=False),
-            ],
-            shadow_prompt,
-        ),
-        (
-            "benchmark",
-            "Prepare a benchmark-first investigation plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to assess", required=False
-                ),
-                PromptArgument(name="focus", description="Benchmark focus", required=False),
-            ],
-            benchmark_prompt,
-        ),
-        (
-            "platform",
-            "Audit cross-platform and editor compatibility gaps.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to assess", required=False
-                ),
-                PromptArgument(
-                    name="focus", description="Platform or client focus", required=False
-                ),
-            ],
-            platform_prompt,
-        ),
-    ]
-
-    for name, description, arguments, fn in prompt_specs:
-        mcp.add_prompt(
-            Prompt(
-                name=name,
-                title=description,
-                description=description,
-                arguments=arguments,
-                fn=fn,
-                context_kwarg=None,
-            )
-        )
 
 def run_mcp_server() -> None:
     """Run the Claude Bridge MCP server over stdio."""
     mcp.run(transport="stdio")
 
-_register_prompts()
+register_prompts(
+    mcp=mcp,
+    prompt_shortcuts=_PROMPT_SHORTCUTS,
+    prompt_arguments=_PROMPT_ARGUMENTS,
+    prompt_focus_arg=_PROMPT_FOCUS_ARG,
+    workflow_default_focus=_WORKFLOW_DEFAULT_FOCUS,
+    prompt_custom_builders=_PROMPT_CUSTOM_BUILDERS,
+    custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
+    workflow_prompt=_workflow_prompt,
+)

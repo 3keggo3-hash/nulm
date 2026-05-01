@@ -121,6 +121,140 @@ CLIENT_SIDE_ONLY_SHORTCUTS = [
     },
 ]
 
+
+def _build_compact_message(target: str, goal: str, language: str = "Turkish") -> str:
+    return (
+        "Shrink the active context before doing more work.\n"
+        f"Target: {target}\n"
+        f"Goal: {goal}\n"
+        f"Response language: {language}\n"
+        "Prefer the smallest useful set of files, the narrowest read windows,"
+        " and the cheapest next step.\n"
+        "Call out what can be deferred until later if it does not fit"
+        " the current budget."
+    )
+
+
+def _build_shadow_message(target: str, focus: str, language: str = "Turkish") -> str:
+    return (
+        workflow_prompt("review", target, focus, language)
+        + "\nTreat earlier assumptions as untrusted until the files confirm them.\n"
+        + "Prefer a cold, critical reread over agreement-seeking."
+    )
+
+
+def _build_benchmark_message(target: str, focus: str, language: str = "Turkish") -> str:
+    return (
+        "Prepare a benchmark-first investigation plan.\n"
+        f"Target: {target}\n"
+        f"Focus: {focus}\n"
+        f"Response language: {language}\n"
+        "Start with the cheapest signals first.\n"
+        "Separate measurement from interpretation.\n"
+        "Call out what can be learned without spending a full benchmark run yet."
+    )
+
+
+def _build_platform_message(target: str, focus: str, language: str = "Turkish") -> str:
+    return (
+        "Audit cross-platform and editor compatibility.\n"
+        f"Target: {target}\n"
+        f"Focus: {focus}\n"
+        f"Response language: {language}\n"
+        "List platform assumptions, packaging risks, path issues, shell differences,"
+        " and client integration gaps.\n"
+        "Prefer a matrix of concrete risks and verifications over vague advice."
+    )
+
+
+# Arguments for each registered prompt, keyed by PROMPT_SHORTCUTS name.
+PROMPT_ARGUMENTS: dict[str, list[dict[str, Any]]] = {
+    "review": [
+        {"name": "target", "description": "File or directory to review", "required": False},
+        {"name": "focus", "description": "Specific review focus", "required": False},
+    ],
+    "optimize": [
+        {"name": "target", "description": "File or directory to optimize", "required": False},
+        {"name": "focus", "description": "Optimization focus", "required": False},
+    ],
+    "orchestrate": [
+        {"name": "target", "description": "File or directory to orchestrate", "required": False},
+        {"name": "focus", "description": "How to split the work", "required": False},
+    ],
+    "agent_loop": [
+        {"name": "target", "description": "File or directory for the loop", "required": False},
+        {"name": "goal", "description": "What the loop should accomplish", "required": False},
+    ],
+    "quality": [
+        {"name": "target", "description": "File or directory to evaluate", "required": False},
+        {"name": "focus", "description": "Specific quality focus", "required": False},
+    ],
+    "test": [
+        {"name": "target", "description": "File or directory to test", "required": False},
+        {"name": "test_style", "description": "Preferred testing style", "required": False},
+    ],
+    "todo": [
+        {"name": "target", "description": "File or directory to scan", "required": False},
+        {"name": "keywords", "description": "Keywords to search for", "required": False},
+    ],
+    "explain": [
+        {"name": "target", "description": "File or directory to explain", "required": False},
+        {"name": "audience", "description": "Audience level", "required": False},
+        {"name": "language", "description": "Response language", "required": False},
+    ],
+    "commit": [
+        {"name": "target", "description": "File or directory to summarize", "required": False},
+        {"name": "style", "description": "Preferred commit message style", "required": False},
+    ],
+    "compact": [
+        {"name": "target", "description": "File or directory to narrow", "required": False},
+        {"name": "goal", "description": "What to preserve while compacting", "required": False},
+    ],
+    "shadow": [
+        {"name": "target", "description": "File or directory to re-review", "required": False},
+        {"name": "focus", "description": "Critical review focus", "required": False},
+    ],
+    "benchmark": [
+        {"name": "target", "description": "File or directory to assess", "required": False},
+        {"name": "focus", "description": "Benchmark focus", "required": False},
+    ],
+    "platform": [
+        {"name": "target", "description": "File or directory to assess", "required": False},
+        {"name": "focus", "description": "Platform or client focus", "required": False},
+    ],
+}
+
+# Maps prompt name → which arg fills the {focus} placeholder in WORKFLOW_PROMPT_TEMPLATES.
+# Prompts not listed here use custom message builders.
+_PROMPT_FOCUS_ARG: dict[str, str] = {
+    "review": "focus",
+    "optimize": "focus",
+    "orchestrate": "focus",
+    "agent_loop": "goal",
+    "quality": "focus",
+    "test": "test_style",
+    "todo": "keywords",
+    "explain": "audience",
+    "commit": "style",
+}
+
+# Maps prompt name to a custom message builder (compact/shadow/benchmark/platform).
+# Prompts not listed here use the standard workflow template path.
+_PROMPT_CUSTOM_BUILDERS: dict[str, Any] = {
+    "compact": _build_compact_message,
+    "shadow": _build_shadow_message,
+    "benchmark": _build_benchmark_message,
+    "platform": _build_platform_message,
+}
+
+_CUSTOM_PROMPT_DEFAULTS: dict[str, str] = {
+    "compact": "continue the task with a smaller, cheaper working context",
+    "shadow": "challenge prior assumptions, verify from files, and be skeptical of earlier conclusions",
+    "benchmark": "startup cost, relevance latency, token efficiency, and cache behavior",
+    "platform": "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
+}
+
+
 WORKFLOW_PROMPT_TEMPLATES = {
     "review": (
         "Review the target for bugs, regressions, edge cases, and missing tests.\n"
