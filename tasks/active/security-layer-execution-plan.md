@@ -48,6 +48,8 @@ Neden once bu?
 
 ### Faz 2 - Rules Engine MVP
 
+Durum: Tamamlandi.
+
 Amac:
 
 - YAML/JSON tabanli kullanici kurallarini yuklemek, dogrulamak ve tool cagrilarina uygulamak.
@@ -58,6 +60,8 @@ Bagimlilik:
 - Faz 1 karar modeli.
 
 ### Faz 3 - Audit, Replay ve Masking
+
+Durum: Tamamlandi.
 
 Amac:
 
