@@ -28,10 +28,12 @@ Sonra Claude Desktop'u tamamen kapatıp yeniden açın ve yeni bir sohbet başla
 
 ## Özellikler
 
-- 📁 **Dosya Okuma** (`read_file`): Yerel dosyaları Claude'a okutun
+- 📁 **Dosya Okuma** (`read_file`): Yerel metin dosyalarını Claude'a okutun
+- 🖼️ **Çoklu Format Okuma** (`read_image`, `read_pdf`): Opsiyonel extra ile görsel metadata/base64 içerik ve PDF metni çıkarın
 - 📂 **Klasör Listeleme** (`list_directory`): Proje yapısını keşfedin
 - 🖥️ **Terminal Çalıştırma** (`run_shell`): Testleri ve komutları çalıştırın
-- ✏️ **Akıllı Düzenleme** (`patch_file`): SEARCH/REPLACE ile sadece değişen satırları uygulayın
+- ✏️ **Akıllı Düzenleme** (`patch_file`, `preview_patch`): SEARCH/REPLACE ile sadece değişen satırları uygulayın
+- 🚚 **Dosya Taşıma/Kopyalama** (`move_file`, `copy_path`): Workspace içinde onaylı rename, move ve copy işlemleri yapın
 - 🔒 **Güvenli**: Her işlem öncesinde onay, tehlikeli komutlar engellenir
 - 🌿 **Git Entegrasyonu**: Her değişiklik otomatik commit'lenir
 - 🔌 **MCP Uyumlu**: Claude Desktop ve diğer MCP client'larla doğrudan çalışır
@@ -58,6 +60,18 @@ Tree-sitter destekli daha güçlü çok dilli indeksleme isterseniz opsiyonel pa
 
 ```bash
 pip install -e .[treesitter]
+```
+
+Görsel ve PDF okuma araçlarını kullanmak isterseniz opsiyonel multi-format extra'yı kurun:
+
+```bash
+pip install -e .[multi-format]
+```
+
+`pipx` kurulumunda aynı extra'yı baştan eklemek için:
+
+```bash
+pipx install "claude-bridge[multi-format]"
 ```
 
 ### Adım 2: Claude Desktop'a Ekle
@@ -103,6 +117,12 @@ Parser backend notu:
 - Uygun parser paketi kurulu değilse mevcut regex/AST fallback backend ile çalışmaya devam eder.
 - İndeks çıktısında `parser_backend` ve `parser_backends` alanları hangi yolun kullanıldığını gösterir.
 
+Multi-format notu:
+
+- `read_image` ve `read_pdf` core kurulumda import-time crash yaratmaz; gerekli paket yoksa structured error döner.
+- `read_pdf` ilk sürümde text-only çalışır ve sayfa/pagination metadata'sı döndürür.
+- `read_image` görsel metadata'sı ve base64 içerik döndürür; dosya path sınırı ve hassas dosya koruması diğer okuma araçlarıyla aynıdır.
+
 Benchmark notu:
 
 - Büyük repo performansını ölçmek için `claude-bridge benchmark --query "login auth" --path src` çalıştırabilirsiniz.
@@ -114,7 +134,7 @@ Benchmark notu:
 Önemli approval notu:
 
 - MCP stdio modunda sunucu terminalden `input()` ile onay isteyemez.
-- `run_shell`, `write_file`, `patch_file`, `undo_last_patch` gibi araçların çalışması için ya MCP client'ın approval UI yönetmesi gerekir ya da güvenilir yerel kullanımda `CLAUDE_BRIDGE_AUTO_APPROVE=1` açılmalıdır.
+- `run_shell`, `write_file`, `move_file`, `copy_path`, `patch_file`, `undo_last_patch` gibi araçların çalışması için ya MCP client'ın approval UI yönetmesi gerekir ya da güvenilir yerel kullanımda `CLAUDE_BRIDGE_AUTO_APPROVE=1` açılmalıdır.
 - Claude Desktop approval UI kullanacaksanız config'i `claude-bridge setup --client-managed-approval ...` ile üretin.
 
 İlk mesaj ipucu:
@@ -149,8 +169,12 @@ Bu komut MCP sunucuyu stdio modunda sessiz biçimde başlatır. Claude Desktop b
 Claude Desktop'ta normal konuşurken Claude şu tool'ları otomatik olarak kullanabilir:
 
 - `read_file(path="src/player.py")` — dosya okuma
+- `read_image(path="docs/screenshot.png")` — opsiyonel dependency ile görsel metadata ve base64 içerik okuma
+- `read_pdf(path="docs/spec.pdf", page_start=1, page_end=3)` — opsiyonel dependency ile PDF metni okuma
 - `list_directory(path="src/")` — klasör listeleme
-- `write_file(path="notes.txt", content="...")` — yeni dosya yazma veya açık overwrite
+- `write_file(path="notes.txt", content="...", max_lines=500)` — yeni dosya yazma veya açık overwrite; büyük içerikte patch önerisiyle warning döner
+- `move_file(source="old.txt", destination="docs/old.txt")` — dosya veya klasör taşıma/yeniden adlandırma
+- `copy_path(source="template.md", destination="docs/template.md")` — dosya veya klasör kopyalama
 - `search_in_files(query="TODO", path="src")` — shell'e düşmeden metin arama
 - `run_shell(command="pytest")` — komut çalıştırma
 - `patch_file(file="src/player.py", search="old", replace="new")` — dosya düzenleme
@@ -328,7 +352,7 @@ Not:
 
 ### Tool Yanıt Formatı
 
-Tüm ana tool'lar (`read_file`, `list_directory`, `run_shell`, `patch_file`) artık düz metin yerine yapılandırılmış JSON metni döner. Bu format daha sonra slash komutları ve agentic loop için sabit bir temel sağlar.
+Tüm ana tool'lar (`read_file`, `list_directory`, `write_file`, `move_file`, `copy_path`, `run_shell`, `patch_file`) düz metin yerine yapılandırılmış JSON metni döner. Bu format slash komutları, workflow ve agentic loop için sabit bir temel sağlar.
 
 Örnek başarılı yanıt:
 
@@ -372,6 +396,9 @@ Başlıca hata kodları:
 - `command_error`
 - `empty_command`
 - `file_not_found`
+- `source_not_found`
+- `destination_exists`
+- `same_path`
 - `interactive_command_unsupported`
 - `search_not_found`
 - `search_ambiguous`
@@ -390,6 +417,8 @@ Başlıca hata kodları:
 | Güvenli teşhis | `git status`, `git diff`, `ruff check .` | Onay sonrası çalışır |
 | Tehlikeli komut | `sudo ...`, `rm -rf ...`, `chmod 777 ...` | Otomatik engellenir |
 | Shell pipe ile script | `curl ... \| bash` | Otomatik engellenir |
+| Runtime pipe | `curl ... \| node`, `printf ... \| fish` | Otomatik engellenir |
+| Inline runtime script | `node -e ...`, `ruby -e ...`, `php -r ...` | Otomatik engellenir |
 | Uzun çalışan komut | uzun süren build/test | 30 saniye sonra timeout döner |
 | Etkileşimli komut | `python`, `vim`, `top` | `interactive_command_unsupported` ile reddedilir |
 | Boş komut | `""` | `empty_command` ile reddedilir |
@@ -398,17 +427,18 @@ Notlar:
 
 - `run_shell` şu an TTY açmaz
 - `stdin` bekleyen komutlar güvenilir çalışmaz
+- `python3 -c ...` geriye dönük uyumluluk için izinli kalır; daha riskli inline runtime entrypoint'leri engellenir
 - Başarısız komutlar `command_failed`, `command_timeout`, `interactive_command_unsupported` veya `empty_command` koduyla döner
 
 ## Güvenlik
 
 - **Yerel-only**: Sunucu hiçbir zaman dış internete bağlanmaz
-- **Açık kaynak**: ~250 satır, MIT lisansı, herkes denetleyebilir
+- **Açık kaynak**: MIT lisansı, herkes denetleyebilir
 - **Onay modeli**: Sunucu `auto_approve=false` ile başlar; ama Claude Desktop kullanımında approval çoğunlukla istemci tarafından yönetilir. Yani gerçek onay davranışı MCP client'ına bağlıdır.
 - **İzin sistemi**: Sadece belirlenen klasöre erişilir
-- **Komut filtresi**: `rm -rf`, `sudo`, `chmod`, `| bash` gibi komutlar engellenir
+- **Komut filtresi**: `rm -rf`, `sudo`, `chmod`, `| bash`, `curl | node`, `node -e` gibi riskli komutlar engellenir
 - **Path traversal koruması**: `../` ile proje dışına çıkılamaz
-- **Hassas dosya koruması**: `.env`, `.pem`, `.key`, `id_rsa`, `claude_desktop_config.json` gibi dosyalar doğrudan okunmaz/yazılmaz
+- **Hassas dosya koruması**: `.env`, `.pem`, `.key`, `id_rsa`, `claude_desktop_config.json` gibi dosyalar doğrudan okunmaz/yazılmaz ve hata yanıtlarında resolved path/reason sızdırılmaz
 
 ## Neden İndirilsin?
 
