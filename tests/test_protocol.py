@@ -191,6 +191,64 @@ class TestWriteTool:
         assert payload["ok"] is False
         assert payload["code"] == "secret_pattern_detected"
 
+    async def test_write_file_warns_when_content_exceeds_max_lines(self, temp_project):
+        content = "\n".join(f"line {index}" for index in range(3))
+
+        payload = parse_payload(
+            await mcp_server.write_file("large.txt", content, overwrite=False, max_lines=2)
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["warnings"][0]["code"] == "content_exceeds_max_lines"
+        assert payload["details"]["warnings"][0]["recommended_next_tool"] == "patch_file"
+
+    async def test_write_file_rejects_invalid_max_lines(self, temp_project):
+        payload = parse_payload(
+            await mcp_server.write_file("large.txt", "hello", overwrite=False, max_lines=0)
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_max_lines"
+
+    async def test_move_file_moves_path_inside_workspace(self, temp_project):
+        (temp_project / "old.txt").write_text("hello", encoding="utf-8")
+
+        payload = parse_payload(
+            await mcp_server.move_file("old.txt", "renamed/new.txt", create_parents=True)
+        )
+
+        assert payload["ok"] is True
+        assert not (temp_project / "old.txt").exists()
+        assert (temp_project / "renamed" / "new.txt").read_text(encoding="utf-8") == "hello"
+
+    async def test_move_file_rejects_same_source_and_destination(self, temp_project):
+        (temp_project / "same.txt").write_text("hello", encoding="utf-8")
+
+        payload = parse_payload(await mcp_server.move_file("same.txt", "same.txt", overwrite=True))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "same_path"
+        assert (temp_project / "same.txt").read_text(encoding="utf-8") == "hello"
+
+    async def test_copy_path_copies_file_inside_workspace(self, temp_project):
+        (temp_project / "source.txt").write_text("hello", encoding="utf-8")
+
+        payload = parse_payload(
+            await mcp_server.copy_path("source.txt", "copies/source.txt", create_parents=True)
+        )
+
+        assert payload["ok"] is True
+        assert (temp_project / "source.txt").read_text(encoding="utf-8") == "hello"
+        assert (temp_project / "copies" / "source.txt").read_text(encoding="utf-8") == "hello"
+
+    async def test_copy_path_rejects_same_source_and_destination(self, temp_project):
+        (temp_project / "same.txt").write_text("hello", encoding="utf-8")
+
+        payload = parse_payload(await mcp_server.copy_path("same.txt", "same.txt", overwrite=True))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "same_path"
+
 
 class TestSearchTool:
     async def test_search_in_files_finds_matches(self, temp_project):

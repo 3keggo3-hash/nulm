@@ -30,6 +30,29 @@ _INTERACTIVE_COMMANDS = {
     "nano",
 }
 _DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore"}
+_INLINE_INTERPRETER_FLAGS = {
+    "lua": {"-e"},
+    "node": {"-e"},
+    "perl": {"-e"},
+    "php": {"-r"},
+    "ruby": {"-e"},
+}
+_BLOCKED_PIPE_TARGETS = {
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "ksh",
+    "tcsh",
+    "elvish",
+    "nu",
+    "nushell",
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "node",
+}
 _MAX_SHELL_OUTPUT_CHARS = 12000
 _MAX_PROCESS_OUTPUT_READ_CHARS = 12000
 _MAX_PROCESS_SESSIONS = 16
@@ -235,6 +258,16 @@ def _interactive_target(tokens: list[str]) -> str | None:
     return None
 
 
+def _tokens_after_env(tokens: list[str]) -> list[str]:
+    if not tokens or _command_basename(tokens[0]) != "env":
+        return tokens
+    for index, token in enumerate(tokens[1:], start=1):
+        if "=" in token:
+            continue
+        return tokens[index:]
+    return []
+
+
 def is_interactive_command(command: str) -> bool:
     try:
         tokens = shlex.split(command)
@@ -307,13 +340,17 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     if not tokens:
         return None
 
-    head = _command_basename(tokens[0])
-    lower_tokens = [token.lower() for token in tokens]
+    command_tokens = _tokens_after_env(tokens)
+    if not command_tokens:
+        return None
+    head = _command_basename(command_tokens[0])
+    lower_tokens = [token.lower() for token in command_tokens]
+    all_lower_tokens = [token.lower() for token in tokens]
     normalized = normalize_command_for_safety(stripped)
     shell_construct = _find_unquoted_shell_construct(stripped)
     if shell_construct is not None:
         return shell_construct
-    control_tokens_present = any(token in {"|", "&&", ";"} for token in lower_tokens)
+    control_tokens_present = any(token in {"|", "&&", ";"} for token in all_lower_tokens)
 
     if head == "sudo":
         return "sudo"
@@ -321,21 +358,24 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         return "chmod"
     if head == "mkfs":
         return "mkfs"
+    if head in _INLINE_INTERPRETER_FLAGS and any(
+        token in _INLINE_INTERPRETER_FLAGS[head] for token in lower_tokens[1:]
+    ):
+        flag = next(token for token in lower_tokens[1:] if token in _INLINE_INTERPRETER_FLAGS[head])
+        return f"{head} {flag}"
+    pipe_target_pattern = "|".join(sorted(_BLOCKED_PIPE_TARGETS))
+    pipe_target_regex = rf"(?:[|;]|&&)\s*(?:\S*/)?({pipe_target_pattern})\b"
     if head == "curl" and re.search(r"[|;]|&&", stripped):
-        if re.search(r"(?:[|;]|&&)\s*(bash|sh|zsh|python|python3)\b", stripped, re.IGNORECASE):
+        if re.search(pipe_target_regex, stripped, re.IGNORECASE):
             return "curl to shell"
     if head == "curl" and control_tokens_present:
-        if any(
-            shell_name in lower_tokens for shell_name in {"bash", "sh", "zsh", "python", "python3"}
-        ):
+        if any(_command_basename(token) in _BLOCKED_PIPE_TARGETS for token in lower_tokens):
             return "curl to shell"
     if head == "wget" and re.search(r"[|;]|&&", stripped):
-        if re.search(r"(?:[|;]|&&)\s*(bash|sh|zsh|python|python3)\b", stripped, re.IGNORECASE):
+        if re.search(pipe_target_regex, stripped, re.IGNORECASE):
             return "wget to shell"
     if head == "wget" and control_tokens_present:
-        if any(
-            shell_name in lower_tokens for shell_name in {"bash", "sh", "zsh", "python", "python3"}
-        ):
+        if any(_command_basename(token) in _BLOCKED_PIPE_TARGETS for token in lower_tokens):
             return "wget to shell"
     if head == "dd" and any(token.startswith("if=") for token in lower_tokens[1:]):
         return "dd if="
@@ -374,9 +414,10 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
             token.startswith("--source") for token in lower_tokens[2:]
         ):
             return "git restore --source"
-    for index, token in enumerate(lower_tokens[:-1]):
-        if token == "|" and lower_tokens[index + 1] in {"bash", "sh", "zsh", "python", "python3"}:
-            return f"| {lower_tokens[index + 1]}"
+    for index, token in enumerate(all_lower_tokens[:-1]):
+        pipe_target = _command_basename(all_lower_tokens[index + 1])
+        if token == "|" and pipe_target in _BLOCKED_PIPE_TARGETS:
+            return f"| {pipe_target}"
     if any(token in {">", ">>"} for token in tokens) and "/dev" in normalized:
         return "> /dev"
     if ":(){" in normalized:

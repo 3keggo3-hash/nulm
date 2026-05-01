@@ -19,6 +19,8 @@ def register_file_tools(
     read_multiple_files_impl: Any,
     list_directory_impl: Any,
     write_file_impl: Any,
+    move_file_impl: Any,
+    copy_path_impl: Any,
     search_in_files_impl: Any,
     patch_file_impl: Any,
     preview_patch_impl: Any,
@@ -95,6 +97,7 @@ def register_file_tools(
         content: str,
         overwrite: bool = False,
         create_parents: bool = False,
+        max_lines: int = 500,
     ) -> str:
         started_at = time.perf_counter()
         result = await write_file_impl(
@@ -102,6 +105,7 @@ def register_file_tools(
             content,
             overwrite=overwrite,
             create_parents=create_parents,
+            max_lines=max_lines,
             git_commit_fn=git_commit_fn,
         )
         return audit_tool_call(
@@ -109,6 +113,71 @@ def register_file_tools(
             {
                 "path": path,
                 "content": content,
+                "overwrite": overwrite,
+                "create_parents": create_parents,
+                "max_lines": max_lines,
+            },
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
+            "Move or rename a file or directory inside the configured workspace with approval.",
+            destructive=True,
+        )
+    )
+    async def move_file(
+        source: str,
+        destination: str,
+        overwrite: bool = False,
+        create_parents: bool = False,
+    ) -> str:
+        started_at = time.perf_counter()
+        result = await move_file_impl(
+            source,
+            destination,
+            overwrite=overwrite,
+            create_parents=create_parents,
+            git_commit_fn=git_commit_fn,
+        )
+        return audit_tool_call(
+            "move_file",
+            {
+                "source": source,
+                "destination": destination,
+                "overwrite": overwrite,
+                "create_parents": create_parents,
+            },
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
+            "Copy a file or directory inside the configured workspace with approval.",
+            destructive=True,
+        )
+    )
+    async def copy_path(
+        source: str,
+        destination: str,
+        overwrite: bool = False,
+        create_parents: bool = False,
+    ) -> str:
+        started_at = time.perf_counter()
+        result = await copy_path_impl(
+            source,
+            destination,
+            overwrite=overwrite,
+            create_parents=create_parents,
+            git_commit_fn=git_commit_fn,
+        )
+        return audit_tool_call(
+            "copy_path",
+            {
+                "source": source,
+                "destination": destination,
                 "overwrite": overwrite,
                 "create_parents": create_parents,
             },
@@ -216,6 +285,8 @@ def register_file_tools(
         "read_multiple_files": read_multiple_files,
         "list_directory": list_directory,
         "write_file": write_file,
+        "move_file": move_file,
+        "copy_path": copy_path,
         "search_in_files": search_in_files,
         "patch_file": patch_file,
         "preview_patch": preview_patch,

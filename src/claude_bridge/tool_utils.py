@@ -89,6 +89,13 @@ def sensitive_path_reason(target: Path) -> str | None:
     return None
 
 
+def sensitive_file_blocked_details(path: str) -> dict[str, Any]:
+    return {
+        "path": path,
+        "hint": "Sensitive files cannot be read, previewed, patched, or written through this tool.",
+    }
+
+
 def find_secret_patterns(content: str) -> list[str]:
     matches: list[str] = []
     for name, pattern in _SECRET_PATTERNS.items():

@@ -11,6 +11,7 @@ from claude_bridge.tool_utils import (
     json_response,
     path_outside_project_details,
     resolve_path,
+    sensitive_file_blocked_details,
     sensitive_path_reason,
 )
 
@@ -77,7 +78,7 @@ def _resolve_read_target(path: str) -> tuple[Path | None, str | None]:
             False,
             "Sensitive files are blocked from direct reading",
             code="sensitive_file_blocked",
-            details={"path": path, "resolved_path": str(target), "reason": sensitive_reason},
+            details=sensitive_file_blocked_details(path),
         )
     return target, None
 

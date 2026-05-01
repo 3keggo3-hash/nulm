@@ -37,6 +37,12 @@ from claude_bridge.file_tools import (
     list_directory as _file_list_directory,
 )
 from claude_bridge.file_tools import (
+    copy_path as _file_copy_path,
+)
+from claude_bridge.file_tools import (
+    move_file as _file_move_file,
+)
+from claude_bridge.file_tools import (
     patch_file as _file_patch_file,
 )
 from claude_bridge.file_tools import (
@@ -336,6 +342,8 @@ _FILE_TOOLS = register_file_tools(
     read_multiple_files_impl=_file_read_multiple_files,
     list_directory_impl=_file_list_directory,
     write_file_impl=_file_write_file,
+    move_file_impl=_file_move_file,
+    copy_path_impl=_file_copy_path,
     search_in_files_impl=_file_search_in_files,
     patch_file_impl=_file_patch_file,
     preview_patch_impl=_file_preview_patch,
@@ -347,6 +355,8 @@ read_file = _FILE_TOOLS["read_file"]
 read_multiple_files = _FILE_TOOLS["read_multiple_files"]
 list_directory = _FILE_TOOLS["list_directory"]
 write_file = _FILE_TOOLS["write_file"]
+move_file = _FILE_TOOLS["move_file"]
+copy_path = _FILE_TOOLS["copy_path"]
 search_in_files = _FILE_TOOLS["search_in_files"]
 patch_file = _FILE_TOOLS["patch_file"]
 preview_patch = _FILE_TOOLS["preview_patch"]

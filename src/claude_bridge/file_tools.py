@@ -28,13 +28,14 @@ from claude_bridge.tool_utils import (
     require_approval,
     resolve_path,
     safe_read_text,
+    sensitive_file_blocked_details,
     sensitive_path_reason,
 )
 
 _MAX_SEARCH_RESULTS = 200
 _MAX_READ_FILE_LINES = 200
 _MAX_LIST_DIRECTORY_ENTRIES = 200
-_WRITE_FILE_WARNING_LINES = 50
+_WRITE_FILE_WARNING_LINES = 500
 _MAX_MULTI_FILE_READS = 20
 _git_commit = git_commit
 _LAST_BRIDGE_CHANGE_LOCK = threading.Lock()
@@ -416,6 +417,14 @@ async def read_file(
             details=path_outside_project_details(path),
         )
 
+    sensitive_reason = sensitive_path_reason(target)
+    if sensitive_reason is not None:
+        return json_response(
+            False,
+            "Sensitive files are blocked from direct reading",
+            code="sensitive_file_blocked",
+            details=sensitive_file_blocked_details(path),
+        )
     if not target.exists():
         return json_response(
             False,
@@ -429,14 +438,6 @@ async def read_file(
             f"Not a file: {path}",
             code="not_a_file",
             details={"path": path},
-        )
-    sensitive_reason = sensitive_path_reason(target)
-    if sensitive_reason is not None:
-        return json_response(
-            False,
-            "Sensitive files are blocked from direct reading",
-            code="sensitive_file_blocked",
-            details={"path": path, "resolved_path": str(target), "reason": sensitive_reason},
         )
 
     try:
@@ -526,7 +527,7 @@ async def read_multiple_files(
                     "path": path,
                     "ok": False,
                     "code": "sensitive_file_blocked",
-                    "reason": sensitive_reason,
+                    "details": sensitive_file_blocked_details(path),
                 }
             )
             continue
@@ -627,9 +628,18 @@ async def write_file(
     content: str,
     overwrite: bool = False,
     create_parents: bool = False,
+    max_lines: int = _WRITE_FILE_WARNING_LINES,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
 ) -> str:
+    if max_lines < 1:
+        return json_response(
+            False,
+            "max_lines must be at least 1",
+            code="invalid_max_lines",
+            details={"path": path, "max_lines": max_lines},
+        )
+
     try:
         target = resolve_path(path)
     except PermissionError as exc:
@@ -646,7 +656,7 @@ async def write_file(
             False,
             "Sensitive file types cannot be written through this tool",
             code="sensitive_file_blocked",
-            details={"path": path, "resolved_path": str(target), "reason": sensitive_reason},
+            details=sensitive_file_blocked_details(path),
         )
 
     secret_patterns = find_secret_patterns(content)
@@ -691,9 +701,10 @@ async def write_file(
                 details={"path": path, "error": str(exc)},
             )
 
+    line_count = len(content.splitlines())
     rejection = await require_approval(
         "write_file",
-        {"file": path, "overwrite": overwrite},
+        {"file": path, "overwrite": overwrite, "line_count": line_count},
         rejection_message="Write rejected by user",
         rejection_details={"path": path},
     )
@@ -770,10 +781,32 @@ async def write_file(
         git_result=git_result,
     )
     warning = None
+    warnings: list[dict[str, Any]] = []
     if previous_exists:
         warning = "Prefer patch_file for existing files when making targeted edits so the model can keep changes small and reviewable."
-    elif len(content.splitlines()) > _WRITE_FILE_WARNING_LINES:
-        warning = f"Content is {len(content.splitlines())} lines. For large changes, prefer smaller patch_file edits when possible."
+        warnings.append(
+            {
+                "code": "prefer_patch_file_for_overwrite",
+                "message": warning,
+                "recommended_next_tool": "patch_file",
+            }
+        )
+    if line_count > max_lines:
+        max_lines_warning = (
+            f"Content has {line_count} lines (max_lines={max_lines}); consider patch_file "
+            "for targeted edits or increase max_lines."
+        )
+        if warning is None:
+            warning = max_lines_warning
+        warnings.append(
+            {
+                "code": "content_exceeds_max_lines",
+                "message": max_lines_warning,
+                "line_count": line_count,
+                "max_lines": max_lines,
+                "recommended_next_tool": "patch_file",
+            }
+        )
 
     return json_response(
         True,
@@ -786,6 +819,250 @@ async def write_file(
             "overwritten": previous_exists and overwrite,
             "git": git_result,
             "warning": warning,
+            "warnings": warnings,
+        },
+    )
+
+
+async def move_file(
+    source: str,
+    destination: str,
+    overwrite: bool = False,
+    create_parents: bool = False,
+    *,
+    git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+) -> str:
+    try:
+        source_path = resolve_path(source)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(source),
+        )
+    try:
+        destination_path = resolve_path(destination)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(destination),
+        )
+
+    for user_path, target in ((source, source_path), (destination, destination_path)):
+        if sensitive_path_reason(target) is not None:
+            return json_response(
+                False,
+                "Sensitive paths cannot be moved through this tool",
+                code="sensitive_file_blocked",
+                details=sensitive_file_blocked_details(user_path),
+            )
+
+    if not source_path.exists():
+        return json_response(
+            False,
+            f"Source not found: {source}",
+            code="source_not_found",
+            details={"source": source},
+        )
+    if source_path == destination_path:
+        return json_response(
+            False,
+            "Source and destination must be different",
+            code="same_path",
+            details={"source": source, "destination": destination},
+        )
+    if destination_path.exists() and not overwrite:
+        return json_response(
+            False,
+            f"Destination already exists: {destination}",
+            code="destination_exists",
+            details={"destination": destination},
+        )
+    if not destination_path.parent.exists() and not create_parents:
+        return json_response(
+            False,
+            f"Parent directory does not exist: {destination_path.parent}",
+            code="parent_directory_missing",
+            details={"destination": destination, "parent": str(destination_path.parent)},
+        )
+
+    rejection = await require_approval(
+        "move_file",
+        {"source": source, "destination": destination, "overwrite": overwrite},
+        rejection_message="Move rejected by user",
+        rejection_details={"source": source, "destination": destination},
+    )
+    if rejection is not None:
+        return rejection
+
+    if create_parents:
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if destination_path.exists() and overwrite:
+            if destination_path.is_dir():
+                shutil.rmtree(destination_path)
+            else:
+                destination_path.unlink()
+        shutil.move(str(source_path), str(destination_path))
+    except OSError as exc:
+        return json_response(
+            False,
+            f"Failed to move path: {exc}",
+            code="move_failed",
+            details={"source": source, "destination": destination},
+        )
+
+    try:
+        target_project_dir = infer_project_root(destination_path)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(destination),
+        )
+    git_results = [
+        git_commit_fn(source_path.as_posix(), project_dir=target_project_dir),
+        git_commit_fn(destination_path.as_posix(), project_dir=target_project_dir),
+    ]
+    return json_response(
+        True,
+        f"Moved path: {source} -> {destination}",
+        details={
+            "source": source,
+            "destination": destination,
+            "resolved_source": str(source_path),
+            "resolved_destination": str(destination_path),
+            "overwritten": overwrite,
+            "git": git_results,
+        },
+    )
+
+
+async def copy_path(
+    source: str,
+    destination: str,
+    overwrite: bool = False,
+    create_parents: bool = False,
+    *,
+    git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+) -> str:
+    try:
+        source_path = resolve_path(source)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(source),
+        )
+    try:
+        destination_path = resolve_path(destination)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(destination),
+        )
+
+    for user_path, target in ((source, source_path), (destination, destination_path)):
+        if sensitive_path_reason(target) is not None:
+            return json_response(
+                False,
+                "Sensitive paths cannot be copied through this tool",
+                code="sensitive_file_blocked",
+                details=sensitive_file_blocked_details(user_path),
+            )
+
+    if not source_path.exists():
+        return json_response(
+            False,
+            f"Source not found: {source}",
+            code="source_not_found",
+            details={"source": source},
+        )
+    if source_path == destination_path:
+        return json_response(
+            False,
+            "Source and destination must be different",
+            code="same_path",
+            details={"source": source, "destination": destination},
+        )
+    if destination_path.exists() and not overwrite:
+        return json_response(
+            False,
+            f"Destination already exists: {destination}",
+            code="destination_exists",
+            details={"destination": destination},
+        )
+    if not destination_path.parent.exists() and not create_parents:
+        return json_response(
+            False,
+            f"Parent directory does not exist: {destination_path.parent}",
+            code="parent_directory_missing",
+            details={"destination": destination, "parent": str(destination_path.parent)},
+        )
+
+    rejection = await require_approval(
+        "copy_path",
+        {"source": source, "destination": destination, "overwrite": overwrite},
+        rejection_message="Copy rejected by user",
+        rejection_details={"source": source, "destination": destination},
+    )
+    if rejection is not None:
+        return rejection
+
+    if create_parents:
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if source_path.is_dir():
+            if destination_path.exists() and overwrite:
+                if destination_path.is_dir():
+                    shutil.rmtree(destination_path)
+                else:
+                    destination_path.unlink()
+            shutil.copytree(source_path, destination_path)
+        else:
+            if destination_path.exists() and destination_path.is_dir():
+                return json_response(
+                    False,
+                    f"Destination is a directory: {destination}",
+                    code="destination_is_directory",
+                    details={"destination": destination},
+                )
+            shutil.copy2(source_path, destination_path)
+    except OSError as exc:
+        return json_response(
+            False,
+            f"Failed to copy path: {exc}",
+            code="copy_failed",
+            details={"source": source, "destination": destination},
+        )
+
+    try:
+        target_project_dir = infer_project_root(destination_path)
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(destination),
+        )
+    git_result = git_commit_fn(destination_path.as_posix(), project_dir=target_project_dir)
+    return json_response(
+        True,
+        f"Copied path: {source} -> {destination}",
+        details={
+            "source": source,
+            "destination": destination,
+            "resolved_source": str(source_path),
+            "resolved_destination": str(destination_path),
+            "overwritten": overwrite,
+            "git": git_result,
         },
     )
 
@@ -1021,7 +1298,7 @@ async def patch_file(
             False,
             "Sensitive files are blocked from direct patching",
             code="sensitive_file_blocked",
-            details={"path": file, "resolved_path": str(target), "reason": sensitive_reason},
+            details=sensitive_file_blocked_details(file),
         )
 
     try:
@@ -1129,7 +1406,7 @@ async def preview_patch(file: str, search: str, replace: str) -> str:
             False,
             "Sensitive files are blocked from direct previewing",
             code="sensitive_file_blocked",
-            details={"path": file, "resolved_path": str(target), "reason": sensitive_reason},
+            details=sensitive_file_blocked_details(file),
         )
 
     try:
