@@ -447,14 +447,14 @@ async def index_codebase(path: str = ".") -> str:
         )
         return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
 
-        if not isinstance(payload, dict) or "files" not in payload:
-            result = _json_response(
-                False,
-                "Index build returned unexpected payload",
-                code="invalid_index_payload",
-                details={"path": path},
-            )
-            return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
+    if not isinstance(payload, dict) or "files" not in payload:
+        result = _json_response(
+            False,
+            "Index build returned unexpected payload",
+            code="invalid_index_payload",
+            details={"path": path},
+        )
+        return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
 
     result = _json_response(
         True,

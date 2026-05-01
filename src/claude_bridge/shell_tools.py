@@ -342,8 +342,13 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     _WRAPPER_COMMANDS = {"nohup", "setsid", "script", "timeout"}
     if head in _WRAPPER_COMMANDS:
         return f"{head} wrapper"
+    if head == "find" and re.search(
+        r"(?:^|\s)find\b.*\|\s*xargs\b.*\brm\b",
+        normalized,
+    ):
+        return "find to xargs rm"
     if head == "find" and any(
-        token.startswith("-exec") or token == "-delete" or token.startswith("+")
+        token.startswith("-exec") or token == "-delete" or token == "+"
         for token in lower_tokens[1:]
     ):
         return "find -exec"

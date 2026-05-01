@@ -10,6 +10,7 @@ import pytest
 
 from claude_bridge import insights as insights_module
 from claude_bridge import indexing as indexing_module
+from claude_bridge import file_tools as file_tools_module
 from claude_bridge import server as mcp_server
 from claude_bridge import workflow_tools as workflow_tools_module
 
@@ -169,6 +170,17 @@ class TestWriteTool:
     async def test_write_rejects_existing_without_overwrite(self, temp_project):
         (temp_project / "notes.txt").write_text("old")
         payload = parse_payload(await mcp_server.write_file("notes.txt", "new"))
+        assert payload["ok"] is False
+        assert payload["code"] == "file_exists"
+
+    async def test_write_handles_file_created_after_approval(self, temp_project, monkeypatch):
+        def file_created_between_checks(*args, **kwargs):
+            raise FileExistsError("created concurrently")
+
+        monkeypatch.setattr(file_tools_module, "_write_text_exact", file_created_between_checks)
+
+        payload = parse_payload(await mcp_server.write_file("notes.txt", "new"))
+
         assert payload["ok"] is False
         assert payload["code"] == "file_exists"
 
@@ -350,6 +362,14 @@ class TestIndexTool:
         payload = parse_payload(await mcp_server.index_codebase("notes.txt"))
         assert payload["ok"] is False
         assert payload["code"] == "not_a_directory"
+
+    async def test_index_codebase_rejects_unexpected_payload(self, temp_project, monkeypatch):
+        monkeypatch.setattr(mcp_server, "_build_index", lambda path: {"unexpected": []})
+
+        payload = parse_payload(await mcp_server.index_codebase("."))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_index_payload"
 
     async def test_index_codebase_respects_gitignore(self, temp_project):
         (temp_project / ".gitignore").write_text("ignored.py\nsecret.txt\n")

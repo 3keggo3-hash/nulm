@@ -195,8 +195,9 @@ def _log_fuzzy_match_attempt(*, file: str, search: str, suggestions: list[str]) 
         return
 
 
-def _write_text_exact(target: Path, content: str) -> None:
-    with target.open("w", encoding="utf-8", newline="") as handle:
+def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) -> None:
+    mode = "x" if exclusive else "w"
+    with target.open(mode, encoding="utf-8", newline="") as handle:
         handle.write(content)
 
 
@@ -716,7 +717,28 @@ async def write_file(
             details={"path": path},
         )
     try:
-        _write_text_exact(target, content)
+        _write_text_exact(target, content, exclusive=not overwrite)
+    except FileExistsError:
+        if target.is_dir():
+            return json_response(
+                False,
+                f"Not a file: {path}",
+                code="not_a_file",
+                details={"path": path},
+            )
+        return json_response(
+            False,
+            f"File already exists: {path}",
+            code="file_exists",
+            details={"path": path},
+        )
+    except IsADirectoryError:
+        return json_response(
+            False,
+            f"Not a file: {path}",
+            code="not_a_file",
+            details={"path": path},
+        )
     except OSError as exc:
         return json_response(
             False,
