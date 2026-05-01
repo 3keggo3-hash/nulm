@@ -609,6 +609,7 @@ _META_TOOLS = register_meta_tools(
 )
 get_recent_tool_calls = _META_TOOLS["get_recent_tool_calls"]
 session_insights = _META_TOOLS["session_insights"]
+activity_summary = _META_TOOLS["activity_summary"]
 usage_insights = _META_TOOLS["usage_insights"]
 bridge_status = _META_TOOLS["bridge_status"]
 tools_overview = _META_TOOLS["tools_overview"]

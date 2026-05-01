@@ -164,6 +164,8 @@ Claude can call these tools from a normal MCP conversation:
 - `find_relevant_files(query="login auth", path="src")` - rank likely relevant files.
 - `workspace_status()` - show active project root and allowed roots.
 - `switch_project_root(path="/absolute/path/to/project")` - switch to another allowed root.
+- `activity_summary()` - summarize recent touched paths, commands, writes, patches, approval
+  rejections, risky actions, and the short session timeline.
 - `run_workflow(mode="review", target="src/")` - generate a structured workflow prompt.
 - `run_workflow(mode="review", target="src/", execute=true)` - run the safe read-only discovery
   step for a workflow.
@@ -373,9 +375,114 @@ Notes:
 - **Sensitive file protection**: `.env`, `.pem`, `.key`, `id_rsa`, `claude_desktop_config.json`,
   and similar files are blocked from direct reads/writes/patches. Error responses avoid leaking
   resolved paths or internal sensitive-match reasons.
-- **Audit logging**: tool calls are recorded without storing large file contents in audit details.
+- **Audit logging**: tool calls are recorded as structured, masked audit records.
 - **Optional dependency safety**: optional readers fail with structured `dependency_missing` errors
   instead of import-time crashes.
+
+### Custom Guard Policy
+
+Add `.claude-bridge-guard.json` to the active project root to make the guard layer stricter without
+writing code. Custom policy can add blocks, but it cannot disable the built-in safety rules.
+
+```json
+{
+  "blocked_shell_patterns": ["npm publish*", "git push*"],
+  "sensitive_path_patterns": ["private/**", "*.sqlite"],
+  "secret_patterns": {
+    "internal_ticket": "TICKET-[0-9]{4}"
+  }
+}
+```
+
+- `blocked_shell_patterns` uses shell-style wildcards against the normalized command string.
+- `sensitive_path_patterns` uses shell-style wildcards against project-relative paths and filenames.
+- `secret_patterns` adds named regular expressions checked before writing file content.
+- To use a policy file outside the project root, set `CLAUDE_BRIDGE_GUARD_POLICY`.
+
+### Rule Writing Guide
+
+Policy files can also define ordered `rules`. The first matching rule wins. Conditions inside a
+rule are combined with AND. Rule actions are `deny`, `ask`, or `allow`; built-in hard denies such as
+dangerous shell patterns, sensitive paths, workspace escapes, and secret-like content still win over
+custom `allow` rules.
+
+```json
+{
+  "rules": [
+    {
+      "name": "deny-risky-shell",
+      "scope": "run_shell",
+      "action": "deny",
+      "risk_level": "high",
+      "conditions": [
+        {"type": "regex", "field": "command", "pattern": "npm\\s+publish"}
+      ]
+    },
+    {
+      "name": "review-new-shell-scripts",
+      "scope": "write_file",
+      "action": "ask",
+      "conditions": [
+        {"type": "file_exists", "field": "path", "value": false},
+        {"type": "extension", "field": "path", "values": [".sh"]}
+      ]
+    },
+    {
+      "name": "allow-safe-validation",
+      "scope": "run_shell",
+      "action": "allow",
+      "risk_level": "low",
+      "conditions": [
+        {"type": "field_equals", "field": "command", "value": "npm test"}
+      ]
+    }
+  ]
+}
+```
+
+Supported condition types are `tool`, `field_equals`, `field_contains`, `regex`, `glob`,
+`extension`, `file_exists`, `file_size`, `sensitive_path`, and `content_contains`.
+
+Validate and dry-run policy decisions without executing tools:
+
+```bash
+claude-bridge policy validate --path .claude-bridge-guard.json
+claude-bridge policy simulate --path .claude-bridge-guard.json --tool run_shell --param command="npm test"
+```
+
+### Audit Logs and Replay
+
+Audit records are JSONL entries stored locally. Each record includes a `record_id`, timestamp,
+session id, tool name, summarized params, result summary, duration, telemetry, hashes of summarized
+params/result, replay context, and normalized policy decision fields when a tool response carries a
+decision (`decision_action`, `decision_source`, `decision_risk_level`, reason, risk reasons, and
+metadata). Audit records do not intentionally store full tool results, large file contents, or raw
+secret values.
+
+Secret masking is applied before audit records are written. Sensitive keys such as `api_key`,
+`token`, `secret`, `password`, `authorization`, and `cookie` are replaced with deterministic
+redaction metadata containing a hash and length. Secret-like string patterns such as key/value
+assignments, AWS access key ids, and GitHub tokens are also redacted in previews. Masking is a
+guardrail over summarized audit data; it is not a full PII classifier or encryption layer, and very
+novel secret formats may require custom guard policy patterns.
+
+Audit inspection keeps the existing latest-session behavior and can be filtered:
+
+```bash
+claude-bridge audit --last --tool run_shell --decision deny --risk high --source rule
+```
+
+Replay re-evaluates one audit record against the current deterministic rule engine without running
+the original tool:
+
+```bash
+claude-bridge replay --record-id <record_id>
+```
+
+Replay is intentionally limited to deterministic rules and the masked params saved in the audit
+record. It does not replay approval prompts, AI evaluators, filesystem snapshots, shell commands, or
+tool side effects. If the current policy no longer matches the masked context, replay reports that
+the decision changed instead of silently allowing the action.
 
 ## Development and Validation
 
@@ -434,6 +541,16 @@ Claude Desktop may fail to execute unsigned binaries directly from a virtualenv.
 ```
 
 Generate this style of config with `claude-bridge setup`.
+
+### What did the bridge do recently?
+
+Ask the client to call `activity_summary()` when you want a user-facing recap of recent local
+activity, such as "which files did you touch?" or "which commands did you run?". From the shell,
+use:
+
+```bash
+claude-bridge audit --last
+```
 
 ### Where are MCP logs?
 

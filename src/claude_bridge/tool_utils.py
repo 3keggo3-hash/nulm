@@ -10,10 +10,18 @@ from typing import Any, Awaitable, Callable
 
 from claude_bridge.config import (
     allowed_roots,
-    approval_mode,
     apply_config,
+    approval_mode,
     project_dir,
     shell_timeout,
+)
+from claude_bridge.guard_policy import (
+    DecisionAction,
+    DecisionSource,
+    PolicyDecision,
+    RiskLevel,
+    custom_secret_pattern_matches,
+    custom_sensitive_path_reason,
 )
 from claude_bridge.indexing import clear_index_cache
 
@@ -56,14 +64,37 @@ def json_response(
     *,
     details: dict[str, Any] | None = None,
     code: str | None = None,
+    decision: PolicyDecision | dict[str, Any] | None = None,
+    decision_in_details: bool = False,
 ) -> str:
+    """Build a JSON response string, optionally enriched with policy decision metadata.
+
+    When a *decision* is provided it is serialized under the ``"decision"`` key
+    using the standard fields: ``action``, ``source``, ``risk_level``, ``reason``,
+    and ``risk_reasons``.  The existing ``code`` / ``message`` / ``details`` shape
+    is never altered, so existing callers are unaffected.
+    """
+    response_details = details or {}
+    decision_payload: dict[str, Any] | None = None
+    if decision is not None:
+        if isinstance(decision, PolicyDecision):
+            decision_payload = decision.to_dict()
+        elif isinstance(decision, dict):
+            decision_payload = decision
+        else:
+            decision_payload = dict(decision)  # type: ignore[call-overload]
+        if decision_in_details:
+            response_details = dict(response_details)
+            response_details["decision"] = decision_payload
     payload: dict[str, Any] = {
         "ok": ok,
         "message": message,
-        "details": details or {},
+        "details": response_details,
     }
     if code:
         payload["code"] = code
+    if decision_payload is not None:
+        payload["decision"] = decision_payload
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -86,6 +117,9 @@ def sensitive_path_reason(target: Path) -> str | None:
         return name
     if any(name.endswith(suffix) for suffix in _SENSITIVE_SUFFIXES):
         return target.suffix.lower()
+    custom_reason = custom_sensitive_path_reason(target)
+    if custom_reason is not None:
+        return custom_reason
     return None
 
 
@@ -101,6 +135,7 @@ def find_secret_patterns(content: str) -> list[str]:
     for name, pattern in _SECRET_PATTERNS.items():
         if re.search(pattern, content):
             matches.append(name)
+    matches.extend(custom_secret_pattern_matches(content))
     return matches
 
 
@@ -213,3 +248,64 @@ def current_allowed_roots() -> list[Path]:
 
 def current_shell_timeout() -> int:
     return shell_timeout()
+
+
+# ---------------------------------------------------------------------------
+# Path and file-operation decision adapters (Paket 1D)
+# ---------------------------------------------------------------------------
+
+
+def path_guard_decision(
+    user_path: str,
+    operation: str = "access",
+    *,
+    sensitive_reason: str | None = None,
+    outside_workspace: bool = False,
+) -> PolicyDecision:
+    """Evaluate a path access attempt and produce a structured PolicyDecision.
+
+    This is the central decision adapter for all file/path tool operations.
+    It maps workspace-boundary violations and sensitive-path blocks into the
+    standard allow/deny/ask decision model.
+
+    Args:
+        user_path: The original path string supplied by the caller.
+        operation: A short label for the operation (e.g. ``"read"``, ``"write"``).
+        sensitive_reason: If the path matched a sensitive-file pattern, the reason
+            string (e.g. ``".env"`` or ``"custom policy: private/**"``).
+        outside_workspace: ``True`` when the resolved path falls outside every
+            allowed root.
+
+    Returns:
+        A ``PolicyDecision`` with action DENY for blocked paths, ALLOW otherwise.
+    """
+    if outside_workspace:
+        return PolicyDecision(
+            action=DecisionAction.DENY,
+            source=DecisionSource.BUILTIN_GUARD,
+            risk_level=RiskLevel.HIGH,
+            reason=f"Path '{user_path}' is outside allowed workspace roots",
+            risk_reasons=["path outside allowed roots"],
+            metadata={"path": user_path, "operation": operation},
+        )
+    if sensitive_reason is not None:
+        return PolicyDecision(
+            action=DecisionAction.DENY,
+            source=DecisionSource.BUILTIN_GUARD,
+            risk_level=RiskLevel.HIGH,
+            reason=f"Sensitive path blocked: {sensitive_reason}",
+            risk_reasons=[f"sensitive file pattern matched: {sensitive_reason}"],
+            metadata={
+                "path": user_path,
+                "sensitive_reason": sensitive_reason,
+                "operation": operation,
+            },
+        )
+    return PolicyDecision(
+        action=DecisionAction.ALLOW,
+        source=DecisionSource.DEFAULT,
+        risk_level=RiskLevel.LOW,
+        reason=f"Path '{user_path}' is within allowed workspace",
+        risk_reasons=[],
+        metadata={"path": user_path, "operation": operation},
+    )

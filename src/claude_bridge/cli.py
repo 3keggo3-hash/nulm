@@ -18,8 +18,19 @@ from claude_bridge import __version__
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
 from claude_bridge.doctor import build_doctor_report
+from claude_bridge.guard_policy import (
+    DecisionAction,
+    DecisionSource,
+    RiskLevel,
+    ToolRequestContext,
+    builtin_deny_decision,
+    evaluate_rules,
+    validate_guard_policy_file,
+)
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
+policy_app = typer.Typer(help="Validate and simulate local guard policy files")
+app.add_typer(policy_app, name="policy")
 console = Console()
 
 
@@ -107,6 +118,128 @@ def _benchmark_runtime() -> tuple[Any, Any, Any]:
         compare_benchmark_to_baseline,
         load_benchmark_profile,
     )
+
+
+def _parse_policy_params(param: list[str]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for item in param:
+        if "=" not in item:
+            raise typer.BadParameter("--param values must use key=value syntax")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise typer.BadParameter("--param key must not be empty")
+        parsed[key] = value
+    return parsed
+
+
+def _simulate_builtin_decision(tool: str, params: dict[str, Any]) -> Any:
+    if tool == "run_shell":
+        from claude_bridge.shell_tools import analyze_shell_command
+
+        command = str(params.get("command", ""))
+        analysis = analyze_shell_command(command)
+        if not analysis["ok"]:
+            return builtin_deny_decision(
+                str(analysis["message"]),
+                risk_level=RiskLevel(str(analysis["details"].get("risk_level", "high"))),
+                risk_reasons=[
+                    str(item) for item in analysis["details"].get("risk_reasons", [])
+                ],
+                metadata={"tool": tool, "command": command, "source": "builtin_guard"},
+            )
+    return None
+
+
+@policy_app.command("validate")
+def policy_validate(
+    path: Path = typer.Option(..., "--path", help="Policy file to validate"),
+) -> None:
+    """Validate a JSON or YAML guard policy file."""
+    policy = validate_guard_policy_file(path.resolve())
+    if policy.valid:
+        console.print("[green]Policy valid[/green]")
+    else:
+        console.print("[red]Policy invalid[/red]")
+    console.print(f"Path: {policy.path}")
+    console.print(f"Rules: {policy.rule_count}")
+    console.print(f"Warnings: {policy.warning_count}")
+    console.print(f"Errors: {policy.error_count}")
+    for warning in policy.warnings:
+        console.print(f"[yellow]warning:[/yellow] {escape(warning)}")
+    for error in policy.errors:
+        console.print(f"[red]error:[/red] {escape(error)}")
+    if not policy.valid:
+        raise typer.Exit(code=1)
+
+
+@policy_app.command("simulate")
+def policy_simulate(
+    path: Path = typer.Option(..., "--path", help="Policy file to simulate"),
+    tool: str = typer.Option(..., "--tool", help="Tool name, for example run_shell"),
+    param: list[str] = typer.Option(
+        None,
+        "--param",
+        help="Tool parameter in key=value form. Can be repeated.",
+    ),
+) -> None:
+    """Evaluate a tool request against policy without running the tool."""
+    try:
+        params = _parse_policy_params(param or [])
+    except typer.BadParameter as exc:
+        console.print(f"[red]Policy simulation failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    policy = validate_guard_policy_file(path.resolve())
+    if not policy.valid:
+        console.print("[red]Policy simulation failed:[/red] policy is invalid")
+        for error in policy.errors:
+            console.print(f"[red]error:[/red] {escape(error)}")
+        raise typer.Exit(code=1)
+
+    builtin_decision = _simulate_builtin_decision(tool, params)
+    if builtin_decision is not None:
+        decision = builtin_decision
+    else:
+        context = ToolRequestContext(
+            tool_name=tool,
+            params=params,
+            project_dir=str(path.resolve().parent),
+            allowed_roots=[str(path.resolve().parent)],
+        )
+        decision = evaluate_rules(context, policy)
+        if decision is None:
+            decision = PolicySimulationDefault.allow(tool)
+
+    console.print(f"Action: {decision.action.value}")
+    console.print(f"Source: {decision.source.value}")
+    console.print(f"Risk: {decision.risk_level.value}")
+    console.print(f"Reason: {escape(decision.reason)}")
+    if decision.risk_reasons:
+        console.print("Risk reasons:")
+        for reason in decision.risk_reasons:
+            console.print(f"  - {escape(reason)}")
+    metadata = decision.metadata
+    rule = metadata.get("rule_name")
+    if rule:
+        console.print(f"Rule: {escape(str(rule))}")
+    if metadata:
+        console.print("Metadata:")
+        console.print_json(data=metadata)
+
+
+class PolicySimulationDefault:
+    @staticmethod
+    def allow(tool: str) -> Any:
+        from claude_bridge.guard_policy import PolicyDecision
+
+        return PolicyDecision(
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.DEFAULT,
+            risk_level=RiskLevel.LOW,
+            reason="No policy rule matched and no built-in hard deny was triggered",
+            risk_reasons=[],
+            metadata={"tool": tool},
+        )
 
 
 def _write_desktop_config(
@@ -562,11 +695,33 @@ def audit(
     last: bool = typer.Option(True, "--last", help="Show the latest audit session summary"),
     limit: int = typer.Option(20, help="How many recent audit records to show"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+    tool: str | None = typer.Option(None, "--tool", help="Filter by tool name"),
+    decision: DecisionAction | None = typer.Option(
+        None,
+        "--decision",
+        help="Filter by policy decision: allow, deny, or ask",
+    ),
+    risk: RiskLevel | None = typer.Option(
+        None,
+        "--risk",
+        help="Filter by risk level: low, medium, high, or critical",
+    ),
+    source: DecisionSource | None = typer.Option(
+        None,
+        "--source",
+        help="Filter by decision source",
+    ),
 ) -> None:
     """Show the most recent Claude Bridge audit session summary."""
     if not last:
         console.print("[yellow]Only --last is currently supported.[/yellow]")
-    summary = summarize_session(limit=max(1, limit))
+    summary = summarize_session(
+        limit=max(1, limit),
+        tool_name=tool,
+        decision_action=decision.value if decision else None,
+        decision_risk_level=risk.value if risk else None,
+        decision_source=source.value if source else None,
+    )
     if json_output:
         console.print_json(json.dumps(summary, ensure_ascii=False))
         return
@@ -596,16 +751,145 @@ def audit(
         console.print("Tool counts:")
         for tool_name, count in sorted(summary["tool_counts"].items()):
             console.print(f"  {tool_name}: {count}")
+    activity = summary.get("activity", {})
+    if isinstance(activity, dict):
+        touched_paths = activity.get("touched_paths", [])
+        if touched_paths:
+            console.print("\nTouched paths:")
+            for path in touched_paths[:10]:
+                console.print(f"  {escape(str(path))}")
+        commands = activity.get("commands", [])
+        if commands:
+            console.print("\nCommands:")
+            for item in commands[:10]:
+                status = "ok" if item.get("ok", False) else "error"
+                command = escape(str(item.get("command", "")))
+                risk = item.get("risk_level")
+                risk_text = f" risk={escape(str(risk))}" if risk else ""
+                console.print(f"  [{status}] {command}{risk_text}")
+        writes = activity.get("writes", [])
+        if writes:
+            console.print("\nWrites and patches:")
+            for item in writes[:10]:
+                status = "ok" if item.get("ok", False) else "error"
+                paths = ", ".join(str(path) for path in item.get("paths", []))
+                console.print(
+                    f"  [{status}] {item.get('tool_name')} {escape(paths)}"
+                )
+        approval_rejections = activity.get("approval_rejections", [])
+        if approval_rejections:
+            console.print("\nApproval rejections:")
+            for item in approval_rejections[:10]:
+                console.print(
+                    f"  [error] {item.get('timestamp')} {item.get('tool_name')}"
+                )
+        risky_actions = activity.get("risky_actions", [])
+        if risky_actions:
+            console.print("\nRisky actions:")
+            for item in risky_actions[:10]:
+                console.print(
+                    f"  [yellow]{item.get('risk_level')}[/yellow] "
+                    f"{item.get('tool_name')} {escape(str(item.get('message', '')))}"
+                )
+        policy = activity.get("policy", {})
+        if isinstance(policy, dict):
+            decision_counts = policy.get("decision_counts", {})
+            risk_counts = policy.get("risk_counts", {})
+            if decision_counts or risk_counts:
+                console.print("\nPolicy decisions:")
+                if decision_counts:
+                    console.print(f"  decisions: {escape(str(decision_counts))}")
+                if risk_counts:
+                    console.print(f"  risks: {escape(str(risk_counts))}")
+                console.print(f"  rule decisions: {policy.get('rule_decision_count', 0)}")
+        validation = activity.get("validation", {})
+        if isinstance(validation, dict) and validation.get("has_changes"):
+            console.print("\nValidation:")
+            if validation.get("validation_after_changes"):
+                console.print("  [ok] Validation ran after the latest changes.")
+            else:
+                console.print("  [warning] Changes have not been validated yet.")
+                recommended = validation.get("recommended_next_step")
+                if recommended:
+                    console.print(f"  {escape(str(recommended))}")
+            validation_commands = validation.get("validation_commands", [])
+            for item in validation_commands[:10]:
+                status = "ok" if item.get("ok", False) else "error"
+                command = escape(str(item.get("command", "")))
+                console.print(f"  [{status}] {command}")
     if summary["recent_records"]:
         console.print("\nRecent calls:")
         for record in summary["recent_records"]:
             result = record.get("result", {})
             status = "ok" if result.get("ok", False) else "error"
             message = result.get("message", "")
+            decision_text = ""
+            if record.get("decision_action"):
+                decision_text = (
+                    f" decision={record.get('decision_action')}"
+                    f"/{record.get('decision_risk_level')}"
+                    f"/{record.get('decision_source')}"
+                )
             console.print(
                 f"  [{status}] {record.get('timestamp')} {record.get('tool_name')} "
-                f"({record.get('duration_ms')}ms) {message}"
+                f"({record.get('duration_ms')}ms){decision_text} {message}"
             )
+
+
+@app.command()
+def replay(
+    record_id: str = typer.Option(..., "--record-id", help="Audit record id to replay"),
+    policy_path: Path | None = typer.Option(
+        None,
+        "--policy-path",
+        help="Optional policy file. Defaults to the active guard policy.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Replay an audit record against the deterministic rule engine."""
+    from claude_bridge.replay import replay_record_id
+
+    result = replay_record_id(record_id, policy_path=policy_path)
+    if result is None:
+        console.print(f"[red]Audit record not found:[/red] {escape(record_id)}")
+        raise typer.Exit(code=1)
+    if json_output:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+        return
+
+    console.print(
+        Panel.fit(
+            Text.assemble(("Audit Replay ", "bold cyan"), (record_id, "green")),
+            title="Replay",
+            border_style="cyan",
+        )
+    )
+    console.print(f"Tool: [green]{escape(str(result['tool_name']))}[/green]")
+    console.print(f"Changed: [{'red' if result['changed'] else 'green'}]{result['changed']}[/]")
+    console.print(f"Reason: {escape(str(result['change_reason']))}")
+    original = result.get("original_decision") or {}
+    replayed = result.get("replayed_decision") or {}
+    console.print("Original:")
+    console.print(
+        "  "
+        f"action={original.get('action')} "
+        f"source={original.get('source')} "
+        f"risk={original.get('risk_level')}"
+    )
+    console.print(f"  reason={escape(str(original.get('reason', '')))}")
+    console.print("Replayed:")
+    console.print(
+        "  "
+        f"action={replayed.get('action')} "
+        f"source={replayed.get('source')} "
+        f"risk={replayed.get('risk_level')}"
+    )
+    console.print(f"  reason={escape(str(replayed.get('reason', '')))}")
+    limitations = result.get("limitations", [])
+    if limitations:
+        console.print("Limitations:")
+        for limitation in limitations:
+            console.print(f"  - {escape(str(limitation))}")
 
 
 @app.command()

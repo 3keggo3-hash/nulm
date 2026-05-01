@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 
+from claude_bridge.guard_policy import default_allow_decision, load_guard_policy
+
 
 def register_meta_tools(
     *,
@@ -47,20 +49,45 @@ def register_meta_tools(
         )
     )
     async def get_recent_tool_calls(
-        limit: int = 20, tool_name: str | None = None
+        limit: int = 20,
+        tool_name: str | None = None,
+        ok: bool | None = None,
+        decision_action: str | None = None,
+        decision_source: str | None = None,
+        decision_risk_level: str | None = None,
+        since: str | None = None,
     ) -> str:
         started_at = time.perf_counter()
         safe_limit = max(1, min(limit, 100))
+        audit_params: dict[str, Any] = {"limit": safe_limit}
+        if tool_name is not None:
+            audit_params["tool_name"] = tool_name
+        if ok is not None:
+            audit_params["ok"] = ok
+        if decision_action is not None:
+            audit_params["decision_action"] = decision_action
+        if decision_source is not None:
+            audit_params["decision_source"] = decision_source
+        if decision_risk_level is not None:
+            audit_params["decision_risk_level"] = decision_risk_level
+        if since is not None:
+            audit_params["since"] = since
         result = json_response(
             True,
             "Recent tool calls loaded",
             details=get_recent_tool_calls_impl(
-                limit=safe_limit, tool_name=tool_name
+                limit=safe_limit,
+                tool_name=tool_name,
+                ok=ok,
+                decision_action=decision_action,
+                decision_source=decision_source,
+                decision_risk_level=decision_risk_level,
+                since=since,
             ),
         )
         return audit_tool_call(
             "get_recent_tool_calls",
-            {"limit": safe_limit, "tool_name": tool_name},
+            audit_params,
             result,
             started_at=started_at,
         )
@@ -90,6 +117,44 @@ def register_meta_tools(
 
     @mcp.tool(
         **tool_options(
+            "Show a user-facing activity summary for the current or latest audit "
+            "session: touched paths, shell commands, writes, patches, approval "
+            "rejections, risky actions, and a compact timeline. Use this when the "
+            "user asks what Claude Bridge did recently.",
+            read_only=True,
+        )
+    )
+    async def activity_summary(limit: int = 50) -> str:
+        started_at = time.perf_counter()
+        safe_limit = max(1, min(limit, 200))
+        summary = summarize_session_impl(limit=safe_limit)
+        activity = summary.get("activity", {})
+        result = json_response(
+            True,
+            "Activity summary loaded",
+            details={
+                "session_id": summary["session_id"],
+                "total_records": summary["total_records"],
+                "returned_records": summary["returned_records"],
+                "failure_count": summary["failure_count"],
+                "activity": activity,
+                "suggested_response_topics": [
+                    "Summarize touched files or directories.",
+                    "Call out shell commands and whether they succeeded.",
+                    "Mention writes, patches, approval rejections, or risky actions.",
+                    "Offer validation if files were changed but no validation ran.",
+                ],
+            },
+        )
+        return audit_tool_call(
+            "activity_summary",
+            {"limit": safe_limit},
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
             "Show usage-focused telemetry with token hotspots and truncation signals. "
             "Use this when you want to reduce cost or identify noisy tools.",
             read_only=True,
@@ -102,9 +167,7 @@ def register_meta_tools(
         telemetry = summary.get("telemetry", {})
         top_tools: list[dict[str, Any]] = []
         if isinstance(telemetry, dict):
-            tool_estimated_tokens = telemetry.get(
-                "tool_estimated_tokens", {}
-            )
+            tool_estimated_tokens = telemetry.get("tool_estimated_tokens", {})
             if isinstance(tool_estimated_tokens, dict):
                 top_tools = [
                     {
@@ -149,38 +212,26 @@ def register_meta_tools(
         config_snapshot = current_config()
         session_summary = summarize_session_impl(limit=20)
         smart_avail = smart_available()
-        profile_name = str(
-            config_snapshot.get("context_budget_profile", "balanced")
-        )
+        profile_name = str(config_snapshot.get("context_budget_profile", "balanced"))
         profile = budget_profiles.get(profile_name, {})
         result = json_response(
             True,
             "Bridge status loaded",
             details={
                 "active_project_dir": str(config_snapshot["project_dir"]),
-                "allowed_roots": [
-                    str(root) for root in config_snapshot["allowed_roots"]
-                ],
+                "allowed_roots": [str(root) for root in config_snapshot["allowed_roots"]],
                 "approval_preset": config_snapshot["approval_preset"],
                 "auto_approve": config_snapshot["auto_approve"],
-                "client_managed_approval": config_snapshot[
-                    "client_managed_approval"
-                ],
+                "client_managed_approval": config_snapshot["client_managed_approval"],
                 "context_budget_profile": profile_name,
-                "context_budget_tokens": profile.get(
-                    "context_budget_tokens"
-                ),
+                "context_budget_tokens": profile.get("context_budget_tokens"),
                 "budget_profile_description": profile.get("description"),
-                "intent_compaction_enabled": config_snapshot[
-                    "intent_compaction_enabled"
-                ],
+                "intent_compaction_enabled": config_snapshot["intent_compaction_enabled"],
                 "smart_features": smart_avail,
                 "session_telemetry": session_summary.get("telemetry", {}),
             },
         )
-        return audit_tool_call(
-            "bridge_status", {}, result, started_at=started_at
-        )
+        return audit_tool_call("bridge_status", {}, result, started_at=started_at)
 
     @mcp.tool(
         **tool_options(
@@ -239,9 +290,7 @@ def register_meta_tools(
                 ],
             },
         )
-        return audit_tool_call(
-            "tools_overview", {}, result, started_at=started_at
-        )
+        return audit_tool_call("tools_overview", {}, result, started_at=started_at)
 
     @mcp.tool(
         **tool_options(
@@ -259,11 +308,10 @@ def register_meta_tools(
             details={
                 **snapshot,
                 "project_dir": str(snapshot["project_dir"]),
-                "allowed_roots": [
-                    str(root) for root in snapshot["allowed_roots"]
-                ],
+                "allowed_roots": [str(root) for root in snapshot["allowed_roots"]],
                 "approval_presets": approval_presets,
                 "budget_profiles": budget_profiles,
+                "guard_policy": load_guard_policy(),
                 "editable_keys": [
                     "approval_preset",
                     "auto_approve",
@@ -275,9 +323,7 @@ def register_meta_tools(
                 ],
             },
         )
-        return audit_tool_call(
-            "get_config", {}, result, started_at=started_at
-        )
+        return audit_tool_call("get_config", {}, result, started_at=started_at)
 
     @mcp.tool(
         **tool_options(
@@ -312,9 +358,7 @@ def register_meta_tools(
             details={
                 **updated,
                 "project_dir": str(updated["project_dir"]),
-                "allowed_roots": [
-                    str(root) for root in updated["allowed_roots"]
-                ],
+                "allowed_roots": [str(root) for root in updated["allowed_roots"]],
             },
         )
         return audit_tool_call(
@@ -337,12 +381,8 @@ def register_meta_tools(
         preserve_language: bool = True,
     ) -> str:
         started_at = time.perf_counter()
-        enabled = bool(
-            current_config().get("intent_compaction_enabled", False)
-        )
-        details = smart_compact_intent(
-            text, preserve_language=preserve_language
-        )
+        enabled = bool(current_config().get("intent_compaction_enabled", False))
+        details = smart_compact_intent(text, preserve_language=preserve_language)
         details["intent_compaction_enabled"] = enabled
         details["mode_behavior"] = (
             "active"
@@ -382,9 +422,7 @@ def register_meta_tools(
             "Workspace status",
             details={
                 "active_project_dir": str(project_dir()),
-                "allowed_roots": [
-                    str(root) for root in allowed_roots()
-                ],
+                "allowed_roots": [str(root) for root in allowed_roots()],
                 "root_rules": {
                     "can_switch_to_subdirectories": True,
                     "explanation": (
@@ -397,10 +435,10 @@ def register_meta_tools(
                     ),
                 },
             },
+            decision=default_allow_decision("Workspace status is read-only metadata"),
+            decision_in_details=True,
         )
-        return audit_tool_call(
-            "workspace_status", {}, result, started_at=started_at
-        )
+        return audit_tool_call("workspace_status", {}, result, started_at=started_at)
 
     @mcp.tool(
         **tool_options(
@@ -504,13 +542,12 @@ def register_meta_tools(
             "Prompt shortcuts loaded",
             details=details,
         )
-        return audit_tool_call(
-            "prompt_shortcuts", {}, result, started_at=started_at
-        )
+        return audit_tool_call("prompt_shortcuts", {}, result, started_at=started_at)
 
     return {
         "get_recent_tool_calls": get_recent_tool_calls,
         "session_insights": session_insights,
+        "activity_summary": activity_summary,
         "usage_insights": usage_insights,
         "bridge_status": bridge_status,
         "tools_overview": tools_overview,
@@ -555,18 +592,12 @@ def register_prompts(
             builder = prompt_custom_builders[name]
             second_default = custom_prompt_defaults[name]
 
-            def _make_custom_fn(
-                _name: str, _builder: Any, _second_default: str
-            ) -> Any:
+            def _make_custom_fn(_name: str, _builder: Any, _second_default: str) -> Any:
                 def _fn(target: str = ".", **kwargs: Any) -> Message:
                     second_arg_name: str = prompt_arguments[_name][1]["name"]
-                    second_value = kwargs.get(
-                        second_arg_name, _second_default
-                    )
+                    second_value = kwargs.get(second_arg_name, _second_default)
                     return Message(
-                        _builder(
-                            target, second_value, language="Turkish"
-                        ),
+                        _builder(target, second_value, language="Turkish"),
                         role="user",
                     )
 
@@ -579,18 +610,12 @@ def register_prompts(
             focus_arg_name: str = prompt_focus_arg[name]
             focus_default: str = workflow_default_focus[name]
 
-            def _make_workflow_fn(
-                _name: str, _focus_arg_name: str, _focus_default: str
-            ) -> Any:
+            def _make_workflow_fn(_name: str, _focus_arg_name: str, _focus_default: str) -> Any:
                 def _fn(target: str = ".", **kwargs: Any) -> Message:
-                    focus_value = kwargs.get(
-                        _focus_arg_name, _focus_default
-                    )
+                    focus_value = kwargs.get(_focus_arg_name, _focus_default)
                     language = kwargs.get("language", "Turkish")
                     return Message(
-                        workflow_prompt(
-                            _name, target, focus_value, language
-                        ),
+                        workflow_prompt(_name, target, focus_value, language),
                         role="user",
                     )
 

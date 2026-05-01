@@ -15,6 +15,15 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from claude_bridge.git_ops import git_commit
+from claude_bridge.guard_policy import (
+    DecisionAction,
+    RiskLevel,
+    ToolRequestContext,
+    approval_allow_decision,
+    approval_ask_decision,
+    builtin_deny_decision,
+    evaluate_rules,
+)
 from claude_bridge.indexing import iter_searchable_files
 from claude_bridge.smart import DEFAULT_CONTEXT_BUDGET_TOKENS, budget_metadata, estimate_token_count
 from claude_bridge.tool_utils import (
@@ -23,6 +32,7 @@ from claude_bridge.tool_utils import (
     is_binary_bytes,
     is_within_root,
     json_response,
+    path_guard_decision,
     path_outside_project_details,
     request_approval,
     require_approval,
@@ -415,6 +425,7 @@ async def read_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(path),
+            decision=path_guard_decision(path, "read", outside_workspace=True),
         )
 
     sensitive_reason = sensitive_path_reason(target)
@@ -424,6 +435,7 @@ async def read_file(
             "Sensitive files are blocked from direct reading",
             code="sensitive_file_blocked",
             details=sensitive_file_blocked_details(path),
+            decision=path_guard_decision(path, "read", sensitive_reason=sensitive_reason),
         )
     if not target.exists():
         return json_response(
@@ -648,6 +660,13 @@ async def write_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(path),
+            decision=builtin_deny_decision(
+                "Path is outside the active workspace",
+                risk_level=RiskLevel.CRITICAL,
+                risk_reasons=["path outside allowed project roots"],
+                metadata={"tool": "write_file", "path": path},
+            ),
+            decision_in_details=True,
         )
 
     sensitive_reason = sensitive_path_reason(target)
@@ -657,6 +676,13 @@ async def write_file(
             "Sensitive file types cannot be written through this tool",
             code="sensitive_file_blocked",
             details=sensitive_file_blocked_details(path),
+            decision=builtin_deny_decision(
+                "Sensitive path is blocked",
+                risk_level=RiskLevel.HIGH,
+                risk_reasons=[f"sensitive path: {sensitive_reason}"],
+                metadata={"tool": "write_file", "path": path},
+            ),
+            decision_in_details=True,
         )
 
     secret_patterns = find_secret_patterns(content)
@@ -666,6 +692,45 @@ async def write_file(
             "Content looks sensitive and was blocked",
             code="secret_pattern_detected",
             details={"path": path, "patterns": secret_patterns},
+            decision=builtin_deny_decision(
+                "Content matched sensitive data patterns",
+                risk_level=RiskLevel.HIGH,
+                risk_reasons=[f"secret pattern: {pattern}" for pattern in secret_patterns],
+                metadata={"tool": "write_file", "path": path},
+            ),
+            decision_in_details=True,
+        )
+
+    rule_decision = evaluate_rules(
+        ToolRequestContext(
+            tool_name="write_file",
+            params={
+                "path": path,
+                "file": path,
+                "content": content,
+                "overwrite": overwrite,
+                "create_parents": create_parents,
+            },
+            project_dir=str(infer_project_root(target.parent if not target.exists() else target)),
+        )
+    )
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={"path": path},
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="approval_rejected",
+            details={"path": path},
+            decision=rule_decision,
+            decision_in_details=True,
         )
 
     if target.exists() and target.is_dir():
@@ -702,14 +767,34 @@ async def write_file(
             )
 
     line_count = len(content.splitlines())
-    rejection = await require_approval(
-        "write_file",
-        {"file": path, "overwrite": overwrite, "line_count": line_count},
-        rejection_message="Write rejected by user",
-        rejection_details={"path": path},
-    )
-    if rejection is not None:
-        return rejection
+    approval_params = {"file": path, "overwrite": overwrite, "line_count": line_count}
+    decision_risk_reasons = ["writes modify workspace contents"]
+    if overwrite:
+        decision_risk_reasons.append("overwrite requested")
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        allow_decision = rule_decision
+    else:
+        approved = await request_approval("write_file", approval_params)
+        if not approved:
+            return json_response(
+                False,
+                "Write rejected by user",
+                code="approval_rejected",
+                details={"path": path},
+                decision=approval_ask_decision(
+                    "File write requires approval",
+                    risk_level=RiskLevel.MEDIUM,
+                    risk_reasons=decision_risk_reasons,
+                    metadata={"tool": "write_file", "path": path},
+                ),
+                decision_in_details=True,
+            )
+        allow_decision = approval_allow_decision(
+            "File write approved",
+            risk_level=RiskLevel.MEDIUM,
+            risk_reasons=decision_risk_reasons,
+            metadata={"tool": "write_file", "path": path},
+        )
 
     if create_parents:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -756,6 +841,8 @@ async def write_file(
             f"Failed to write file: {exc}",
             code="file_write_error",
             details={"path": path},
+            decision=allow_decision,
+            decision_in_details=True,
         )
 
     try:
@@ -821,6 +908,8 @@ async def write_file(
             "warning": warning,
             "warnings": warnings,
         },
+        decision=allow_decision,
+        decision_in_details=True,
     )
 
 
@@ -840,6 +929,7 @@ async def move_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(source),
+            decision=path_guard_decision(source, "move", outside_workspace=True),
         )
     try:
         destination_path = resolve_path(destination)
@@ -849,15 +939,18 @@ async def move_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(destination),
+            decision=path_guard_decision(destination, "move", outside_workspace=True),
         )
 
     for user_path, target in ((source, source_path), (destination, destination_path)):
-        if sensitive_path_reason(target) is not None:
+        sensitive_reason = sensitive_path_reason(target)
+        if sensitive_reason is not None:
             return json_response(
                 False,
                 "Sensitive paths cannot be moved through this tool",
                 code="sensitive_file_blocked",
                 details=sensitive_file_blocked_details(user_path),
+                decision=path_guard_decision(user_path, "move", sensitive_reason=sensitive_reason),
             )
 
     if not source_path.exists():
@@ -958,6 +1051,7 @@ async def copy_path(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(source),
+            decision=path_guard_decision(source, "copy", outside_workspace=True),
         )
     try:
         destination_path = resolve_path(destination)
@@ -967,15 +1061,18 @@ async def copy_path(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(destination),
+            decision=path_guard_decision(destination, "copy", outside_workspace=True),
         )
 
     for user_path, target in ((source, source_path), (destination, destination_path)):
-        if sensitive_path_reason(target) is not None:
+        sensitive_reason = sensitive_path_reason(target)
+        if sensitive_reason is not None:
             return json_response(
                 False,
                 "Sensitive paths cannot be copied through this tool",
                 code="sensitive_file_blocked",
                 details=sensitive_file_blocked_details(user_path),
+                decision=path_guard_decision(user_path, "copy", sensitive_reason=sensitive_reason),
             )
 
     if not source_path.exists():
@@ -1266,6 +1363,7 @@ async def patch_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(file),
+            decision=path_guard_decision(file, "patch", outside_workspace=True),
         )
 
     try:
@@ -1276,6 +1374,7 @@ async def patch_file(
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(file),
+            decision=path_guard_decision(file, "patch", outside_workspace=True),
         )
     if not target.exists():
         return json_response(
@@ -1299,6 +1398,7 @@ async def patch_file(
             "Sensitive files are blocked from direct patching",
             code="sensitive_file_blocked",
             details=sensitive_file_blocked_details(file),
+            decision=path_guard_decision(file, "patch", sensitive_reason=sensitive_reason),
         )
 
     try:
@@ -1320,14 +1420,47 @@ async def patch_file(
             details=preview_payload["details"],
         )
 
-    rejection = await require_approval(
-        "patch_file",
-        {"file": file},
-        rejection_message="Patch rejected by user",
-        rejection_details={"path": file},
+    rule_decision = evaluate_rules(
+        ToolRequestContext(
+            tool_name="patch_file",
+            params={
+                "file": file,
+                "search": search,
+                "replace": replace,
+            },
+            project_dir=str(target_project_dir),
+        )
     )
-    if rejection is not None:
-        return rejection
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={"path": file},
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="approval_rejected",
+            details={"path": file},
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        pass  # bypass approval for rule-allow matches
+    else:
+        rejection = await require_approval(
+            "patch_file",
+            {"file": file},
+            rejection_message="Patch rejected by user",
+            rejection_details={"path": file},
+        )
+        if rejection is not None:
+            return rejection
 
     line_ending = _line_ending_for_content(original)
     original_norm = original.replace("\r\n", "\n").replace("\r", "\n")
@@ -1384,6 +1517,7 @@ async def preview_patch(file: str, search: str, replace: str) -> str:
             str(exc),
             code="path_outside_project",
             details=path_outside_project_details(file),
+            decision=path_guard_decision(file, "preview_patch", outside_workspace=True),
         )
 
     if not target.exists():
@@ -1407,6 +1541,7 @@ async def preview_patch(file: str, search: str, replace: str) -> str:
             "Sensitive files are blocked from direct previewing",
             code="sensitive_file_blocked",
             details=sensitive_file_blocked_details(file),
+            decision=path_guard_decision(file, "preview_patch", sensitive_reason=sensitive_reason),
         )
 
     try:

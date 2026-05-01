@@ -1,4 +1,9 @@
-# Claude Bridge — Uzun Vadeli Yol Haritası
+# Claude Bridge — Teknik Yol Haritası
+
+> **📌 Ürün pivotu:** 2026 Temmuz itibarıyla Claude Bridge, bir MCP geliştirici aracından
+> **AI destekli güvenlik değerlendirme katmanına** dönüşmektedir. Yeni ürün vizyonu,
+> gelir modeli ve stratejik yol haritası için [`docs/product-roadmap.md`](./product-roadmap.md)
+> dokümanına bakın. Bu dosya, teknik implementasyon aşamalarını ve mevcut durumu belgeler.
 
 > **Kural:** Bir özellik tamamlanmadan bir sonrakine geçilmez.
 > **Ölçüt:** Her aşamanın kendi test seti olmak zorunda.
@@ -96,6 +101,8 @@ Ne yapar:
 - [x] `.gitignore` dosyasını gerçek anlamda yorumlama
 - [x] İndeksi saklama / yeniden kullanma
 - [x] İçerik düzeyi arama ve daha iyi relevans puanlaması
+- [x] Policy kararlarını taşıyan maskelenmiş audit kayıtları, CLI filtreleri ve deterministic rule
+  replay eklendi
 
 **Eksik teknik kararlar:**
 - İndeks ne zaman güncellenecek: başlangıçta mı, dosya değişince mi, manuel komutla mı?

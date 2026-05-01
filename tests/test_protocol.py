@@ -2306,15 +2306,65 @@ class TestAuditTools:
 
         await mcp_server.read_file("missing.txt")
         await mcp_server.list_directory(".")
+        await mcp_server.run_shell("echo hello")
 
         payload = parse_payload(await mcp_server.session_insights(limit=10))
 
         assert payload["ok"] is True
+        activity = payload["details"]["activity"]
+        assert "missing.txt" in activity["touched_paths"]
+        assert activity["commands"][0]["command"] == "echo hello"
         telemetry = payload["details"]["telemetry"]
         assert telemetry["total_estimated_tokens"] >= 1
         assert telemetry["total_input_chars"] >= 1
         assert telemetry["total_output_chars"] >= 1
         assert "list_directory" in telemetry["tool_estimated_tokens"]
+
+    async def test_activity_summary_returns_user_facing_activity(self, temp_project, monkeypatch):
+        audit_dir = temp_project / ".audit"
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        target = temp_project / "note.txt"
+        target.write_text("hello", encoding="utf-8")
+
+        await mcp_server.read_file("note.txt")
+        await mcp_server.patch_file("note.txt", "hello", "hello bridge")
+        await mcp_server.run_shell("echo hello")
+
+        payload = parse_payload(await mcp_server.activity_summary(limit=10))
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["session_id"]
+        assert "note.txt" in details["activity"]["touched_paths"]
+        assert details["activity"]["commands"][0]["command"] == "echo hello"
+        validation = details["activity"]["validation"]
+        assert validation["has_changes"] is True
+        assert validation["needs_validation"] is True
+        assert validation["recommended_next_step"]
+        assert details["suggested_response_topics"]
+
+    async def test_activity_summary_detects_validation_after_changes(
+        self, temp_project, monkeypatch
+    ):
+        audit_dir = temp_project / ".audit"
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        target = temp_project / "note.txt"
+        target.write_text("hello", encoding="utf-8")
+
+        await mcp_server.patch_file("note.txt", "hello", "hello bridge")
+        await mcp_server.run_shell("pytest --version")
+
+        payload = parse_payload(await mcp_server.activity_summary(limit=10))
+
+        validation = payload["details"]["activity"]["validation"]
+        assert validation["has_changes"] is True
+        assert validation["validation_after_changes"] is True
+        assert validation["needs_validation"] is False
+        assert validation["validation_commands"][0]["command"] == "pytest --version"
 
     async def test_usage_insights_lists_top_cost_tools(self, temp_project, monkeypatch):
         audit_dir = temp_project / ".audit"
@@ -2361,6 +2411,8 @@ class TestConfigTools:
         assert payload["details"]["auto_approve"] is True
         assert "approval_presets" in payload["details"]
         assert "budget_profiles" in payload["details"]
+        assert "guard_policy" in payload["details"]
+        assert payload["details"]["guard_policy"]["exists"] is False
         assert "context_budget_profile" in payload["details"]["editable_keys"]
         assert "intent_compaction_enabled" in payload["details"]["editable_keys"]
         assert "shell_timeout" in payload["details"]["editable_keys"]

@@ -11,6 +11,16 @@ import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from claude_bridge.guard_policy import (
+    DecisionAction,
+    DecisionSource,
+    PolicyDecision,
+    RiskLevel,
+    ToolRequestContext,
+    custom_shell_block_reason,
+    evaluate_rules,
+    make_policy_decision,
+)
 from claude_bridge.tool_utils import json_response, require_approval
 
 _INTERACTIVE_COMMANDS = {
@@ -350,6 +360,9 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     shell_construct = _find_unquoted_shell_construct(stripped)
     if shell_construct is not None:
         return shell_construct
+    custom_reason = custom_shell_block_reason(stripped)
+    if custom_reason is not None:
+        return custom_reason
     control_tokens_present = any(token in {"|", "&&", ";"} for token in all_lower_tokens)
 
     if head == "sudo":
@@ -428,32 +441,73 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
 def analyze_shell_command(command: str) -> dict[str, Any]:
     stripped = command.strip()
     if not stripped:
+        empty_decision = make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.LOW,
+            "Shell command cannot be empty",
+            ["empty command string"],
+            {"tool": "analyze_shell_command"},
+        )
         return {
             "ok": False,
             "code": "empty_command",
             "message": "Shell command cannot be empty",
-            "details": {"command": command},
+            "details": {
+                "command": command,
+                "policy_decision": empty_decision.to_dict(),
+            },
         }
 
     try:
         tokens = shlex.split(stripped)
     except ValueError as exc:
+        parse_error_decision = make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.LOW,
+            f"Failed to parse shell command: {exc}",
+            ["unbalanced quotes or shell parse error"],
+            {"tool": "analyze_shell_command"},
+        )
         return {
             "ok": False,
             "code": "command_parse_error",
             "message": f"Failed to parse shell command: {exc}",
-            "details": {"command": command},
+            "details": {
+                "command": command,
+                "policy_decision": parse_error_decision.to_dict(),
+            },
         }
     if not tokens:
+        empty_decision = make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.LOW,
+            "Shell command cannot be empty",
+            ["empty command string"],
+            {"tool": "analyze_shell_command"},
+        )
         return {
             "ok": False,
             "code": "empty_command",
             "message": "Shell command cannot be empty",
-            "details": {"command": command},
+            "details": {
+                "command": command,
+                "policy_decision": empty_decision.to_dict(),
+            },
         }
 
     blocked_pattern = blocked_command_reason(stripped, tokens)
     if blocked_pattern is not None:
+        blocked_decision = make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.CRITICAL,
+            f"Command blocked for safety: contains '{blocked_pattern}'",
+            [f"matched blocked pattern: {blocked_pattern}"],
+            {"tool": "analyze_shell_command", "blocked_pattern": blocked_pattern},
+        )
         return {
             "ok": False,
             "code": "blocked_command",
@@ -464,10 +518,19 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
                 "risk_level": "blocked",
                 "risk_reasons": [f"matched blocked pattern: {blocked_pattern}"],
                 "requires_confirmation": False,
+                "policy_decision": blocked_decision.to_dict(),
             },
         }
 
     if is_interactive_command(stripped):
+        interactive_decision = make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.HIGH,
+            "Interactive commands are not supported",
+            ["interactive commands are unsupported in MCP stdio mode"],
+            {"tool": "analyze_shell_command"},
+        )
         return {
             "ok": False,
             "code": "interactive_command_unsupported",
@@ -477,6 +540,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
                 "risk_level": "high",
                 "risk_reasons": ["interactive commands are unsupported in MCP stdio mode"],
                 "requires_confirmation": False,
+                "policy_decision": interactive_decision.to_dict(),
             },
         }
 
@@ -507,6 +571,24 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
         risk_level = "medium"
         risk_reasons = ["unclassified command; treat cautiously"]
 
+    # Map existing risk level strings to RiskLevel enum for the decision
+    policy_risk = _policy_risk_from_shell_risk(risk_level)
+    if risk_level == "low":
+        decision_action = DecisionAction.ALLOW
+        decision_source = DecisionSource.DEFAULT
+    else:
+        decision_action = DecisionAction.ASK
+        decision_source = DecisionSource.BUILTIN_GUARD
+
+    analysis_decision = make_policy_decision(
+        decision_action,
+        decision_source,
+        policy_risk,
+        f"Shell command analysis: {risk_level} risk",
+        risk_reasons,
+        {"tool": "analyze_shell_command", "requires_confirmation": True},
+    )
+
     return {
         "ok": True,
         "message": "Shell command analysis completed",
@@ -517,8 +599,44 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             "risk_level": risk_level,
             "risk_reasons": risk_reasons,
             "requires_confirmation": True,
+            "policy_decision": analysis_decision.to_dict(),
         },
     }
+
+
+def _policy_risk_from_shell_risk(risk_level: str) -> RiskLevel:
+    if risk_level == "low":
+        return RiskLevel.LOW
+    if risk_level == "medium":
+        return RiskLevel.MEDIUM
+    if risk_level == "high":
+        return RiskLevel.HIGH
+    return RiskLevel.CRITICAL
+
+
+def _shell_analysis_decision(
+    analysis: dict[str, Any],
+    *,
+    action: DecisionAction,
+    source: DecisionSource,
+    reason: str,
+) -> PolicyDecision:
+    details = analysis.get("details", {})
+    if not isinstance(details, dict):
+        details = {}
+    risk_level = _policy_risk_from_shell_risk(str(details.get("risk_level", "critical")))
+    risk_reasons_raw = details.get("risk_reasons", [])
+    risk_reasons = (
+        [str(item) for item in risk_reasons_raw] if isinstance(risk_reasons_raw, list) else []
+    )
+    return make_policy_decision(
+        action,
+        source,
+        risk_level,
+        reason,
+        risk_reasons,
+        {"tool": "run_shell"},
+    )
 
 
 async def run_shell(
@@ -530,27 +648,96 @@ async def run_shell(
 ) -> str:
     analysis = analyze_shell_command(command)
     if not analysis["ok"]:
+        decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.DENY,
+            source=DecisionSource.BUILTIN_GUARD,
+            reason=analysis["message"],
+        )
         return json_response(
             False,
             analysis["message"],
             code=analysis["code"],
             details=analysis["details"],
+            decision=decision,
+            decision_in_details=True,
         )
 
     stripped = command.strip()
-    rejection = await require_approval(
-        "run_shell",
-        {"command": stripped},
-        rejection_message="Shell command rejected by user",
-        rejection_details={
-            "command": command,
-            "risk_level": analysis["details"]["risk_level"],
-            "risk_reasons": analysis["details"]["risk_reasons"],
-        },
-        request_approval_fn=request_approval,
+    rule_decision = evaluate_rules(
+        ToolRequestContext(
+            tool_name="run_shell",
+            params={"command": stripped},
+            project_dir=str(project_dir()),
+        )
     )
-    if rejection is not None:
-        return rejection
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="approval_rejected",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        allow_decision = rule_decision
+    else:
+        rejection = await require_approval(
+            "run_shell",
+            {"command": stripped},
+            rejection_message="Shell command rejected by user",
+            rejection_details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            request_approval_fn=request_approval,
+        )
+        if rejection is not None:
+            ask_decision = _shell_analysis_decision(
+                analysis,
+                action=DecisionAction.ASK,
+                source=DecisionSource.APPROVAL,
+                reason="Shell command requires approval",
+            )
+            return json_response(
+                False,
+                "Shell command rejected by user",
+                code="approval_rejected",
+                details={
+                    "command": command,
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=ask_decision,
+                decision_in_details=True,
+            )
+
+        allow_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Shell command approved for execution",
+        )
 
     cwd_snapshot = project_dir()
     timeout_seconds = shell_timeout()
@@ -576,6 +763,8 @@ async def run_shell(
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
+            decision=allow_decision,
+            decision_in_details=True,
         )
     except OSError as exc:
         return json_response(
@@ -587,6 +776,8 @@ async def run_shell(
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
+            decision=allow_decision,
+            decision_in_details=True,
         )
 
     stdout, stdout_truncated = _truncate_output(result.stdout)
@@ -608,9 +799,17 @@ async def run_shell(
             "Shell command failed",
             code="command_failed",
             details=details,
+            decision=allow_decision,
+            decision_in_details=True,
         )
 
-    return json_response(True, "Shell command completed successfully", details=details)
+    return json_response(
+        True,
+        "Shell command completed successfully",
+        details=details,
+        decision=allow_decision,
+        decision_in_details=True,
+    )
 
 
 async def start_process(
@@ -621,27 +820,96 @@ async def start_process(
 ) -> str:
     analysis = analyze_shell_command(command)
     if not analysis["ok"]:
+        deny_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.DENY,
+            source=DecisionSource.BUILTIN_GUARD,
+            reason=analysis["message"],
+        )
         return json_response(
             False,
             analysis["message"],
             code=analysis["code"],
             details=analysis["details"],
+            decision=deny_decision,
+            decision_in_details=True,
         )
 
     stripped = command.strip()
-    rejection = await require_approval(
-        "start_process",
-        {"command": stripped},
-        rejection_message="Process start rejected by user",
-        rejection_details={
-            "command": command,
-            "risk_level": analysis["details"]["risk_level"],
-            "risk_reasons": analysis["details"]["risk_reasons"],
-        },
-        request_approval_fn=request_approval,
+    rule_decision = evaluate_rules(
+        ToolRequestContext(
+            tool_name="start_process",
+            params={"command": stripped},
+            project_dir=str(project_dir()),
+        )
     )
-    if rejection is not None:
-        return rejection
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="approval_rejected",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        allow_decision = rule_decision
+    else:
+        rejection = await require_approval(
+            "start_process",
+            {"command": stripped},
+            rejection_message="Process start rejected by user",
+            rejection_details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            request_approval_fn=request_approval,
+        )
+        if rejection is not None:
+            ask_decision = _shell_analysis_decision(
+                analysis,
+                action=DecisionAction.ASK,
+                source=DecisionSource.APPROVAL,
+                reason="Process start requires approval",
+            )
+            return json_response(
+                False,
+                "Process start rejected by user",
+                code="approval_rejected",
+                details={
+                    "command": command,
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=ask_decision,
+                decision_in_details=True,
+            )
+
+        allow_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Process start approved",
+        )
 
     cwd_snapshot = project_dir()
     try:
@@ -667,6 +935,8 @@ async def start_process(
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
+            decision=allow_decision,
+            decision_in_details=True,
         )
 
     session_id = uuid.uuid4().hex[:12]
@@ -687,6 +957,8 @@ async def start_process(
         True,
         "Process started successfully",
         details=session.snapshot(),
+        decision=allow_decision,
+        decision_in_details=True,
     )
 
 
