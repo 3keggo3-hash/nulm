@@ -17,7 +17,7 @@ Bu planin odagi, Claude Bridge'i "MCP tool helper" cizgisinden
 
 ### Faz 0 - Dokuman ve Yonu Sabitleme
 
-Durum: Basladi.
+Durum: Tamamlandi.
 
 Amac:
 
@@ -76,6 +76,8 @@ Bagimlilik:
 
 ### Faz 4 - Optional AI Evaluator
 
+Durum: Tamamlandi.
+
 Amac:
 
 - Deterministik kurallar kesin karar vermediginde AI'dan guvenlik degerlendirmesi almak.
@@ -87,6 +89,8 @@ Bagimlilik:
 - Faz 3 audit kaydi.
 
 ### Faz 5 - Appeal ve User Override
+
+Durum: Tamamlandi.
 
 Amac:
 
@@ -101,6 +105,8 @@ Bagimlilik:
 
 ### Faz 6 - Team Policy ve GitOps
 
+Durum: Tamamlandi.
+
 Amac:
 
 - Role based policy, `policy validate`, `policy diff`, `policy simulate` ve CI uyumlu policy
@@ -112,6 +118,8 @@ Bagimlilik:
 - Faz 3 audit.
 
 ### Faz 7 - Intelligence ve Anomaly Detection
+
+Durum: Tamamlandi.
 
 Amac:
 

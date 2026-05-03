@@ -133,6 +133,7 @@ Ne yapar:
 ---
 
 ## Aşama 4 — Multi-Model Yönlendirme
+**Durum:** ✅ Tamamlandı
 **Süre tahmini:** 2-3 hafta (Aşama 3 sonrası)
 **Teknik:** Görev sınıflandırıcı + model seçici
 
@@ -152,7 +153,7 @@ Mantık:
 
 ## Aşama 5 — Git Entegrasyonu
 **Süre tahmini:** 2-3 hafta
-**Durum:** ✅ Temel özellikler tamamlandı
+**Durum:** ✅ Tamamlandı
 
 Ne yapar:
 - [x] Her agentic loop adımından önce otomatik commit (güvenlik ağı)
@@ -166,6 +167,7 @@ Ne yapar:
 ---
 
 ## Aşama 6 — Web Arayüzü (Opsiyonel)
+**Durum:** ✅ Tamamlandı
 **Süre tahmini:** 3-4 hafta
 **Koşul:** Aşama 1-3 stabil olmadan başlama.
 

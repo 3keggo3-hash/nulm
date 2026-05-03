@@ -115,7 +115,16 @@ echo ""
 echo "[5/6] Package Metadata"
 check "  pyproject.toml exists" test -f pyproject.toml
 check "  README.md exists" test -f README.md
-check "  version is set" "$CB_PYTHON" -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); assert d['project']['version']"
+check "  version is set" "$CB_PYTHON" -c "
+import sys
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+with open('pyproject.toml', 'rb') as f:
+    d = tomllib.load(f)
+assert d['project']['version']
+"
 
 # --- Import smoke ---
 echo ""

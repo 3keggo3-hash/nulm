@@ -334,7 +334,7 @@ AŞAMA 3 — Kolay Feature'lar (paralel, Aşama 2'den bağımsız)
 ├── K6: move_file + copy_path
 └── O12: inline interpreter politikası + implementasyon
 
-AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra)
+AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra) ✅ Tamamlandı
 ├── O2: smart onboarding genişletme
 ├── O3: read_url tool'u (güvenlik spec'iyle)
 ├── O4: auto-update (check-only)
@@ -343,7 +343,7 @@ AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra)
 ├── O8: disk cache boyut kotası
 └── O9: client_managed_approval testleri
 
-AŞAMA 5 — Zor Feature'lar (kısmen paralel, kısmen sıralı)
+AŞAMA 5 — Zor Feature'lar (kısmen paralel, kısmen sıralı) ✅ Tamamlandı
 │
 ├── Paralel Grup A: İndeks Performansı
 │   ├── Z3: Tree-sitter parser cache
