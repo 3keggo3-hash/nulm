@@ -377,6 +377,12 @@ Notes:
 - **Sensitive file protection**: `.env`, `.pem`, `.key`, `id_rsa`, `claude_desktop_config.json`,
   and similar files are blocked from direct reads/writes/patches. Error responses avoid leaking
   resolved paths or internal sensitive-match reasons.
+- **Symlink hardening**: `copytree` does not follow symlinks; `rmtree` rejects symlink directories;
+  file writes reject symlink targets with `O_NOFOLLOW`.
+- **TOCTOU protection**: write operations use `O_CREAT | O_EXCL` and pre-write symlink checks.
+- **Atomic writes**: file writes go to a temp file then `os.replace` to prevent partial writes.
+- **ReDoS protection**: regex compilation has a 2-second timeout; glob patterns capped at 256 chars.
+- **Size limits**: directory copies rejected above 500MB.
 - **Audit logging**: tool calls are recorded as structured, masked audit records.
 - **Optional dependency safety**: optional readers fail with structured `dependency_missing` errors
   instead of import-time crashes.
@@ -612,6 +618,93 @@ to guide follow-up.
 - No SOC/SIEM integration, email, or Slack alerting.
 - No network-facing anomaly endpoint; audit data stays local.
 - Sensitive path list is hardcoded; custom patterns require a guard policy file.
+
+### Team Policy (RBAC)
+
+Team policies bundle role-based access controls into version-controlled policy files. Roles define
+permission sets for different team members and inherit from other roles:
+
+```json
+{
+  "name": "my-team",
+  "description": "Production repository guardrails",
+  "roles": [
+    {
+      "name": "junior",
+      "description": "Read, patch, and run approved commands",
+      "permissions": [
+        {"tool": "run_shell", "action": "deny"},
+        {"tool": "read_file", "action": "allow"},
+        {"tool": "patch_file", "action": "allow"},
+        {"tool": "list_directory", "action": "allow"},
+        {"tool": "search_in_files", "action": "allow"}
+      ]
+    },
+    {
+      "name": "senior",
+      "extends": "junior",
+      "description": "Full access including shell and writes",
+      "permissions": [
+        {"tool": "run_shell", "action": "ask"},
+        {"tool": "write_file", "action": "allow"},
+        {"tool": "move_file", "action": "allow"},
+        {"tool": "copy_path", "action": "allow"}
+      ]
+    },
+    {
+      "name": "ci",
+      "description": "Automated CI with restricted scope",
+      "permissions": [
+        {"tool": "run_shell", "action": "allow", "scope": {"command_pattern": "^(ruff|pytest|mypy|black).*"}}
+      ]
+    },
+    {
+      "name": "contractor",
+      "extends": "junior",
+      "description": "Read-only with no file mutations",
+      "permissions": [
+        {"tool": "patch_file", "action": "deny"}
+      ]
+    }
+  ]
+}
+```
+
+- Roles support `extends` for inheritance (junior → senior → lead chains).
+- Built-in validation catches circular inheritance, missing bases, and self-references.
+- Permissions are additive: child roles can add or tighten parent permissions.
+- Policy bundles are validated with `claude-bridge policy validate`.
+
+### Policy Diff (CI/CD Integration)
+
+Compare team policy files to detect changes that affect security posture:
+
+```bash
+claude-bridge policy diff --base .claude-bridge/team.json --head pr/team.json
+```
+
+The diff reports added, removed, and modified permissions with structured output suitable for CI:
+
+```json
+{
+  "status": "warning",
+  "summary": "1 permission modified, 0 added, 0 removed",
+  "changes": [
+    {
+      "tool": "run_shell",
+      "status": "modified",
+      "role": "junior",
+      "old_action": "deny",
+      "new_action": "allow"
+    }
+  ]
+}
+```
+
+- Returns `ok` when policies are identical, `warning` for permission changes, `error` for
+  structural problems.
+- Designed for PR gates — block merges that weaken security constraints.
+- Policies are text files (JSON); diff integration with `git diff` works natively.
 
 ## Development and Validation
 
