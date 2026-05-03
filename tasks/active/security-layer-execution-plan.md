@@ -123,18 +123,6 @@ Bagimlilik:
 - Faz 3 audit verisi.
 - Faz 6 role/policy bilgisi, opsiyonel.
 
-### Faz 8 - Browser Extension / Web LLM Bridge
-
-Amac:
-
-- Local policy decision layer'i Claude Desktop disindaki web LLM akislari icin de kullanmak.
-
-Bagimlilik:
-
-- Stabil local daemon API.
-- Stabil decision API.
-- Audit ve policy altyapisi.
-
 ## Surec 1 - Policy Decision Kernel
 
 Bu surec ilk baslanacak is grubudur. Paketler mumkun oldugunca farkli dosyalara ayrildi.
@@ -428,7 +416,6 @@ verilmelidir.
 - Appeal mekanizmasi
 - Role based policy
 - Anomaly detection
-- Browser extension
 - Docker/sandbox isolation
 - Network allowlist policy
 
@@ -1108,7 +1095,9 @@ Bu surec, Surec 4 AI Evaluator'a gecmeden once uygulanmasi gereken zorunlu
 guvenlik ve saglamlik kapisidir. Yeni AI katmani eklenmeden once mevcut shell,
 file/path, policy, audit ve workflow yuzeylerindeki kritik aciklar kapatilmalidir.
 
-Durum: Planlandi.
+Durum: Tamamlandi. Shell guard, symlink/path validation, ReDoS heuristic, workflow validation
+command safety, git/error handling, audit/indexing performance ve thread-safety regresyonlari
+kapandi.
 
 ### Surec 3.5 Kabul Kriterleri
 
@@ -1428,3 +1417,10 @@ pytest
 - [x] Paket 3D deterministic replay engine uygulandi.
 - [x] Paket 3E CLI audit replay ve filtering uygulandi.
 - [x] Paket 3F E2E audit regression ve dokumantasyon uygulandi.
+- [x] Surec 3.5 - Security Hardening ve Bugfix Gate tamamlandi.
+- [x] Paket 3.5A CLI, boolean parsing ve low-risk logic fixleri uygulandi.
+- [x] Paket 3.5B git ve error handling fixleri uygulandi.
+- [x] Paket 3.5C shell guard hardening uygulandi.
+- [x] Paket 3.5D file path, symlink ve directory listing hardening uygulandi.
+- [x] Paket 3.5E policy regex ReDoS ve workflow validation safety uygulandi.
+- [x] Paket 3.5F performance, thread safety ve final regression uygulandi.

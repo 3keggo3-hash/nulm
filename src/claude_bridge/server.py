@@ -235,6 +235,10 @@ def set_config(
     client_managed_approval: bool = False,
     shell_timeout: int = 30,
     approval_preset: str | None = None,
+    ai_evaluator_enabled: bool = False,
+    ai_evaluator_provider: str = "local",
+    ai_evaluator_timeout: int = 5,
+    ai_evaluator_fallback_action: str = "ask",
 ) -> None:
     """Set runtime configuration for the MCP tools and reset cached per-session state."""
     reset_audit_session()
@@ -247,6 +251,10 @@ def set_config(
         client_managed_approval=client_managed_approval,
         shell_timeout=shell_timeout,
         approval_preset=approval_preset,
+        ai_evaluator_enabled=ai_evaluator_enabled,
+        ai_evaluator_provider=ai_evaluator_provider,
+        ai_evaluator_timeout=ai_evaluator_timeout,
+        ai_evaluator_fallback_action=ai_evaluator_fallback_action,
     )
     clear_index_cache()
     _clear_last_bridge_change()
@@ -619,6 +627,8 @@ compact_user_intent = _META_TOOLS["compact_user_intent"]
 workspace_status = _META_TOOLS["workspace_status"]
 switch_project_root = _META_TOOLS["switch_project_root"]
 prompt_shortcuts = _META_TOOLS["prompt_shortcuts"]
+appeal_decision = _META_TOOLS["appeal_decision"]
+anomaly_summary = _META_TOOLS["anomaly_summary"]
 
 _SMART_TOOLS = register_smart_tools(
     mcp=mcp,

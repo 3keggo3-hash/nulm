@@ -295,7 +295,7 @@ class TestCLI:
         asyncio.run(mcp_server.patch_file("note.txt", "hello", "hello bridge"))
         asyncio.run(mcp_server.run_shell("echo hello"))
 
-        result = runner.invoke(cli.app, ["audit", "--last", "--limit", "5"])
+        result = runner.invoke(cli.app, ["audit", "summary", "--last", "--limit", "5"])
 
         assert result.exit_code == 0
         assert "Audit Session" in result.stdout
@@ -343,6 +343,7 @@ class TestCLI:
             cli.app,
             [
                 "audit",
+                "summary",
                 "--last",
                 "--decision",
                 "deny",
@@ -358,9 +359,7 @@ class TestCLI:
         assert "decision=deny/high/rule" in result.stdout
         assert "deny-blocked-shell" in result.stdout or "Rule matched" in result.stdout
 
-    def test_replay_command_prints_human_readable_result(
-        self, monkeypatch, tmp_path: Path
-    ):
+    def test_replay_command_prints_human_readable_result(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
         policy_path = tmp_path / "policy.json"
         policy_path.write_text(
@@ -419,6 +418,16 @@ class TestCLI:
         assert "claude_bridge package importable" in result.stdout
         assert "pytest-asyncio plugin available" in result.stdout
         assert "tiktoken package available" in result.stdout
+
+    def test_doctor_security_command_prints_security_checks(self, tmp_path: Path):
+        result = runner.invoke(cli.app, ["doctor", "security", "--project-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Security Doctor" in result.stdout
+        assert "Audit directory writable" in result.stdout
+        assert "Guard policy valid" in result.stdout
+        assert "Safe config flags" in result.stdout
+        assert "Auto-approve warning" in result.stdout
 
     def test_policy_validate_accepts_valid_policy(self, tmp_path: Path):
         policy_path = tmp_path / "policy.json"
@@ -530,3 +539,325 @@ class TestCLI:
 
         assert result.exit_code == 1
         assert "key=value" in result.stdout
+
+    def test_policy_simulate_with_ai_shows_ai_advisor(self, tmp_path: Path):
+        policy_path = tmp_path / "policy.json"
+        policy_path.write_text(json.dumps({"rules": []}), encoding="utf-8")
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "run_shell",
+                "--param",
+                "command=echo hello",
+                "--with-ai",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Policy Decision:" in result.stdout
+        assert "AI Advisor:" in result.stdout
+        assert "Delta:" in result.stdout
+        assert "agrees with policy" in result.stdout
+
+    def test_policy_simulate_with_ai_and_deny_pattern(self, tmp_path: Path):
+        policy_path = tmp_path / "policy.json"
+        policy_path.write_text(json.dumps({"rules": []}), encoding="utf-8")
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "run_shell",
+                "--param",
+                "command=echo my-dangerous-command",
+                "--with-ai",
+                "--ai-deny",
+                "my-dangerous",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Policy Decision:" in result.stdout
+        assert "AI Advisor:" in result.stdout
+        assert "deny" in result.stdout.lower()
+        assert "Delta:" in result.stdout
+
+    def test_policy_simulate_with_ai_and_ask_pattern(self, tmp_path: Path):
+        policy_path = tmp_path / "policy.json"
+        policy_path.write_text(json.dumps({"rules": []}), encoding="utf-8")
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "run_shell",
+                "--param",
+                "command=curl example.com",
+                "--with-ai",
+                "--ai-ask",
+                "curl",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Policy Decision:" in result.stdout
+        assert "AI Advisor:" in result.stdout
+        assert "ask" in result.stdout.lower()
+        assert "Delta:" in result.stdout
+
+    def test_appeal_command_prints_result(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+        from claude_bridge.audit import get_recent_tool_calls
+
+        asyncio.run(mcp_server.run_shell("sudo apt update"))
+
+        record_id = get_recent_tool_calls(limit=1)["records"][0]["record_id"]
+
+        result = runner.invoke(
+            cli.app,
+            ["appeal", "--record-id", record_id, "--justification", "Need access for debugging"],
+        )
+
+        assert result.exit_code == 0
+        assert "Appeal" in result.stdout
+        assert record_id in result.stdout
+        assert "Status:" in result.stdout
+
+    def test_appeal_history_command_prints_history(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+        from claude_bridge.audit import get_recent_tool_calls
+
+        asyncio.run(mcp_server.run_shell("sudo apt update"))
+
+        record_id = get_recent_tool_calls(limit=1)["records"][0]["record_id"]
+
+        runner.invoke(
+            cli.app,
+            ["appeal", "--record-id", record_id, "--justification", "Need access for debugging"],
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["appeal-history", "--record-id", record_id],
+        )
+
+        assert result.exit_code == 0
+        assert "Appeal History" in result.stdout
+        assert "Total appeals:" in result.stdout
+
+    def test_anomaly_scan_command_prints_summary(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        asyncio.run(mcp_server.read_file("missing.txt"))
+        asyncio.run(mcp_server.list_directory("."))
+
+        result = runner.invoke(cli.app, ["anomaly", "scan", "--last", "--limit", "10"])
+
+        assert result.exit_code == 0
+        assert "Anomaly Scan" in result.stdout
+        assert "Records scanned:" in result.stdout
+        assert "Overall max score:" in result.stdout
+
+    def test_anomaly_scan_command_json_output(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        asyncio.run(mcp_server.read_file("missing.txt"))
+
+        result = runner.invoke(cli.app, ["anomaly", "scan", "--last", "--limit", "5", "--json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.stdout)
+        assert "total_records_scanned" in parsed
+        assert "anomaly_scores" in parsed
+        assert "mvp_limits" in parsed
+
+    def test_audit_export_jsonl_to_stdout(self, monkeypatch, tmp_path: Path):
+        """Export audit records in JSONL format to stdout."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        (tmp_path / "test.txt").write_text("hello", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("test.txt"))
+
+        result = runner.invoke(cli.app, ["audit", "export", "--format", "jsonl"])
+
+        assert result.exit_code == 0
+        lines = [line for line in result.stdout.strip().split("\n") if line.strip()]
+        assert len(lines) >= 1
+        parsed = json.loads(lines[0])
+        assert "record_id" in parsed
+        assert "timestamp" in parsed
+        assert "tool_name" in parsed
+
+    def test_audit_export_summary_json(self, monkeypatch, tmp_path: Path):
+        """Export audit records in summary-json format."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        (tmp_path / "test.txt").write_text("hello", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("test.txt"))
+
+        result = runner.invoke(cli.app, ["audit", "export", "--format", "summary-json"])
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.stdout)
+        assert "session_id" in parsed
+        assert "total_records" in parsed
+
+    def test_audit_export_with_session_option(self, monkeypatch, tmp_path: Path):
+        """Export specific session by ID."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+        from claude_bridge.audit import current_session_id
+
+        session_id = current_session_id()
+
+        import asyncio
+
+        (tmp_path / "test.txt").write_text("hello", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("test.txt"))
+
+        result = runner.invoke(
+            cli.app, ["audit", "export", "--session", session_id, "--format", "jsonl"]
+        )
+
+        assert result.exit_code == 0
+        assert "record_id" in result.stdout
+
+    def test_audit_export_invalid_session(self, monkeypatch, tmp_path: Path):
+        """Export with invalid session ID should fail gracefully."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+
+        result = runner.invoke(
+            cli.app,
+            ["audit", "export", "--session", "invalid-session-id", "--format", "jsonl"],
+        )
+
+        # Should succeed but with empty output (no records found)
+        assert result.exit_code == 0
+
+    def test_audit_export_filtered_by_tool(self, monkeypatch, tmp_path: Path):
+        """Export with tool name filter."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        (tmp_path / "test.txt").write_text("hello", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("test.txt"))
+        asyncio.run(mcp_server.list_directory("."))
+
+        result = runner.invoke(
+            cli.app, ["audit", "export", "--format", "jsonl", "--tool", "read_file"]
+        )
+
+        assert result.exit_code == 0
+        lines = [line for line in result.stdout.strip().split("\n") if line.strip()]
+        for line in lines:
+            record = json.loads(line)
+            assert record.get("tool_name") == "read_file"
+
+    def test_audit_export_filtered_by_decision(self, monkeypatch, tmp_path: Path):
+        """Export with decision filter."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        policy_path = tmp_path / "policy.json"
+        policy_path.write_text(
+            json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "deny-blocked",
+                            "scope": "run_shell",
+                            "action": "deny",
+                            "conditions": [
+                                {
+                                    "type": "regex",
+                                    "field": "command",
+                                    "pattern": r"echo\s+blocked",
+                                }
+                            ],
+                            "metadata": {"risk_level": "high"},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("CLAUDE_BRIDGE_GUARD_POLICY", str(policy_path))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        asyncio.run(mcp_server.run_shell("echo blocked"))
+
+        result = runner.invoke(
+            cli.app,
+            ["audit", "export", "--format", "jsonl", "--decision", "deny"],
+        )
+
+        assert result.exit_code == 0
+        lines = [line for line in result.stdout.strip().split("\n") if line.strip()]
+        assert len(lines) >= 1
+        for line in lines:
+            record = json.loads(line)
+            assert record.get("decision_action") == "deny"
+
+    def test_audit_export_to_file(self, monkeypatch, tmp_path: Path):
+        """Export to output file."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+        output_file = tmp_path / "export.jsonl"
+
+        import asyncio
+
+        (tmp_path / "test.txt").write_text("hello", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("test.txt"))
+
+        result = runner.invoke(
+            cli.app,
+            ["audit", "export", "--format", "jsonl", "--output", str(output_file)],
+        )
+
+        assert result.exit_code == 0
+        assert output_file.exists()
+        content = output_file.read_text(encoding="utf-8")
+        assert "record_id" in content
+
+    def test_audit_export_invalid_format(self, monkeypatch, tmp_path: Path):
+        """Export with invalid format should fail."""
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+
+        result = runner.invoke(cli.app, ["audit", "export", "--format", "csv"])
+
+        assert result.exit_code == 1
+        assert "Invalid format" in result.stdout

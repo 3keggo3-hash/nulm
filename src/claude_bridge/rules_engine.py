@@ -21,6 +21,8 @@ Supported condition types (via ConditionType enum):
 from __future__ import annotations
 
 import fnmatch
+import functools
+import logging
 import re
 from pathlib import Path
 from typing import Any, Sequence
@@ -36,8 +38,23 @@ from claude_bridge.guard_policy import (
     RuleCondition,
     ToolRequestContext,
     make_policy_decision,
+    validate_regex_pattern,
 )
-from claude_bridge.tool_utils import sensitive_path_reason
+from claude_bridge.team_policy import (
+    evaluate_role_post_restrictions,
+    evaluate_role_pre_restrictions,
+    is_ci_auto_approve_allowed,
+)
+from claude_bridge.tool_utils import is_within_root, sensitive_path_reason
+
+_LOG = logging.getLogger(__name__)
+
+
+# FIX: reduce cache size from 1024 to 256 to limit unbounded memory growth
+@functools.lru_cache(maxsize=256)
+def _compile_regex(pattern: str) -> re.Pattern:
+    return re.compile(pattern)
+
 
 # ---------------------------------------------------------------------------
 # RuleAction → DecisionAction mapping
@@ -53,6 +70,28 @@ _RULE_ACTION_TO_DECISION: dict[RuleAction, DecisionAction] = {
 def _decision_action_from_rule(rule_action: RuleAction) -> DecisionAction:
     """Map a RuleAction to the equivalent DecisionAction."""
     return _RULE_ACTION_TO_DECISION.get(rule_action, DecisionAction.DENY)
+
+
+# ---------------------------------------------------------------------------
+# Bool parsing helper
+# ---------------------------------------------------------------------------
+
+_FALSE_STRINGS: frozenset[str] = frozenset({"false", "no", "0", "off", ""})
+
+
+def _parse_bool(value: Any) -> bool:
+    """Parse a value as a boolean, treating common false strings as False.
+
+    Python's ``bool("false")`` returns ``True`` because non-empty strings are
+    truthy.  This helper recognises ``"false"``, ``"no"``, ``"0"``, ``"off"``
+    and the empty string as ``False`` so that YAML/JSON rule files behave
+    intuitively.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSE_STRINGS
+    return bool(value)
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +132,21 @@ def _match_regex(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
     actual = ctx.params.get(condition.field)
     if not isinstance(actual, str):
         return False
-    try:
-        compiled = re.compile(condition.value)
-    except re.error:
+    regex_error = validate_regex_pattern(condition.value)
+    if regex_error is not None:
+        _LOG.warning(
+            "Rule regex rejected at runtime",
+            extra={
+                "structured_warning": {
+                    "code": "rule_regex_runtime_rejected",
+                    "condition_type": condition.type.value,
+                    "field": condition.field,
+                    "reason": regex_error,
+                }
+            },
+        )
         return False
+    compiled = _compile_regex(condition.value)
     return bool(compiled.search(actual))
 
 
@@ -123,6 +173,20 @@ def _match_extension(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
     return actual.lower().endswith(ext.lower())
 
 
+def _is_path_within_allowed_roots(target: Path, ctx: ToolRequestContext) -> bool:
+    """Check whether *target* is inside any of the allowed workspace roots.
+
+    Falls back to *project_dir* when *allowed_roots* is empty.  When neither
+    is available the check is skipped so that callers without boundary
+    configuration (e.g. legacy tests) continue to work.
+    """
+    if ctx.allowed_roots:
+        return any(is_within_root(target, Path(r)) for r in ctx.allowed_roots)
+    if ctx.project_dir:
+        return is_within_root(target, Path(ctx.project_dir))
+    return True
+
+
 def _match_file_exists(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
     """Match based on whether a filesystem path exists.
 
@@ -139,8 +203,11 @@ def _match_file_exists(ctx: ToolRequestContext, condition: RuleCondition) -> boo
         if not target.is_absolute() and ctx.project_dir:
             target = Path(ctx.project_dir) / target
         target = target.resolve()
+        # FIX: enforce workspace boundary — reject paths outside allowed_roots
+        if not _is_path_within_allowed_roots(target, ctx):
+            return False
         exists = target.exists()
-        expected = bool(condition.value)
+        expected = _parse_bool(condition.value)
         return exists == expected
     except (OSError, ValueError):
         return False
@@ -162,6 +229,9 @@ def _match_file_size(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
         if not target.is_absolute() and ctx.project_dir:
             target = Path(ctx.project_dir) / target
         target = target.resolve()
+        # FIX: enforce workspace boundary — reject paths outside allowed_roots
+        if not _is_path_within_allowed_roots(target, ctx):
+            return False
         if not target.is_file():
             return False
         file_size = target.stat().st_size
@@ -247,7 +317,19 @@ def evaluate_condition(ctx: ToolRequestContext, condition: RuleCondition) -> boo
         return False
     try:
         return bool(matcher(ctx, condition))
-    except Exception:
+    except Exception as exc:
+        _LOG.warning(
+            "Rule condition matcher failed",
+            extra={
+                "structured_warning": {
+                    "code": "rule_condition_matcher_failed",
+                    "condition_type": condition.type.value,
+                    "field": condition.field,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            },
+        )
         return False
 
 
@@ -322,11 +404,13 @@ def evaluate_policy_chain(
     """Run the full policy chain for a tool request.
 
     Precedence order (strongest first):
-      1. Built-in hard deny — never overridden.
+      0. Built-in hard deny — never overridden.
+      1. Role pre-rule restrictions — DENY from role constraints.
       2. Rule match — DENY or ASK from user rules.
       3. Rule match — ALLOW (only metadata enrichment in MVP; does not
          bypass approval or built-in deny).
-      4. Built-in default decision.
+      4. Role post-rule restrictions — modify decision based on role.
+      5. Built-in default decision.
 
     The MVP rule ALLOW strategy is documented here: an ALLOW rule adds
     ``rule_allowed: True`` and the rule's metadata to the default decision,
@@ -341,9 +425,15 @@ def evaluate_policy_chain(
     Returns:
         The winning PolicyDecision.
     """
-    # Layer 1: built-in hard deny is inviolable
+    # Layer 0: built-in hard deny is inviolable
     if builtin_deny is not None and builtin_deny.action == DecisionAction.DENY:
         return builtin_deny
+
+    # Layer 1: role pre-rule restrictions
+    role_name = ctx.role
+    pre_restriction = evaluate_role_pre_restrictions(role_name, ctx)
+    if pre_restriction is not None:
+        return pre_restriction
 
     # Layer 2: user rules
     if user_rules:
@@ -368,7 +458,30 @@ def evaluate_policy_chain(
                     )
                     return enriched
 
-    # Layer 3: default
+    # Layer 3: CI auto-approve boundary check (before post-rule restrictions
+    # so CI can narrow the scope of manual_approval_required)
+    if role_name == "ci":
+        if is_ci_auto_approve_allowed(ctx, role_name):
+            # CI auto-approve allowed: bypass manual_approval_required
+            pass
+        else:
+            return make_policy_decision(
+                DecisionAction.ASK,
+                DecisionSource.APPROVAL,
+                RiskLevel.MEDIUM,
+                "CI auto-approve boundary: operation is outside CI "
+                "auto-approve boundaries",
+                ["role restriction: ci_auto_approve_bounded"],
+                {"role": role_name, "restriction": "ci_auto_approve_bounded"},
+            )
+
+    # Layer 4: role post-rule restrictions
+    post_decision = _build_intermediate_decision(default_decision)
+    post_restriction = evaluate_role_post_restrictions(role_name, ctx, post_decision)
+    if post_restriction is not None:
+        return post_restriction
+
+    # Layer 5: default
     if default_decision is not None:
         return default_decision
 
@@ -377,4 +490,22 @@ def evaluate_policy_chain(
         DecisionSource.DEFAULT,
         RiskLevel.LOW,
         "No policy matched — allowed by default",
+    )
+
+
+def _build_intermediate_decision(
+    default_decision: PolicyDecision | None,
+) -> PolicyDecision:
+    """Build an intermediate decision for post-rule restriction evaluation.
+
+    If no default is available, returns a default ALLOW so post-rule
+    checks have a decision to work with.
+    """
+    if default_decision is not None:
+        return default_decision
+    return make_policy_decision(
+        DecisionAction.ALLOW,
+        DecisionSource.DEFAULT,
+        RiskLevel.LOW,
+        "Intermediate decision for post-rule evaluation",
     )

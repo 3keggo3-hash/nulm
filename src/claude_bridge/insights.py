@@ -5,13 +5,15 @@ from __future__ import annotations
 import ast
 import fnmatch
 import hashlib
+import json
 import os
 import re
 import subprocess
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-
 
 _LANGUAGE_MAP: dict[str, str] = {
     ".py": "Python",
@@ -68,6 +70,7 @@ _TODO_PATTERNS = {
     "OPTIMIZE": re.compile(r"\bOPTIMIZE(?:ME)?\b"),
     "DEPRECATED": re.compile(r"\bDEPRECATED\b"),
 }
+_LOCAL_MODULE_INDEX_CACHE: dict[tuple[str, int], set[str]] = {}
 
 _IGNORED_DIRS = {
     "node_modules",
@@ -149,6 +152,8 @@ def _filter_dirnames(dirpath: str, dirnames: list[str], root: Path) -> None:
 
 
 def _should_skip(path: Path) -> bool:
+    if path.is_symlink():  # FIX: skip symlinks
+        return True
     parts = path.parts
     for part in parts:
         if part in _IGNORED_DIRS:
@@ -415,6 +420,8 @@ def git_log_summary(root: Path, limit: int = 10) -> dict[str, Any]:
 
 def git_diff_summary(root: Path, target: str = "HEAD") -> dict[str, Any]:
     root = root.resolve()
+    if not re.match(r"^[a-zA-Z0-9/_.\-]{1,200}$", target):  # FIX: sanitize target param
+        return {"error": "invalid target parameter", "root": str(root)}
     try:
         result = subprocess.run(
             ["git", "diff", "--numstat", target, "--"],
@@ -478,6 +485,7 @@ def git_diff_summary(root: Path, target: str = "HEAD") -> dict[str, Any]:
 def dependency_map(root: Path, max_depth: int = 8) -> dict[str, Any]:
     root = root.resolve()
     graph: dict[str, list[str]] = defaultdict(list)
+    local_modules = _build_local_module_index(root, max_depth=max_depth)
 
     for dirpath, dirnames, filenames in os.walk(root):
         depth = len(Path(dirpath).relative_to(root).parts)
@@ -514,7 +522,7 @@ def dependency_map(root: Path, max_depth: int = 8) -> dict[str, Any]:
                         imports.add(node.names[0].name.split(".")[0])
 
             for imp in imports:
-                if _is_local_module(imp, root):
+                if imp in local_modules or imp.startswith("claude_bridge"):
                     graph[rel].append(imp)
 
     nodes = len(graph)
@@ -529,9 +537,12 @@ def dependency_map(root: Path, max_depth: int = 8) -> dict[str, Any]:
     }
 
 
-def _is_local_module(name: str, root: Path, max_depth: int = 8) -> bool:
-    if name.startswith("claude_bridge"):
-        return True
+def _build_local_module_index(root: Path, max_depth: int = 8) -> set[str]:
+    cache_key = (str(root.resolve()), max_depth)
+    cached = _LOCAL_MODULE_INDEX_CACHE.get(cache_key)
+    if cached is not None:
+        return set(cached)
+    modules: set[str] = set()
     try:
         for dirpath, dirnames, filenames in os.walk(root):
             depth = len(Path(dirpath).relative_to(root).parts)
@@ -540,14 +551,24 @@ def _is_local_module(name: str, root: Path, max_depth: int = 8) -> bool:
                 continue
             _filter_dirnames(dirpath, dirnames, root)
             current_dir = Path(dirpath)
-            if current_dir.name == name and (current_dir / "__init__.py").exists():
-                return True
+            if (current_dir / "__init__.py").exists():
+                modules.add(current_dir.name)
             for filename in filenames:
-                if filename == f"{name}.py":
-                    return True
+                if filename.endswith(".py"):
+                    modules.add(Path(filename).stem)
+    except OSError:
+        return set()
+    _LOCAL_MODULE_INDEX_CACHE[cache_key] = set(modules)
+    return modules
+
+
+def _is_local_module(name: str, root: Path, max_depth: int = 8) -> bool:
+    if name.startswith("claude_bridge"):
+        return True
+    try:
+        return name in _build_local_module_index(root, max_depth=max_depth)
     except OSError:
         return False
-    return False
 
 
 def duplicate_code_scan(root: Path, min_lines: int = 4, max_depth: int = 6) -> dict[str, Any]:
@@ -629,39 +650,33 @@ def save_note(root: Path, note: str) -> dict[str, Any]:
     notes: list[dict[str, Any]] = []
     if notes_path.exists():
         try:
-            import json as _json
-
-            notes = _json.loads(notes_path.read_text(encoding="utf-8"))
+            notes = json.loads(notes_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             notes = []
 
-    import time as _time
-
     entry = {
         "note": note,
-        "created_at": _time.time(),
+        "created_at": time.time(),
     }
     notes.append(entry)
 
     if len(notes) > 100:
         notes = notes[-100:]
 
-    import json as _json
-    import tempfile
-
     try:
         notes_path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(dir=str(notes_path.parent), suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                _json.dump(notes, f, indent=2, ensure_ascii=False)
+                json.dump(notes, f, indent=2, ensure_ascii=False)
             os.replace(tmp_path, str(notes_path))
-        except OSError as exc:
+        finally:
+            # Clean up the temp file if it still exists (os.replace removes
+            # it on success, so this is a no-op in the happy path).
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
-            return {"ok": False, "error": str(exc)}
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
 

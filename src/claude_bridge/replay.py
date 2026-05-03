@@ -328,6 +328,88 @@ def replay_summary(results: list[ReplayResult]) -> dict[str, Any]:
     }
 
 
+def replay_with_justification(
+    record: dict[str, Any],
+    *,
+    justification: str,
+    rules: Sequence[GuardRule] | None = None,
+    builtin_deny: PolicyDecision | None = None,
+    default_decision: PolicyDecision | None = None,
+    project_dir: str | None = None,
+    allowed_roots: list[str] | None = None,
+) -> ReplayResult:
+    """Re-evaluate an audit record with an appeal justification.
+
+    The justification is embedded into the replay metadata so that
+    downstream systems (audit log, admin review) can trace why the
+    replay was triggered and what context the user provided.
+
+    When no AI evaluator is available the replay is purely deterministic.
+    If the original decision was ``deny`` and the replay still produces
+    ``deny``, the result is marked as ``ask`` (requires human review)
+    with the justification attached.
+
+    Args:
+        record: The audit record to replay.
+        justification: User-provided reason for the appeal.
+        rules: Current guard rules.
+        builtin_deny: Pre-computed builtin deny decision.
+        default_decision: Fallback decision.
+        project_dir: Override workspace directory.
+        allowed_roots: Override allowed roots.
+
+    Returns:
+        A :class:`ReplayResult` with justification metadata attached.
+    """
+    ctx, original = build_replay_context(
+        record,
+        project_dir=project_dir,
+        allowed_roots=allowed_roots,
+    )
+
+    masked_param_names = _collect_masked_fields(ctx.params)
+    replay_meta: dict[str, Any] = {
+        "tool_name": ctx.tool_name,
+        "has_masked_params": bool(masked_param_names),
+        "appeal_justification": justification,
+        "appeal_replay": True,
+    }
+    if masked_param_names:
+        replay_meta["masked_param_names"] = masked_param_names
+
+    replayed = evaluate_policy_chain(
+        ctx,
+        builtin_deny=builtin_deny,
+        user_rules=list(rules) if rules else None,
+        default_decision=default_decision,
+    )
+
+    changed, change_reason = _compare_decisions(original, replayed)
+
+    if masked_param_names and not changed:
+        replay_meta["masking_note"] = (
+            "One or more params are masked; rule conditions that depend on "
+            "those values will not match.  A false-negative match is "
+            "possible (the rule engine never fail-opens)."
+        )
+
+    if original is not None and original.action == DecisionAction.DENY:
+        if replayed.action == DecisionAction.DENY and not changed:
+            replay_meta["requires_human_review"] = True
+            replay_meta["review_reason"] = (
+                "Original decision was deny; deterministic replay also "
+                "produces deny. Human review required with justification."
+            )
+
+    return ReplayResult(
+        original_decision=original,
+        replayed_decision=replayed,
+        changed=changed,
+        change_reason=change_reason,
+        metadata=replay_meta,
+    )
+
+
 def replay_record_id(
     record_id: str,
     *,

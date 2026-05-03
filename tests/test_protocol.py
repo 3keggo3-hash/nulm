@@ -67,8 +67,8 @@ class TestReadTool:
         test_file = temp_project / "bad.txt"
         test_file.write_bytes(b"\xff\xfe\x00")
         payload = parse_payload(await mcp_server.read_file("bad.txt"))
-        assert payload["ok"] is False
-        assert payload["code"] == "file_read_error"
+        assert payload["ok"] is True
+        assert "\ufffd" in payload["details"]["content"]
 
     async def test_read_absolute_file_in_allowed_secondary_root(self, temp_project):
         secondary_root = temp_project.parent / "secondary-root"
@@ -1352,7 +1352,7 @@ class TestAgentLoopStepTool:
                 file="module.py",
                 search="return 1",
                 replace="return 2",
-                validation_command="python3 -c 'print(123)'",
+                validation_command="pytest --version",
                 iteration=1,
                 max_iterations=2,
             )
@@ -1373,7 +1373,7 @@ class TestAgentLoopStepTool:
                 file="module.py",
                 search="return 1",
                 replace="return 2",
-                validation_command="python3 -c 'import sys; sys.exit(1)'",
+                validation_command="python3 -m pytest missing_tests",
                 iteration=1,
                 max_iterations=2,
             )
@@ -1409,7 +1409,7 @@ class TestAgentLoopSessionTool:
                         "file": "module.py",
                         "search": "return 1",
                         "replace": "return 2",
-                        "validation_command": "python3 -c 'print(123)'",
+                        "validation_command": "pytest --version",
                     }
                 ],
                 max_iterations=1,
@@ -1428,13 +1428,13 @@ class TestAgentLoopSessionTool:
                     "file": "module.py",
                     "search": "return 1",
                     "replace": "return 2",
-                    "validation_command": "python3 -c 'print(123)'",
+                    "validation_command": "pytest --version",
                 },
                 {
                     "file": "module.py",
                     "search": "return 2",
                     "replace": "return 3",
-                    "validation_command": "python3 -c 'print(456)'",
+                    "validation_command": "pytest --version",
                 },
             ]
         )
@@ -1449,7 +1449,7 @@ class TestAgentLoopSessionTool:
             "files_touched": ["module.py"],
             "last_successful_file": "module.py",
             "last_validation_ok": True,
-            "last_validation_command": "python3 -c 'print(123)'",
+            "last_validation_command": "pytest --version",
             "remaining_budget": 1,
             "next_recommended_action": "stop",
             "results_compacted": False,
@@ -1458,7 +1458,7 @@ class TestAgentLoopSessionTool:
             "handoff_summary": (
                 "Executed 1 step(s); final decision: stop_success. "
                 "Files touched: module.py. "
-                "Last validation passed via python3 -c 'print(123)'. "
+                "Last validation passed via pytest --version. "
                 "Next action: stop."
             ),
         }
@@ -1473,13 +1473,13 @@ class TestAgentLoopSessionTool:
                     "file": "module.py",
                     "search": "return 1",
                     "replace": "return 2",
-                    "validation_command": "python3 -c 'import sys; sys.exit(1)'",
+                    "validation_command": "python3 -m pytest missing_tests",
                 },
                 {
                     "file": "module.py",
                     "search": "return 2",
                     "replace": "return 3",
-                    "validation_command": "python3 -c 'print(456)'",
+                    "validation_command": "pytest --version",
                 },
             ]
         )
@@ -1504,19 +1504,19 @@ class TestAgentLoopSessionTool:
                     "file": "module.py",
                     "search": "return 1",
                     "replace": "return 2",
-                    "validation_command": "python3 -c 'import sys; sys.exit(1)'",
+                    "validation_command": "python3 -m pytest missing_tests",
                 },
                 {
                     "file": "module.py",
                     "search": "return 2",
                     "replace": "return 3",
-                    "validation_command": "python3 -c 'import sys; sys.exit(1)'",
+                    "validation_command": "python3 -m pytest missing_tests",
                 },
                 {
                     "file": "module.py",
                     "search": "return 3",
                     "replace": "return 4",
-                    "validation_command": "python3 -c 'print(789)'",
+                    "validation_command": "pytest --version",
                 },
             ]
         )
@@ -2468,6 +2468,43 @@ class TestConfigTools:
         assert payload["ok"] is True
         assert payload["details"]["intent_compaction_enabled"] is True
 
+    async def test_set_config_value_can_set_ai_evaluator_provider(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        payload = parse_payload(
+            await mcp_server.set_config_value("ai_evaluator_provider", "local")
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["ai_evaluator_provider"] == "local"
+
+    async def test_set_config_value_rejects_invalid_ai_evaluator_provider(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        payload = parse_payload(
+            await mcp_server.set_config_value("ai_evaluator_provider", "openai")
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_config_value"
+
+    async def test_set_config_value_can_toggle_ai_evaluator(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        enable_payload = parse_payload(
+            await mcp_server.set_config_value("ai_evaluator_enabled", True)
+        )
+
+        assert enable_payload["ok"] is True
+        assert enable_payload["details"]["ai_evaluator_enabled"] is True
+
+        disable_payload = parse_payload(
+            await mcp_server.set_config_value("ai_evaluator_enabled", False)
+        )
+
+        assert disable_payload["ok"] is True
+        assert disable_payload["details"]["ai_evaluator_enabled"] is False
+
     async def test_compact_user_intent_returns_canonical_summary(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)
 
@@ -2547,6 +2584,44 @@ class TestInsightsTools:
         assert insights_module._human_size(1024 * 1024) == "1.0 MB"
 
 
+class TestAppealDecision:
+    async def test_appeal_decision_on_deny_record(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(temp_project / "audit"))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        # Trigger a deny decision
+        payload = parse_payload(await mcp_server.run_shell("sudo apt update"))
+        assert payload["ok"] is False
+        assert payload["code"] == "blocked_command"
+
+        # Get the recent tool call record
+        recent = parse_payload(await mcp_server.get_recent_tool_calls(limit=1))
+        assert recent["ok"] is True
+        records = recent["details"]["records"]
+        assert len(records) >= 1
+        record_id = records[0]["record_id"]
+
+        # Appeal the decision
+        appeal_payload = parse_payload(
+            await mcp_server.appeal_decision(record_id, "I need this for debugging")
+        )
+        assert appeal_payload["ok"] is True
+        details = appeal_payload["details"]
+        assert "appeal_request" in details
+        assert "appeal_result" in details
+        assert "original_record" in details
+        assert "replay_result" in details
+        assert "appeal_history_count" in details
+        assert details["original_record"]["record_id"] == record_id
+
+        # Verify appeal status is one of allow/deny/ask
+        status = details["appeal_result"]["status"]
+        assert status in ("allow", "deny", "ask")
+
+        # Verify appeal history is non-empty
+        assert details["appeal_history_count"] >= 1
+
+
 class TestSmartTools:
     async def test_compact_user_intent_reports_summary_delta_separately(self, temp_project):
         payload = parse_payload(
@@ -2565,3 +2640,76 @@ class TestSmartTools:
             details["estimated_prompt_overhead_tokens"]
             == details["estimated_compact_tokens"] - details["estimated_compact_summary_tokens"]
         )
+
+
+class TestAnomalyTools:
+    async def test_anomaly_summary_returns_scores_and_metadata(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(temp_project / "audit"))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        await mcp_server.read_file("missing.txt")
+        await mcp_server.list_directory(".")
+
+        payload = parse_payload(await mcp_server.anomaly_summary(limit=10))
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert "anomaly_scores" in details
+        assert "anomaly_counts" in details
+        assert "overall_max_score" in details
+        assert "overall_level" in details
+        assert "critical_count" in details
+        assert "policy_decisions" in details
+        assert "mvp_limits" in details
+        assert details["mvp_limits"]["scope"] == "rule-based, no ML model"
+        assert len(details["mvp_limits"]["rules"]) == 5
+
+    async def test_anomaly_summary_e2e_critical_result(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(temp_project / "audit"))
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
+
+        policy_path = temp_project / "policy.json"
+        policy_path.write_text(
+            json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "deny-sensitive-read",
+                            "scope": "read_file",
+                            "action": "deny",
+                            "risk_level": "high",
+                            "conditions": [
+                                {
+                                    "type": "regex",
+                                    "field": "path",
+                                    "pattern": r"\.ssh/",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("CLAUDE_BRIDGE_GUARD_POLICY", str(policy_path))
+
+        await mcp_server.read_file(".ssh/id_rsa")
+        await mcp_server.read_file(".ssh/authorized_keys")
+        await mcp_server.read_file("/etc/passwd")
+
+        payload = parse_payload(await mcp_server.anomaly_summary(limit=10))
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["total_records_scanned"] >= 3
+        assert isinstance(details["anomaly_counts"], dict)
+        if details["critical_count"] > 0:
+            pd = details["policy_decisions"][0]
+            assert pd["level"] == "critical"
+            assert "decision_action" in pd
+            assert "decision_source" in pd
+            assert "decision_risk_level" in pd
+            assert "recommended_action" in pd
+            assert pd["recommended_action"] in ("escalate", "review")
+            assert "anomaly_types" in pd
+            assert isinstance(pd["anomaly_types"], list)

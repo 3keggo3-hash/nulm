@@ -1,0 +1,76 @@
+{
+  "blocked_shell_patterns": [],
+  "sensitive_path_patterns": [
+    ".env",
+    "*.key",
+    "*.pem",
+    "credentials/*",
+    "secrets/*"
+  ],
+  "secret_patterns": {},
+  "rules": [
+    {
+      "name": "ask-before-production-write",
+      "description": "Require approval before writing to production paths",
+      "action": "ask",
+      "priority": 50,
+      "enabled": true,
+      "conditions": [
+        {
+          "type": "tool",
+          "field": "tool",
+          "value": "write_file"
+        },
+        {
+          "type": "glob",
+          "field": "path",
+          "value": "/app/production/**"
+        }
+      ],
+      "metadata": {
+        "risk_level": "high"
+      }
+    },
+    {
+      "name": "ask-before-destructive-shell",
+      "description": "Require approval for shell commands with delete keywords",
+      "action": "ask",
+      "priority": 40,
+      "enabled": true,
+      "conditions": [
+        {
+          "type": "tool",
+          "field": "tool",
+          "value": "run_shell"
+        },
+        {
+          "type": "regex",
+          "field": "command",
+          "value": "\\b(rm|remove|delete|drop|truncate)\\b"
+        }
+      ],
+      "metadata": {
+        "risk_level": "high"
+      }
+    },
+    {
+      "name": "allow-read-operations",
+      "description": "Allow all read operations by default",
+      "action": "allow",
+      "priority": 10,
+      "enabled": true,
+      "conditions": [
+        {
+          "type": "tool",
+          "field": "tool",
+          "value": "read_file"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "name": "rule-ask",
+    "description": "Demo: rules that require approval for risky operations",
+    "scenario": "rule_ask"
+  }
+}

@@ -21,6 +21,7 @@ from claude_bridge.guard_policy import (
     evaluate_rules,
     load_guard_policy,
     load_rules,
+    validate_rule_condition,
 )
 from claude_bridge.rules_engine import (
     evaluate_condition,
@@ -153,6 +154,24 @@ class TestConditionRegex:
         ctx = make_ctx(params={"command": "test"})
         cond = make_condition(ConditionType.REGEX, value=r"test")
         assert evaluate_condition(ctx, cond) is False
+
+    def test_regex_nested_quantifier_is_rejected_by_validation(self) -> None:
+        cond = make_condition(ConditionType.REGEX, field="command", value=r"((a+)+b)")
+
+        errors = validate_rule_condition(cond)
+
+        assert [error.code for error in errors] == ["unsafe_regex"]
+
+    def test_regex_runtime_rejection_is_logged(self, caplog) -> None:
+        ctx = make_ctx(params={"command": "aaaaaaaaaaaaaaaa"})
+        cond = make_condition(ConditionType.REGEX, field="command", value=r"((a+)+b)")
+
+        assert evaluate_condition(ctx, cond) is False
+        assert any(
+            getattr(record, "structured_warning", {}).get("code")
+            == "rule_regex_runtime_rejected"
+            for record in caplog.records
+        )
 
 
 class TestConditionGlob:

@@ -36,6 +36,7 @@ from claude_bridge.replay import (
     replay_decision,
     replay_session,
     replay_summary,
+    replay_with_justification,
 )
 
 # ---------------------------------------------------------------------------
@@ -662,3 +663,113 @@ class TestActivitySummaryPolicyDecisions:
         ):
             assert key in pd_counts, f"Missing key: {key}"
             assert isinstance(pd_counts[key], int), f"Key {key} not int"
+
+
+# ---------------------------------------------------------------------------
+# Appeal replay with justification
+# ---------------------------------------------------------------------------
+
+
+class TestReplayWithJustification:
+    def test_replay_with_justification_includes_metadata(self) -> None:
+        record = _make_audit_record(
+            tool_name="run_shell",
+            decision_action="allow",
+            decision_source="default",
+            decision_risk_level="low",
+            params={"command": "echo hello"},
+        )
+        result = replay_with_justification(record, justification="Testing appeal")
+        assert isinstance(result, ReplayResult)
+        assert result.metadata.get("appeal_justification") == "Testing appeal"
+        assert result.metadata.get("appeal_replay") is True
+
+    def test_replay_with_justification_deny_original_marks_review(
+        self,
+    ) -> None:
+        record = _make_audit_record(
+            tool_name="run_shell",
+            ok=False,
+            decision_action="deny",
+            decision_source="builtin_guard",
+            decision_risk_level="critical",
+            params={"command": "rm -rf /"},
+        )
+        builtin = builtin_deny_decision("hard block", risk_level=RiskLevel.CRITICAL)
+        result = replay_with_justification(
+            record,
+            justification="This is actually safe in our sandbox",
+            builtin_deny=builtin,
+        )
+        assert result.original_decision is not None
+        assert result.original_decision.action == DecisionAction.DENY
+        assert result.replayed_decision.action == DecisionAction.DENY
+        assert result.metadata.get("requires_human_review") is True
+        assert "review_reason" in result.metadata
+
+    def test_replay_with_justification_allow_original_no_review_flag(
+        self,
+    ) -> None:
+        record = _make_audit_record(
+            tool_name="list_directory",
+            decision_action="allow",
+            decision_source="default",
+            decision_risk_level="low",
+            params={"path": "."},
+        )
+        result = replay_with_justification(
+            record,
+            justification="Need to see files",
+        )
+        assert result.metadata.get("requires_human_review") is None
+
+    def test_replay_with_justification_rule_changes_decision(self) -> None:
+        record = _make_audit_record(
+            tool_name="run_shell",
+            ok=True,
+            decision_action="allow",
+            decision_source="default",
+            decision_risk_level="low",
+            params={"command": "npm test"},
+        )
+        rule = GuardRule(
+            name="deny-npm-test",
+            action=RuleAction.DENY,
+            priority=10,
+            conditions=[
+                RuleCondition(type=ConditionType.TOOL, value="run_shell"),
+                RuleCondition(
+                    type=ConditionType.FIELD_CONTAINS,
+                    field="command",
+                    value="npm test",
+                ),
+            ],
+            metadata={"risk_level": "high"},
+        )
+        result = replay_with_justification(
+            record,
+            justification="npm test is safe in CI",
+            rules=[rule],
+        )
+        assert result.changed is True
+        assert result.replayed_decision.action == DecisionAction.DENY
+        assert result.metadata.get("appeal_justification") == "npm test is safe in CI"
+
+    def test_replay_with_justification_masked_params_handled(self) -> None:
+        record = _make_audit_record(
+            tool_name="write_file",
+            decision_action="allow",
+            decision_source="default",
+            decision_risk_level="low",
+            params={
+                "path": "config.json",
+                "content": {"redacted": True, "sha256": "abc123"},
+            },
+        )
+        result = replay_with_justification(
+            record,
+            justification="Content is safe",
+        )
+        assert result.metadata.get("has_masked_params") is True
+        assert "masked_param_names" in result.metadata
+        assert result.metadata.get("appeal_justification") == "Content is safe"

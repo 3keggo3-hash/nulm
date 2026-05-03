@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shlex
 import subprocess
@@ -11,6 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from claude_bridge.ai_evaluator import evaluate_tool_with_ai
+from claude_bridge.config import current_config
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -22,6 +25,8 @@ from claude_bridge.guard_policy import (
     make_policy_decision,
 )
 from claude_bridge.tool_utils import json_response, require_approval
+
+logger = logging.getLogger(__name__)  # FIX: logger for trim warnings
 
 _INTERACTIVE_COMMANDS = {
     "python",
@@ -39,7 +44,14 @@ _INTERACTIVE_COMMANDS = {
     "vi",
     "nano",
 }
-_DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore"}
+_DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore", "revert"}
+# Regex for fork-bomb patterns:
+#   :(){ :|:& };:  (classic)  and  f(){ f|f& };f  (named variant)
+#   with flexible whitespace and function-name chars.
+_FORK_BOMB_RE = re.compile(
+    r""":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"""  # classic (spaces ok)
+    r"""|(\w+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""  # named variant
+)
 _INLINE_INTERPRETER_FLAGS = {
     "lua": {"-e"},
     "node": {"-e"},
@@ -64,7 +76,6 @@ _BLOCKED_PIPE_TARGETS = {
     "node",
 }
 _MAX_SHELL_OUTPUT_CHARS = 12000
-_MAX_PROCESS_OUTPUT_READ_CHARS = 12000
 _MAX_PROCESS_SESSIONS = 16
 _MAX_PROCESS_OUTPUT_CHARS = 200000
 
@@ -180,6 +191,12 @@ def _trim_process_sessions() -> None:
         ordered = sorted(_PROCESS_SESSIONS.values(), key=lambda session: session.started_at)
         for session in ordered[:-_MAX_PROCESS_SESSIONS]:
             if session.exit_code is None:
+                logger.warning(  # FIX: log before killing oldest session
+                    "Killing oldest process session %s (%s) to stay within limit %d",
+                    session.session_id,
+                    session.command,
+                    _MAX_PROCESS_SESSIONS,
+                )
                 try:
                     session.process.terminate()
                     session.process.wait(timeout=1)
@@ -261,8 +278,20 @@ def _interactive_target(tokens: list[str]) -> str | None:
     head = _command_basename(tokens[0])
     if head != "env":
         return head
-    for token in tokens[1:]:
+    for i, token in enumerate(tokens[1:], start=1):
         if "=" in token:
+            continue
+        if token == "-S":
+            # FIX: env -S splits the next arg into command; extract it
+            if i + 1 < len(tokens):
+                try:
+                    inner = shlex.split(tokens[i + 1])
+                except ValueError:
+                    return None
+                if inner:
+                    return _command_basename(inner[0])
+            continue
+        if token.startswith("-"):
             continue
         return _command_basename(token)
     return None
@@ -273,6 +302,17 @@ def _tokens_after_env(tokens: list[str]) -> list[str]:
         return tokens
     for index, token in enumerate(tokens[1:], start=1):
         if "=" in token:
+            continue
+        if token == "-S":
+            # FIX: env -S splits the next arg into command
+            if index + 1 < len(tokens):
+                try:
+                    inner = shlex.split(tokens[index + 1])
+                except ValueError:
+                    inner = [tokens[index + 1]]
+                return inner + list(tokens[index + 2:])
+            continue
+        if token.startswith("-"):
             continue
         return tokens[index:]
     return []
@@ -294,8 +334,16 @@ def is_interactive_command(command: str) -> bool:
             for index, token in enumerate(tokens[1:], start=1):
                 if "=" in token:
                     continue
+                if token.startswith("-"):
+                    continue
                 executable_index = index
                 break
+        # FIX: detect python -i as interactive
+        if any(
+            tok == "-i"
+            for tok in tokens[executable_index + 1:]
+        ):
+            return True
         return len(tokens) == executable_index + 1
     return head in _INTERACTIVE_COMMANDS
 
@@ -322,12 +370,21 @@ def _find_unquoted_shell_construct(command: str) -> str | None:
         if char == '"' and not in_single:
             in_double = not in_double
             continue
-        if in_single or in_double:
+        # FIX: skip only single-quoted text; double-quoted still evaluates $(), ``, etc.
+        if in_single:
             continue
         if char == "`":
             return "backtick substitution"
-        if char == "$" and index + 1 < len(command) and command[index + 1] == "(":
-            return "$() substitution"
+        if char == "$" and index + 1 < len(command):
+            next_char = command[index + 1]
+            if next_char == "(":
+                # FIX: $(( arithmetic expansion must be checked before $()
+                if index + 2 < len(command) and command[index + 2] == "(":
+                    return "$(( arithmetic expansion"
+                return "$() substitution"
+            # FIX: detect ${} parameter expansion
+            if next_char == "{":
+                return "${} expansion"
         if char == "(":
             prefix = command[:index].rstrip()
             if not prefix or prefix.endswith((";", "&&", "||", "|", "&")):
@@ -365,11 +422,11 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         return custom_reason
     control_tokens_present = any(token in {"|", "&&", ";"} for token in all_lower_tokens)
 
-    if head == "sudo":
+    if head.lower() == "sudo":
         return "sudo"
-    if head == "chmod":
+    if head.lower() == "chmod":
         return "chmod"
-    if head == "mkfs":
+    if head.lower() == "mkfs":
         return "mkfs"
     if head in _INLINE_INTERPRETER_FLAGS and any(
         token in _INLINE_INTERPRETER_FLAGS[head] for token in lower_tokens[1:]
@@ -378,63 +435,101 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         return f"{head} {flag}"
     pipe_target_pattern = "|".join(sorted(_BLOCKED_PIPE_TARGETS))
     pipe_target_regex = rf"(?:[|;]|&&)\s*(?:\S*/)?({pipe_target_pattern})\b"
-    if head == "curl" and re.search(r"[|;]|&&", stripped):
-        if re.search(pipe_target_regex, stripped, re.IGNORECASE):
-            return "curl to shell"
-    if head == "curl" and control_tokens_present:
-        if any(_command_basename(token) in _BLOCKED_PIPE_TARGETS for token in lower_tokens):
-            return "curl to shell"
-    if head == "wget" and re.search(r"[|;]|&&", stripped):
-        if re.search(pipe_target_regex, stripped, re.IGNORECASE):
-            return "wget to shell"
-    if head == "wget" and control_tokens_present:
-        if any(_command_basename(token) in _BLOCKED_PIPE_TARGETS for token in lower_tokens):
-            return "wget to shell"
-    if head == "dd" and any(token.startswith("if=") for token in lower_tokens[1:]):
-        return "dd if="
+    # curl / wget pipe detection with output-file false-positive fix
+    if head in {"curl", "wget"}:
+        output_file_tokens: set[str] = set()
+        output_flags = {"-o", "--output"} if head.lower() == "curl" else {"-O", "--output-document"}
+        for i, token in enumerate(lower_tokens[:-1]):
+            if token in output_flags:
+                output_file_tokens.add(lower_tokens[i + 1])
+        # Real pipe-to-interpreter check (|/&&/; followed by blocked target)
+        if re.search(r"[|;]|&&", stripped) and re.search(
+            pipe_target_regex, stripped, re.IGNORECASE
+        ):
+            return f"{head} to shell"
+        # Fallback: any blocked target that is NOT an output-file argument
+        if control_tokens_present:
+            suspect = [
+                t
+                for t in lower_tokens
+                if _command_basename(t) in _BLOCKED_PIPE_TARGETS and t not in output_file_tokens
+            ]
+            if suspect:
+                return f"{head} to shell"
+
+    if head.lower() == "dd":
+        for token in lower_tokens[1:]:
+            if token.startswith("if="):
+                return "dd if="
+            # FIX: Block dd of=/dev/... writes to device files
+            if token.startswith("of=") and len(token) > 3 and token[3:].startswith("/dev/"):
+                return "dd of=/dev/"
     _WRAPPER_COMMANDS = {"nohup", "setsid", "script", "timeout"}
     if head in _WRAPPER_COMMANDS:
         return f"{head} wrapper"
-    if head == "find" and re.search(
+    if head.lower() == "find" and re.search(
         r"(?:^|\s)find\b.*\|\s*xargs\b.*\brm\b",
         normalized,
     ):
         return "find to xargs rm"
-    if head == "find" and any(
+    if head.lower() == "find" and any(
         token.startswith("-exec") or token == "-delete" or token == "+"
         for token in lower_tokens[1:]
     ):
         return "find -exec"
-    if head == "xargs" and len(lower_tokens) > 1:
+    if head.lower() == "xargs" and len(lower_tokens) > 1:
         return "xargs"
-    if head == "rm":
+    if head.lower() == "rm":
         option_chars = "".join(
             token.lstrip("-") for token in lower_tokens[1:] if token.startswith("-")
         )
         if "r" in option_chars:
             return "rm -r"
-    if head == "git" and len(lower_tokens) > 1:
-        subcommand = lower_tokens[1]
-        if subcommand == "reset" and any(token == "--hard" for token in lower_tokens[2:]):
+        # FIX: detect --no-preserve-root flag
+        if "--no-preserve-root" in lower_tokens:
+            return "rm --no-preserve-root"
+    if head.lower() == "git" and len(lower_tokens) > 1:
+        # Skip flags (like -C, -c) to find the actual subcommand
+        sub_start: int = 1
+        while sub_start < len(lower_tokens):
+            t = lower_tokens[sub_start]
+            if t in {"-c", "-C"} and sub_start + 1 < len(lower_tokens):
+                sub_start += 2
+                continue
+            if t.startswith("-"):
+                sub_start += 1
+                continue
+            break
+        subcommand = lower_tokens[sub_start] if sub_start < len(lower_tokens) else ""
+        rest = lower_tokens[sub_start + 1 :]
+        if subcommand == "reset" and any(token == "--hard" for token in rest):
             return "git reset --hard"
         if subcommand == "clean" and any(
-            "f" in token.lstrip("-") for token in lower_tokens[2:] if token.startswith("-")
+            "f" in token.lstrip("-") for token in rest if token.startswith("-")
         ):
             return "git clean -f"
-        if subcommand == "checkout" and any(token == "--" for token in lower_tokens[2:]):
+        if subcommand == "checkout" and any(token == "--" for token in rest):
             return "git checkout --"
-        if subcommand == "restore" and any(
-            token.startswith("--source") for token in lower_tokens[2:]
-        ):
+        if subcommand == "restore" and any(token.startswith("--source") for token in rest):
             return "git restore --source"
     for index, token in enumerate(all_lower_tokens[:-1]):
         pipe_target = _command_basename(all_lower_tokens[index + 1])
         if token == "|" and pipe_target in _BLOCKED_PIPE_TARGETS:
             return f"| {pipe_target}"
-    if any(token in {">", ">>"} for token in tokens) and "/dev" in normalized:
+    # catch >, >>, 1>, 2>, &>, 1>>, 2>>, &>> redirections to /dev
+    for token in tokens:
+        if token in {">", ">>"}:
+            return f"{token} /dev"
+        if re.match(r"^[12&]>>?$", token):
+            return f"{token} /dev"
+    if re.search(r"[12&]?>>?\s*/dev", normalized):
         return "> /dev"
-    if ":(){" in normalized:
-        return ":(){"
+    # FIX: use /dev/ prefix instead of substring to avoid blocking legal paths
+    if normalized.startswith("/dev/"):
+        return "/dev/ path"
+    fork_bomb_match = _FORK_BOMB_RE.search(normalized)
+    if fork_bomb_match is not None:
+        return "fork bomb"
     return None
 
 
@@ -544,21 +639,33 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             },
         }
 
+    command_tokens = _tokens_after_env(tokens)
     head = _interactive_target(tokens) or tokens[0].lower()
+    lower_tokens = [token.lower() for token in tokens]
+    # determine git subcommand position (skip -C, -c flags)
+    _git_sub_start = 1
+    while _git_sub_start < len(lower_tokens):
+        _t = lower_tokens[_git_sub_start]
+        if _t in {"-c", "-C"} and _git_sub_start + 1 < len(lower_tokens):
+            _git_sub_start += 2
+            continue
+        if _t.startswith("-"):
+            _git_sub_start += 1
+            continue
+        break
+    _git_sub = lower_tokens[_git_sub_start] if _git_sub_start < len(lower_tokens) else ""
+
     if (
         head in {"pytest", "ls", "cat"}
         or tokens[:3] == ["python3", "-m", "pytest"]
+        or command_tokens[:3] == ["python3", "-m", "pytest"]
         or tokens[:2] == ["git", "status"]
         or tokens[:2] == ["git", "diff"]
         or tokens[:2] == ["ruff", "check"]
     ):
         risk_level = "low"
         risk_reasons = ["read-only or standard validation command"]
-    elif (
-        head == "git"
-        and len(tokens) > 1
-        and tokens[1].lower() in {"reset", "clean", "push", "checkout", "restore", "revert"}
-    ):
+    elif head == "git" and _git_sub in (_DESTRUCTIVE_GIT_SUBCOMMANDS | {"push"}):
         risk_level = "high"
         risk_reasons = ["destructive git operation risk"]
     elif head in {"python", "python3", "pip", "pip3", "npm", "pnpm", "yarn", "git"}:
@@ -576,9 +683,11 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     if risk_level == "low":
         decision_action = DecisionAction.ALLOW
         decision_source = DecisionSource.DEFAULT
+        requires_confirmation = False
     else:
         decision_action = DecisionAction.ASK
         decision_source = DecisionSource.BUILTIN_GUARD
+        requires_confirmation = True
 
     analysis_decision = make_policy_decision(
         decision_action,
@@ -586,7 +695,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
         policy_risk,
         f"Shell command analysis: {risk_level} risk",
         risk_reasons,
-        {"tool": "analyze_shell_command", "requires_confirmation": True},
+        {"tool": "analyze_shell_command", "requires_confirmation": requires_confirmation},
     )
 
     return {
@@ -598,7 +707,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             "argv": tokens,
             "risk_level": risk_level,
             "risk_reasons": risk_reasons,
-            "requires_confirmation": True,
+            "requires_confirmation": requires_confirmation,
             "policy_decision": analysis_decision.to_dict(),
         },
     }
@@ -645,6 +754,7 @@ async def run_shell(
     request_approval: Callable[[str, dict[str, Any]], Awaitable[bool]],
     project_dir: Callable[[], Path],
     shell_timeout: Callable[[], int],
+    ai_provider: Any = None,
 ) -> str:
     analysis = analyze_shell_command(command)
     if not analysis["ok"]:
@@ -698,7 +808,51 @@ async def run_shell(
             decision_in_details=True,
         )
 
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    # AI evaluator layer (optional, default off)
+    config = current_config()
+    ai_enabled = bool(config.get("ai_evaluator_enabled", False))
+    ai_timeout = int(config.get("ai_evaluator_timeout", 5))
+    ai_fallback = str(config.get("ai_evaluator_fallback_action", "ask"))
+    ai_decision = await evaluate_tool_with_ai(
+        ToolRequestContext(
+            tool_name="run_shell",
+            params={"command": stripped},
+            project_dir=str(project_dir()),
+        ),
+        provider=ai_provider,
+        enabled=ai_enabled,
+        timeout=ai_timeout,
+        fallback_action=ai_fallback,
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="approval_rejected",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
+        allow_decision = ai_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         rejection = await require_approval(
@@ -817,6 +971,7 @@ async def start_process(
     *,
     request_approval: Callable[[str, dict[str, Any]], Awaitable[bool]],
     project_dir: Callable[[], Path],
+    ai_provider: Any = None,
 ) -> str:
     analysis = analyze_shell_command(command)
     if not analysis["ok"]:
@@ -870,7 +1025,51 @@ async def start_process(
             decision_in_details=True,
         )
 
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    # AI evaluator layer (optional, default off)
+    config = current_config()
+    ai_enabled = bool(config.get("ai_evaluator_enabled", False))
+    ai_timeout = int(config.get("ai_evaluator_timeout", 5))
+    ai_fallback = str(config.get("ai_evaluator_fallback_action", "ask"))
+    ai_decision = await evaluate_tool_with_ai(
+        ToolRequestContext(
+            tool_name="start_process",
+            params={"command": stripped},
+            project_dir=str(project_dir()),
+        ),
+        provider=ai_provider,
+        enabled=ai_enabled,
+        timeout=ai_timeout,
+        fallback_action=ai_fallback,
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="approval_rejected",
+            details={
+                "command": command,
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
+        allow_decision = ai_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         rejection = await require_approval(
@@ -970,12 +1169,12 @@ async def read_process_output(session_id: str, offset: int = 0, limit: int = 400
             code="invalid_offset",
             details={"offset": offset},
         )
-    if limit < 1 or limit > _MAX_PROCESS_OUTPUT_READ_CHARS:
+    if limit < 1 or limit > _MAX_PROCESS_OUTPUT_CHARS:
         return json_response(
             False,
-            f"Limit must be between 1 and {_MAX_PROCESS_OUTPUT_READ_CHARS}",
+            f"Limit must be between 1 and {_MAX_PROCESS_OUTPUT_CHARS}",
             code="invalid_limit",
-            details={"limit": limit, "max_limit": _MAX_PROCESS_OUTPUT_READ_CHARS},
+            details={"limit": limit, "max_limit": _MAX_PROCESS_OUTPUT_CHARS},
         )
     session = _get_process_session(session_id)
     if session is None:
@@ -1141,11 +1340,13 @@ async def interact_with_process(
         )
     try:
         if input:
-            stdin_stream.write(input)
-            stdin_stream.flush()
+            with session.lock:  # FIX: thread-safe stdin write
+                stdin_stream.write(input + "\n")  # FIX: auto newline on input
+                stdin_stream.flush()
             session.record_input(input)
         if close_stdin:
-            stdin_stream.close()
+            with session.lock:  # FIX: thread-safe stdin close
+                stdin_stream.close()
             session.mark_stdin_closed()
     except (OSError, BrokenPipeError) as exc:
         return json_response(

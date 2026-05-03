@@ -114,6 +114,7 @@ Ne yapar:
 ## Aşama 3 — Agentic Loop
 **Süre tahmini:** 1-2 ay
 **Teknik:** Tool call → sonuç → tekrar tool call döngüsü
+**Durum:** ✅ Tamamlandı
 
 Ne yapar:
 - "Şu testi geçir" denir
@@ -121,15 +122,13 @@ Ne yapar:
 - Test geçmezse hatayı okur, tekrar düzeltir
 - Geçene kadar veya max iterasyona ulaşana kadar devam eder
 
-**En büyük risk:** Sonsuz döngü. Claude yanlış düzeltme yapar, bozar, düzeltmeye çalışır, daha bozar. **Zorunlu:** max iterasyon limiti, her adımda git snapshot.
-
-**Ölçüt:** "Şu failing testi geçir" komutuyla Claude insan müdahalesi olmadan çözebilmeli (basit vakalar için).
-
-**Eksik güvenlik sınırları:**
-- Maksimum iterasyon sayısı
-- Toplam dosya değiştirme limiti
-- Tek adımda çalıştırılabilecek shell komut seti
-- Geri alma politikası: her adım commit mi, yoksa sadece başarısız durumda snapshot mı?
+**Güvenlik sınırları (tamamlandı):**
+- [x] Maksimum iterasyon sayısı
+- [x] Toplam dosya değiştirme limiti
+- [x] Tek adımda çalıştırılabilecek shell komut seti
+- [x] Geri alma politikası: başarısız durumda snapshot
+- [x] Validation command ile her adım doğrulama
+- [x] Result compaction ve session summary
 
 ---
 
@@ -153,16 +152,16 @@ Mantık:
 
 ## Aşama 5 — Git Entegrasyonu
 **Süre tahmini:** 2-3 hafta
+**Durum:** ✅ Temel özellikler tamamlandı
 
 Ne yapar:
-- Her agentic loop adımından önce otomatik commit (güvenlik ağı)
-- `git diff` çıktısını Claude'a besle
-- PR açıklaması otomatik yaz
-- Conflict resolution öner
+- [x] Her agentic loop adımından önce otomatik commit (güvenlik ağı)
+- [x] `git diff` çıktısını Claude'a besle
+- [x] Git status, log, branch operations
+- [ ] PR açıklaması otomatik yaz
+- [ ] Conflict resolution öner
 
 **Ölçüt:** Agentic loop bir şeyi bozarsa tek komutla geri dönülebilmeli.
-
-**Not:** Bunun bir kısmı Aşama 3'e çekilebilir; loop güvenliği için temel snapshot mantığı daha erken gerekebilir.
 
 ---
 

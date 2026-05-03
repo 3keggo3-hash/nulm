@@ -196,8 +196,8 @@ class TestPolicyDecision:
         assert d.reason == "ok"
 
     def test_from_dict_invalid_action_falls_back(self) -> None:
-        with pytest.raises(ValueError):
-            PolicyDecision.from_dict({"action": "bogus"})
+        d = PolicyDecision.from_dict({"action": "bogus"})
+        assert d.action is DecisionAction.DENY
 
     def test_risk_reasons_are_independent(self) -> None:
         d = PolicyDecision(
@@ -267,3 +267,45 @@ class TestToolRequestContext:
         p["x"].append(2)
         # to_dict snapshot reflects the original params value at construction time
         assert ctx.to_dict()["params"] == {"x": [1, 2]}
+
+    def test_construction_with_role(self) -> None:
+        ctx = ToolRequestContext(tool_name="run_shell", role="senior")
+        assert ctx.role == "senior"
+        assert ctx.user is None
+
+    def test_construction_with_user(self) -> None:
+        ctx = ToolRequestContext(tool_name="run_shell", user="alice")
+        assert ctx.user == "alice"
+        assert ctx.role is None
+
+    def test_construction_with_role_and_user(self) -> None:
+        ctx = ToolRequestContext(
+            tool_name="run_shell",
+            role="ci",
+            user="bot-42",
+        )
+        assert ctx.role == "ci"
+        assert ctx.user == "bot-42"
+
+    def test_to_dict_with_role(self) -> None:
+        ctx = ToolRequestContext(
+            tool_name="write_file",
+            role="contractor",
+            user="ext-1",
+        )
+        result = ctx.to_dict()
+        assert result["role"] == "contractor"
+        assert result["user"] == "ext-1"
+
+    def test_to_dict_without_role_omits_key(self) -> None:
+        ctx = ToolRequestContext(tool_name="read_file")
+        result = ctx.to_dict()
+        assert "role" not in result
+        assert "user" not in result
+
+    def test_to_dict_json_serializable_with_role(self) -> None:
+        ctx = ToolRequestContext(tool_name="test", role="junior", user="dev-1")
+        raw = json.dumps(ctx.to_dict())
+        parsed = json.loads(raw)
+        assert parsed["role"] == "junior"
+        assert parsed["user"] == "dev-1"

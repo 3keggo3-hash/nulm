@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 
+from claude_bridge.anomaly import build_anomaly_summary
+from claude_bridge.audit import process_appeal
 from claude_bridge.guard_policy import default_allow_decision, load_guard_policy
 
 
@@ -544,6 +546,73 @@ def register_meta_tools(
         )
         return audit_tool_call("prompt_shortcuts", {}, result, started_at=started_at)
 
+    @mcp.tool(
+        **tool_options(
+            "Appeal a policy decision by record id with a justification. "
+            "Returns allow, deny, or ask and chains the result to the audit log.",
+            destructive=True,
+        )
+    )
+    async def appeal_decision(record_id: str, justification: str) -> str:
+        started_at = time.perf_counter()
+        try:
+            result = process_appeal(record_id, justification)
+        except ValueError as exc:
+            result_obj = json_response(
+                False,
+                str(exc),
+                code="appeal_failed",
+                details={"record_id": record_id},
+            )
+            return audit_tool_call(
+                "appeal_decision",
+                {"record_id": record_id, "justification": justification},
+                result_obj,
+                started_at=started_at,
+            )
+        result_obj = json_response(
+            True,
+            "Appeal processed",
+            details=result,
+        )
+        return audit_tool_call(
+            "appeal_decision",
+            {"record_id": record_id, "justification": justification},
+            result_obj,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
+            "Run anomaly detection on recent audit records. Returns per-record "
+            "anomaly scores, overall severity level, and policy decision metadata "
+            "for critical anomalies. Use this to identify suspicious sessions.",
+            read_only=True,
+        )
+    )
+    async def anomaly_summary(limit: int = 50) -> str:
+        started_at = time.perf_counter()
+        safe_limit = max(1, min(limit, 500))
+        recent = get_recent_tool_calls_impl(limit=safe_limit)
+        records = recent.get("records", [])
+        session_id = recent.get("session_id", "")
+        summary = build_anomaly_summary(
+            records=records,
+            session_id=session_id,
+            limit=safe_limit,
+        )
+        result = json_response(
+            True,
+            "Anomaly scan complete",
+            details=summary,
+        )
+        return audit_tool_call(
+            "anomaly_summary",
+            {"limit": safe_limit},
+            result,
+            started_at=started_at,
+        )
+
     return {
         "get_recent_tool_calls": get_recent_tool_calls,
         "session_insights": session_insights,
@@ -557,6 +626,8 @@ def register_meta_tools(
         "workspace_status": workspace_status,
         "switch_project_root": switch_project_root,
         "prompt_shortcuts": prompt_shortcuts,
+        "appeal_decision": appeal_decision,
+        "anomaly_summary": anomaly_summary,
     }
 
 
@@ -597,7 +668,7 @@ def register_prompts(
                     second_arg_name: str = prompt_arguments[_name][1]["name"]
                     second_value = kwargs.get(second_arg_name, _second_default)
                     return Message(
-                        _builder(target, second_value, language="Turkish"),
+                        _builder(target, second_value, language=kwargs.get("language", "Turkish")),
                         role="user",
                     )
 

@@ -10,6 +10,15 @@ Bu dosya, projeyi herkese açık paylaşmadan önce hızlı son kontrol içindir
 - `.env`, `*.local`, log ve özel config dosyaları ignore ediliyor.
 - `rg -n "/Users/|API_KEY|SECRET|TOKEN|PASSWORD" .` taraması temiz.
 
+## Policy / Audit / Replay
+
+- `claude-bridge policy validate --path .claude-bridge-guard.json` basinca hata yok.
+- `claude-bridge policy simulate --path .claude-bridge-guard.json --tool run_shell --param "command=ls"` calisiyor.
+- `claude-bridge audit --last` son session'in kayitlarini gosteriyor.
+- `claude-bridge replay --record-id <id>` mevcut bir kaydi yeniden degerlendiriyor.
+- Audit kayitlari JSONL formatinda ve redaction uygulaniyor.
+- Policy degisikliklerinde `claude-bridge policy diff` ile fark gorunuyor.
+
 ## Kurulum Deneyimi
 
 - README ilk 2 dakikada kurulumu anlatıyor.

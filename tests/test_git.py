@@ -74,7 +74,7 @@ class TestGitIntegration:
         payload = parse_payload(result)
         assert payload["ok"] is True
         assert "Patched" in payload["message"]
-        assert (no_git_project / ".git").exists()
+        assert not (no_git_project / ".git").exists()
 
     async def test_git_commit_message_contains_filename(self, git_project):
         test_file = git_project / "my_module.py"
@@ -138,7 +138,7 @@ class TestGitIntegration:
         )
 
         assert payload["ok"] is True
-        assert (tertis_dir / ".git").exists()
+        assert not (tertis_dir / ".git").exists()
         assert not (desktop_root / ".git").exists()
 
     async def test_patch_does_not_change_active_project_root(self, no_git_project):

@@ -94,9 +94,9 @@ def rank_indexed_files(
     candidates: list[dict[str, Any]] = []
 
     for item in index_payload["files"]:
-        functions = item["functions"]
-        classes = item["classes"]
-        imports = item["imports"]
+        functions = item.get("functions", [])
+        classes = item.get("classes", [])
+        imports = item.get("imports", [])
         parser_backend = item.get("parser_backend", "fallback")
         function_tokens = set(item.get("function_tokens", [])) or _tokenize_names(functions)
         class_tokens = set(item.get("class_tokens", [])) or _tokenize_names(classes)

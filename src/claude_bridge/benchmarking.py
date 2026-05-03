@@ -54,7 +54,8 @@ def run_index_and_relevance_benchmark(
         ranked_payload = rank_indexed_files(raw_index_payload, query=query, limit=limit)
         query_durations_ms.append((time.perf_counter() - started) * 1000)
 
-    assert ranked_payload is not None
+    if ranked_payload is None:
+        raise RuntimeError("rank_indexed_files returned None")
     public_payload = public_index_payload(raw_index_payload)
     return {
         "project_dir": str(resolved_project_dir),

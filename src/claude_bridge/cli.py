@@ -17,7 +17,7 @@ from rich.text import Text
 from claude_bridge import __version__
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
-from claude_bridge.doctor import build_doctor_report
+from claude_bridge.doctor import build_doctor_report, build_security_doctor_report
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -27,17 +27,29 @@ from claude_bridge.guard_policy import (
     evaluate_rules,
     validate_guard_policy_file,
 )
+from claude_bridge.policy_diff import load_bundle_from_file as _load_bundle_from_file
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
 policy_app = typer.Typer(help="Validate and simulate local guard policy files")
+anomaly_app = typer.Typer(help="Anomaly detection on audit sessions")
+audit_app = typer.Typer(help="Audit session management and export")
+doctor_app = typer.Typer(help="Environment and security checks")
 app.add_typer(policy_app, name="policy")
+app.add_typer(anomaly_app, name="anomaly")
+app.add_typer(audit_app, name="audit")
+app.add_typer(doctor_app, name="doctor")
 console = Console()
 
 
 class _MCPProxy:
+    def __init__(self) -> None:
+        self._cache: dict[str, Any] = {}
+
     def __getattr__(self, name: str) -> Any:
-        _, runtime_mcp, _ = _server_runtime()
-        return getattr(runtime_mcp, name)
+        if name not in self._cache:
+            _, runtime_mcp, _ = _server_runtime()
+            self._cache[name] = getattr(runtime_mcp, name)
+        return self._cache[name]
 
 
 mcp = _MCPProxy()
@@ -97,8 +109,8 @@ def _server_runtime() -> tuple[Any, Any, Any]:
 
 def _prompt_runtime() -> tuple[str, Any, Any, tuple[str, ...]]:
     from claude_bridge.prompt import (
-        SYSTEM_PROMPT,
         SUPPORTED_SETUP_TARGETS,
+        SYSTEM_PROMPT,
         build_target_config,
         generate_mcp_setup_guide,
     )
@@ -143,9 +155,7 @@ def _simulate_builtin_decision(tool: str, params: dict[str, Any]) -> Any:
             return builtin_deny_decision(
                 str(analysis["message"]),
                 risk_level=RiskLevel(str(analysis["details"].get("risk_level", "high"))),
-                risk_reasons=[
-                    str(item) for item in analysis["details"].get("risk_reasons", [])
-                ],
+                risk_reasons=[str(item) for item in analysis["details"].get("risk_reasons", [])],
                 metadata={"tool": tool, "command": command, "source": "builtin_guard"},
             )
     return None
@@ -182,15 +192,65 @@ def policy_simulate(
         "--param",
         help="Tool parameter in key=value form. Can be repeated.",
     ),
+    role: str | None = typer.Option(
+        None,
+        "--role",
+        help="Role to simulate as (e.g., junior, senior, ci, contractor)",
+    ),
+    with_ai: bool = typer.Option(
+        False,
+        "--with-ai",
+        help="Also run the AI evaluator as an advisory layer",
+    ),
+    ai_deny: list[str] = typer.Option(
+        None,
+        "--ai-deny",
+        help="AI evaluator deny keyword (local provider). Can be repeated.",
+    ),
+    ai_ask: list[str] = typer.Option(
+        None,
+        "--ai-ask",
+        help="AI evaluator ask keyword (local provider). Can be repeated.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
-    """Evaluate a tool request against policy without running the tool."""
+    """Evaluate a tool request against policy without running the tool.
+
+    When --role is provided, the full policy chain is evaluated including
+    role-based restrictions (pre-rule and post-rule checks).
+    """
     try:
         params = _parse_policy_params(param or [])
     except typer.BadParameter as exc:
+        if json_output:
+            console.print_json(data={"error": str(exc), "tool": tool})
+            raise typer.Exit(code=1) from exc
         console.print(f"[red]Policy simulation failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+    if role is not None:
+        _run_role_simulation(
+            path=path,
+            tool=tool,
+            params=params,
+            role=role,
+            with_ai=with_ai,
+            ai_deny=ai_deny,
+            ai_ask=ai_ask,
+            json_output=json_output,
+        )
+        return
+
     policy = validate_guard_policy_file(path.resolve())
     if not policy.valid:
+        if json_output:
+            console.print_json(
+                data={
+                    "error": "policy is invalid",
+                    "errors": policy.errors,
+                }
+            )
+            raise typer.Exit(code=1)
         console.print("[red]Policy simulation failed:[/red] policy is invalid")
         for error in policy.errors:
             console.print(f"[red]error:[/red] {escape(error)}")
@@ -210,6 +270,21 @@ def policy_simulate(
         if decision is None:
             decision = PolicySimulationDefault.allow(tool)
 
+    if json_output:
+        payload = {
+            "tool": tool,
+            "role": role,
+            "action": decision.action.value,
+            "source": decision.source.value,
+            "risk_level": decision.risk_level.value,
+            "reason": decision.reason,
+            "risk_reasons": list(decision.risk_reasons),
+            "metadata": dict(decision.metadata),
+        }
+        console.print_json(data=payload)
+        return
+
+    console.print("[bold]Policy Decision:[/bold]")
     console.print(f"Action: {decision.action.value}")
     console.print(f"Source: {decision.source.value}")
     console.print(f"Risk: {decision.risk_level.value}")
@@ -226,6 +301,216 @@ def policy_simulate(
         console.print("Metadata:")
         console.print_json(data=metadata)
 
+    if with_ai:
+        console.print("")
+        console.print("[bold cyan]AI Advisor:[/bold cyan]")
+        ai_result = _simulate_ai_evaluation(
+            tool=tool,
+            params=params,
+            policy_decision=decision,
+            deny_patterns=list(ai_deny) if ai_deny else None,
+            ask_patterns=list(ai_ask) if ai_ask else None,
+        )
+        if ai_result is not None:
+            _print_ai_advisory(decision, ai_result)
+        else:
+            console.print(
+                "[yellow]AI evaluator returned no advisory (disabled or not available).[/yellow]"
+            )
+
+
+def _run_role_simulation(
+    *,
+    path: Path,
+    tool: str,
+    params: dict[str, Any],
+    role: str,
+    with_ai: bool,
+    ai_deny: list[str] | None,
+    ai_ask: list[str] | None,
+    json_output: bool,
+) -> None:
+    """Run a role-based policy simulation and print results."""
+    from claude_bridge.policy_diff import simulate_tool_with_role
+
+    bundle = _load_bundle_from_file(path.resolve())
+    project_dir = str(path.resolve().parent)
+
+    if bundle is None:
+        if json_output:
+            console.print_json(
+                data={
+                    "error": "Could not load policy bundle from file",
+                    "path": str(path),
+                }
+            )
+            raise typer.Exit(code=1)
+        console.print("[red]Policy simulation failed:[/red] Could not load policy bundle from file")
+        raise typer.Exit(code=1)
+
+    result = simulate_tool_with_role(
+        tool=tool,
+        params=params,
+        role_name=role,
+        project_dir=project_dir,
+        allowed_roots=[project_dir],
+        bundle=bundle,
+    )
+
+    if json_output:
+        console.print_json(data=result.to_dict())
+        return
+
+    console.print(f"[bold]Role Simulation ({role}):[/bold]")
+    console.print(f"Tool: {tool}")
+    console.print(f"Action: {result.action}")
+    console.print(f"Source: {result.source}")
+    console.print(f"Risk: {result.risk_level}")
+    console.print(f"Reason: {escape(result.reason)}")
+    if result.risk_reasons:
+        console.print("Risk reasons:")
+        for reason in result.risk_reasons:
+            console.print(f"  - {escape(reason)}")
+    if result.metadata:
+        console.print("Metadata:")
+        console.print_json(data=result.metadata)
+
+
+@policy_app.command("diff")
+def policy_diff(
+    base: Path = typer.Option(..., "--base", help="Base policy file (e.g., main branch)"),
+    head: Path = typer.Option(..., "--head", help="Head policy file (e.g., PR branch)"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Compare two policy files (JSON/YAML) and report semantic differences.
+
+    Detects role additions, removals, permission changes, restriction
+    changes, and inheritance issues. Exits with code 1 if validation
+    errors or meaningful diffs are found (CI-friendly).
+    """
+    from claude_bridge.policy_diff import diff_policies
+
+    base_path = base.resolve()
+    head_path = head.resolve()
+
+    base_bundle = _load_bundle_from_file(base_path)
+    head_bundle = _load_bundle_from_file(head_path)
+
+    if base_bundle is None:
+        msg = f"Could not load base policy from {base_path}"
+        if json_output:
+            console.print_json(data={"error": msg})
+            raise typer.Exit(code=1)
+        console.print(f"[red]{msg}[/red]")
+        raise typer.Exit(code=1)
+
+    if head_bundle is None:
+        msg = f"Could not load head policy from {head_path}"
+        if json_output:
+            console.print_json(data={"error": msg})
+            raise typer.Exit(code=1)
+        console.print(f"[red]{msg}[/red]")
+        raise typer.Exit(code=1)
+
+    result = diff_policies(base_bundle, head_bundle)
+
+    if json_output:
+        console.print_json(data=result.to_dict())
+        if result.has_issues:
+            raise typer.Exit(code=1)
+        return
+
+    exit_code = 0
+
+    if result.status.value == "ok":
+        console.print("[green]Policy diff:[/green] no changes detected.")
+        return
+
+    console.print(f"[bold]Policy Diff:[/bold] {result.base_name} [dim]→[/dim] {result.head_name}")
+
+    if result.name_changed:
+        console.print(
+            f"[yellow]Name changed:[/yellow] {escape(result.old_name)} → {escape(result.new_name)}"
+        )
+
+    if result.roles_added:
+        console.print("[green]Roles added:[/green]")
+        for name in result.roles_added:
+            console.print(f"  + {name}")
+
+    if result.roles_removed:
+        console.print("[red]Roles removed:[/red]")
+        for name in result.roles_removed:
+            console.print(f"  - {name}")
+
+    for rd in result.role_diffs:
+        if rd.status.value == "unchanged":
+            continue
+        status_color = {
+            "added": "green",
+            "removed": "red",
+            "modified": "yellow",
+        }.get(rd.status.value, "dim")
+        console.print(
+            f"\n[{status_color}]{rd.status.value.upper()}[/{status_color}]: {rd.role_name}"
+        )
+        if rd.extends_changed:
+            console.print(
+                f"  Extends: {escape(str(rd.old_extends))} → " f"{escape(str(rd.new_extends))}"
+            )
+        if rd.description_changed:
+            console.print("  Description changed")
+        if rd.enabled_changed:
+            console.print(f"  Enabled: {rd.old_enabled} → {rd.new_enabled}")
+        if rd.restrictions_added:
+            console.print("  Restrictions added:")
+            for r in rd.restrictions_added:
+                console.print(f"    [green]+ {r}[/green]")
+        if rd.restrictions_removed:
+            console.print("  Restrictions removed:")
+            for r in rd.restrictions_removed:
+                console.print(f"    [red]- {r}[/red]")
+        for pd in rd.permission_diffs:
+            pcolor = {
+                "added": "green",
+                "removed": "red",
+                "modified": "yellow",
+            }.get(pd.status.value, "dim")
+            line = f"    [{pcolor}]{pd.status.value}[/{pcolor}]: {pd.tool}"
+            if pd.status.value == "modified":
+                line += f" ({pd.old_action} → {pd.new_action})"
+            elif pd.status.value == "added":
+                line += f" ({pd.new_action})"
+            elif pd.status.value == "removed":
+                line += f" ({pd.old_action})"
+            console.print(line)
+
+    # Print validation/inheritance errors for head
+    if result.head_validation_errors:
+        console.print("\n[red]Head validation errors:[/red]")
+        for e in result.head_validation_errors:
+            code_label = escape(f"[{e.get('code', 'error')}]")
+            console.print(
+                f"  [red]{code_label}[/red] "
+                f"{escape(str(e.get('path', '')))}: "
+                f"{escape(str(e.get('message', '')))}"
+            )
+        exit_code = 1
+
+    if result.head_inheritance_errors:
+        console.print("\n[red]Head inheritance errors:[/red]")
+        for e in result.head_inheritance_errors:
+            code_label = escape(f"[{e.get('code', 'error')}]")
+            console.print(
+                f"  [red]{code_label}[/red] "
+                f"{escape(str(e.get('path', '')))}: "
+                f"{escape(str(e.get('message', '')))}"
+            )
+        exit_code = 1
+
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)
+
 
 class PolicySimulationDefault:
     @staticmethod
@@ -240,6 +525,87 @@ class PolicySimulationDefault:
             risk_reasons=[],
             metadata={"tool": tool},
         )
+
+
+def _simulate_ai_evaluation(
+    *,
+    tool: str,
+    params: dict[str, Any],
+    policy_decision: Any,
+    deny_patterns: list[str] | None = None,
+    ask_patterns: list[str] | None = None,
+) -> Any | None:
+    """Run the local AI evaluator as an advisory layer for policy simulation.
+
+    The AI evaluator is advisory only: it cannot override a built-in hard deny.
+    For built-in denies, it reports the decision that the guard already made.
+    """
+    from claude_bridge.ai_evaluator import (
+        EvaluationRequest,
+        LocalEvaluatorProvider,
+        evaluation_response_to_policy_decision,
+    )
+    from claude_bridge.guard_policy import ToolRequestContext
+
+    provider = LocalEvaluatorProvider(
+        deny_patterns=deny_patterns or [],
+        ask_patterns=ask_patterns or [],
+    )
+    prompt = f"Tool: {tool}\nParams: {json.dumps(params)}"
+    context = ToolRequestContext(
+        tool_name=tool,
+        params=params,
+        project_dir="",
+        allowed_roots=[],
+    )
+    request = EvaluationRequest(
+        prompt=prompt,
+        tool_name=tool,
+        tool_params=params,
+        context={"simulation": True},
+    )
+    response = provider.evaluate(request)
+    ai_decision = evaluation_response_to_policy_decision(response, ctx=context)
+    return ai_decision
+
+
+def _print_ai_advisory(policy_decision: Any, ai_decision: Any) -> None:
+    """Print the AI advisory alongside the policy decision with delta markers."""
+    from claude_bridge.guard_policy import DecisionAction
+
+    policy_action = policy_decision.action.value
+    ai_action = ai_decision.action.value
+    if policy_action == ai_action:
+        delta = "agrees with policy"
+        delta_style = ""
+    elif policy_decision.action == DecisionAction.DENY and policy_decision.source in (
+        DecisionSource.BUILTIN_GUARD,
+        DecisionSource.RULE,
+    ):
+        delta = "advisory overridden: built-in/rule deny wins (AI is advisor only)"
+        delta_style = "[yellow]"
+    elif ai_action == "allow" and policy_action in ("ask", "deny"):
+        delta = "AI suggests allowing (advisory only — policy chain decides)"
+        delta_style = "[yellow]"
+    elif ai_action == "deny":
+        delta = "AI suggests stricter action"
+        delta_style = "[red]"
+    else:
+        delta = "AI advisor differs from policy"
+        delta_style = "[yellow]"
+
+    console.print(f"Action: {ai_action}")
+    console.print(f"Risk: {ai_decision.risk_level.value}")
+    console.print(f"Reason: {escape(str(ai_decision.reason))}")
+    if ai_decision.risk_reasons:
+        console.print("Risk reasons:")
+        for reason in ai_decision.risk_reasons:
+            console.print(f"  - {escape(reason)}")
+    console.print(f"{delta_style}Delta: {escape(delta)}{delta_style}")
+    metadata = ai_decision.metadata
+    if metadata:
+        console.print("Metadata:")
+        console.print_json(data=metadata)
 
 
 def _write_desktop_config(
@@ -690,8 +1056,8 @@ def benchmark(
             raise typer.Exit(code=1)
 
 
-@app.command()
-def audit(
+@audit_app.command("summary")
+def audit_summary(
     last: bool = typer.Option(True, "--last", help="Show the latest audit session summary"),
     limit: int = typer.Option(20, help="How many recent audit records to show"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
@@ -723,7 +1089,7 @@ def audit(
         decision_source=source.value if source else None,
     )
     if json_output:
-        console.print_json(json.dumps(summary, ensure_ascii=False))
+        console.print_json(data=summary)
         return
 
     console.print(
@@ -773,16 +1139,12 @@ def audit(
             for item in writes[:10]:
                 status = "ok" if item.get("ok", False) else "error"
                 paths = ", ".join(str(path) for path in item.get("paths", []))
-                console.print(
-                    f"  [{status}] {item.get('tool_name')} {escape(paths)}"
-                )
+                console.print(f"  [{status}] {item.get('tool_name')} {escape(paths)}")
         approval_rejections = activity.get("approval_rejections", [])
         if approval_rejections:
             console.print("\nApproval rejections:")
             for item in approval_rejections[:10]:
-                console.print(
-                    f"  [error] {item.get('timestamp')} {item.get('tool_name')}"
-                )
+                console.print(f"  [error] {item.get('timestamp')} {item.get('tool_name')}")
         risky_actions = activity.get("risky_actions", [])
         if risky_actions:
             console.print("\nRisky actions:")
@@ -791,7 +1153,7 @@ def audit(
                     f"  [yellow]{item.get('risk_level')}[/yellow] "
                     f"{item.get('tool_name')} {escape(str(item.get('message', '')))}"
                 )
-        policy = activity.get("policy", {})
+        policy = activity.get("policy_decisions", {})
         if isinstance(policy, dict):
             decision_counts = policy.get("decision_counts", {})
             risk_counts = policy.get("risk_counts", {})
@@ -836,6 +1198,140 @@ def audit(
             )
 
 
+@audit_app.command("export")
+def audit_export(
+    session: str | None = typer.Option(
+        None,
+        "--session",
+        help="Session ID to export (default: latest session)",
+    ),
+    format: str = typer.Option(
+        "jsonl",
+        "--format",
+        help="Export format: jsonl or summary-json",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: stdout)",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of records to export",
+    ),
+    tool: str | None = typer.Option(
+        None,
+        "--tool",
+        help="Filter by tool name",
+    ),
+    decision: DecisionAction | None = typer.Option(
+        None,
+        "--decision",
+        help="Filter by policy decision: allow, deny, or ask",
+    ),
+    risk: RiskLevel | None = typer.Option(
+        None,
+        "--risk",
+        help="Filter by risk level: low, medium, high, or critical",
+    ),
+    source: DecisionSource | None = typer.Option(
+        None,
+        "--source",
+        help="Filter by decision source",
+    ),
+) -> None:
+    """Export audit session records with optional filtering."""
+    from claude_bridge.audit import (
+        ExportFormat,
+        export_audit_records,
+        filter_audit_records,
+        latest_session_id,
+    )
+
+    # Validate format
+    try:
+        export_format = ExportFormat(format.lower())
+    except ValueError:
+        console.print(f"[red]Invalid format:[/red] {format}")
+        console.print("Supported formats: jsonl, summary-json")
+        raise typer.Exit(code=1)
+
+    # Determine session
+    target_session = session
+    if target_session is None:
+        target_session = latest_session_id()
+        if target_session is None:
+            console.print("[red]No audit sessions found[/red]")
+            raise typer.Exit(code=1)
+
+    # Export records
+    try:
+        audit_export_result = export_audit_records(
+            session_id=target_session,
+            export_format=export_format,
+            limit=limit,
+        )
+    except Exception as exc:
+        console.print(f"[red]Export failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    # Get records payload
+    records: list[dict[str, Any]] = []
+    if isinstance(audit_export_result.records_payload, list):
+        records = audit_export_result.records_payload
+    elif isinstance(audit_export_result.records_payload, dict):
+        # For summary-json, we still apply filters to the underlying records
+        # but summary-json format doesn't support filtering at the moment
+        pass
+
+    # Apply filters if any are specified
+    has_filters = any(param is not None for param in (tool, decision, risk, source))
+    if has_filters and records:
+        records = filter_audit_records(
+            records,
+            tool_name=tool,
+            decision_action=decision.value if decision else None,
+            decision_risk_level=risk.value if risk else None,
+            decision_source=source.value if source else None,
+        )
+
+    # Prepare output
+    if export_format == ExportFormat.JSONL:
+        output_content = "\n".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True) for record in records
+        )
+        if output_content:
+            output_content += "\n"
+    else:  # summary-json
+        if has_filters and records:
+            # Rebuild summary with filtered records
+            from claude_bridge.audit import summarize_session
+
+            summary = summarize_session(target_session, limit=len(records))
+            # Replace recent_records with filtered records
+            summary["recent_records"] = records
+            summary["returned_records"] = len(records)
+            output_content = json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2)
+        else:
+            output_content = audit_export_result.to_summary_json()
+
+    # Write output
+    if output:
+        try:
+            output.write_text(output_content, encoding="utf-8")
+            console.print(
+                f"[green]Exported {len(records) if records else 'summary'} records to {output}[/green]"
+            )
+        except OSError as exc:
+            console.print(f"[red]Failed to write output file:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+    else:
+        # Print to stdout (use plain print to avoid Rich formatting)
+        print(output_content, end="")
+
+
 @app.command()
 def replay(
     record_id: str = typer.Option(..., "--record-id", help="Audit record id to replay"),
@@ -854,7 +1350,7 @@ def replay(
         console.print(f"[red]Audit record not found:[/red] {escape(record_id)}")
         raise typer.Exit(code=1)
     if json_output:
-        console.print_json(json.dumps(result, ensure_ascii=False))
+        console.print_json(data=result)
         return
 
     console.print(
@@ -893,6 +1389,190 @@ def replay(
 
 
 @app.command()
+def appeal(
+    record_id: str = typer.Option(..., "--record-id", help="Audit record id to appeal"),
+    justification: str = typer.Option(..., "--justification", "-j", help="Reason for the appeal"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Appeal a policy decision by record id with a justification."""
+    from claude_bridge.audit import process_appeal
+
+    try:
+        result = process_appeal(record_id, justification)
+    except ValueError as exc:
+        console.print(f"[red]Appeal failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        console.print_json(data=result)
+        return
+
+    console.print(
+        Panel.fit(
+            Text.assemble(("Appeal ", "bold cyan"), (record_id, "green")),
+            title="Appeal",
+            border_style="cyan",
+        )
+    )
+    appeal_result = result.get("appeal_result", {})
+    console.print(f"Appeal ID: [green]{escape(str(appeal_result.get('appeal_id', '')))}[/green]")
+    console.print(f"Status: [cyan]{escape(str(appeal_result.get('status', '')))}[/cyan]")
+    console.print(f"Reviewed by: {escape(str(appeal_result.get('reviewed_by', '')))}")
+    console.print(f"Reason: {escape(str(appeal_result.get('decision_reason', '')))}")
+
+    original = result.get("original_record", {})
+    console.print("\nOriginal decision:")
+    console.print(
+        f"  action={escape(str(original.get('decision_action', 'N/A')))} "
+        f"source={escape(str(original.get('decision_source', 'N/A')))} "
+        f"risk={escape(str(original.get('decision_risk_level', 'N/A')))}"
+    )
+
+    replay = result.get("replay_result", {})
+    console.print("\nReplay result:")
+    console.print(f"  changed={replay.get('changed', False)}")
+    console.print(f"  change_reason={escape(str(replay.get('change_reason', '')))}")
+
+    meta = replay.get("metadata", {})
+    if meta.get("requires_human_review"):
+        console.print(
+            f"\n[yellow]Human review required:[/yellow] "
+            f"{escape(str(meta.get('review_reason', '')))}"
+        )
+
+    console.print(f"\nTotal appeals for this record: {result.get('appeal_history_count', 0)}")
+
+
+@app.command()
+def appeal_history(
+    record_id: str = typer.Option(..., "--record-id", help="Audit record id"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Show appeal history for a given audit record."""
+    from claude_bridge.audit import get_appeal_history
+
+    history = get_appeal_history(record_id)
+
+    if not history:
+        console.print(f"[yellow]No appeals found for record:[/yellow] {escape(record_id)}")
+        return
+
+    if json_output:
+        console.print_json(data={"record_id": record_id, "appeals": history})
+        return
+
+    console.print(
+        Panel.fit(
+            Text.assemble(
+                ("Appeal History ", "bold cyan"),
+                (record_id, "green"),
+            ),
+            title="Appeals",
+            border_style="cyan",
+        )
+    )
+    console.print(f"Total appeals: [green]{len(history)}[/green]")
+
+    for index, appeal in enumerate(history, start=1):
+        console.print(f"\n--- Appeal {index} ---")
+        console.print(f"  Appeal ID: {escape(str(appeal.get('appeal_id', '')))}")
+        console.print(f"  Timestamp: {escape(str(appeal.get('timestamp', '')))}")
+        console.print(f"  Status: {escape(str(appeal.get('appeal_status', 'pending')))}")
+        reviewed_by = appeal.get("appeal_reviewed_by")
+        if reviewed_by:
+            console.print(f"  Reviewed by: {escape(str(reviewed_by))}")
+
+        params = appeal.get("params", {})
+        if isinstance(params, dict):
+            justification = params.get("justification", "")
+            if justification:
+                console.print(f"  Justification: {escape(str(justification))}")
+
+        result_details = appeal.get("result", {})
+        if isinstance(result_details, dict):
+            details = result_details.get("details", {})
+            if isinstance(details, dict):
+                result_data = details.get("result", {})
+                if isinstance(result_data, dict):
+                    reason = result_data.get("decision_reason", "")
+                    if reason:
+                        console.print(f"  Decision reason: {escape(str(reason))}")
+
+
+@anomaly_app.command("scan")
+def anomaly_scan(
+    last: bool = typer.Option(True, "--last", help="Scan the latest audit session"),
+    limit: int = typer.Option(50, help="Maximum number of records to scan"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Run anomaly detection on recent audit records."""
+    from claude_bridge.anomaly import build_anomaly_summary
+    from claude_bridge.audit import get_recent_tool_calls
+
+    if not last:
+        console.print("[yellow]Only --last is currently supported.[/yellow]")
+    safe_limit = max(1, limit)
+    recent = get_recent_tool_calls(limit=safe_limit)
+    records = recent.get("records", [])
+    session_id = recent.get("session_id", "")
+    summary = build_anomaly_summary(
+        records=records,
+        session_id=session_id,
+        limit=safe_limit,
+    )
+
+    if json_output:
+        console.print_json(data=summary)
+        return
+
+    console.print(
+        Panel.fit(
+            Text.assemble(
+                ("Anomaly Scan ", "bold cyan"),
+                (summary["session_id"], "green"),
+            ),
+            title="Anomaly",
+            border_style="cyan",
+        )
+    )
+    console.print(f"Records scanned: [green]{summary['total_records_scanned']}[/green]")
+    console.print(
+        f"Overall max score: "
+        f"[{'red' if summary['overall_max_score'] > 55 else 'green'}]"
+        f"{summary['overall_max_score']}[/] "
+        f"({summary['overall_level']})"
+    )
+
+    anomaly_counts = summary.get("anomaly_counts", {})
+    if anomaly_counts:
+        console.print("\nAnomaly counts:")
+        for atype, count in sorted(anomaly_counts.items()):
+            console.print(f"  {atype}: {count}")
+
+    critical_count = summary.get("critical_count", 0)
+    if critical_count > 0:
+        console.print(f"\n[red]Critical anomalies: {critical_count}[/red]")
+        for decision in summary.get("policy_decisions", []):
+            console.print(
+                f"  [red]record={escape(decision['record_id'][:12])}[/red] "
+                f"score={decision['score']} "
+                f"types={escape(str(decision['anomaly_types']))} "
+                f"decision={escape(decision['decision_action'])}/"
+                f"{escape(decision['decision_risk_level'])}/"
+                f"{escape(decision['decision_source'])} "
+                f"-> {escape(decision['recommended_action'])}"
+            )
+            if decision.get("explanation"):
+                console.print(f"    {escape(decision['explanation'])}")
+    else:
+        console.print("\n[green]No critical anomalies detected.[/green]")
+
+    mvp = summary.get("mvp_limits", {})
+    if mvp:
+        console.print(f"\nMVP scope: {escape(str(mvp.get('scope', '')))}")
+
+
+@doctor_app.callback(invoke_without_command=True)
 def doctor(
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory to inspect"),
 ) -> None:
@@ -911,6 +1591,41 @@ def doctor(
             Text.assemble(("Claude Bridge ", "bold cyan"), ("doctor", "green")),
             title="Doctor",
             border_style="green",
+        )
+    )
+    console.print(f"Project directory: [green]{report.project_dir}[/green]")
+    if report.approval_preset:
+        console.print(f"Approval preset: [cyan]{report.approval_preset}[/cyan]")
+    else:
+        console.print("Approval preset: [yellow]not set[/yellow]")
+    console.print(
+        "Approval mode: "
+        f"auto_approve={report.auto_approve}, "
+        f"client_managed_approval={report.client_managed_approval}"
+    )
+    console.print(f"Onboarding enabled: {report.onboarding_enabled}")
+
+    for check in report.checks:
+        status = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
+        console.print(f"{status} {check.label}: {check.detail}")
+
+
+@doctor_app.command()
+def security(
+    project_dir: Path = typer.Option(Path.cwd(), help="Project directory to inspect"),
+) -> None:
+    """Run security-focused checks on the current configuration."""
+    current_config, _, _ = _server_runtime()
+    report = build_security_doctor_report(
+        project_dir=project_dir,
+        config_snapshot=current_config(),
+    )
+
+    console.print(
+        Panel.fit(
+            Text.assemble(("Claude Bridge ", "bold cyan"), ("doctor security", "green")),
+            title="Security Doctor",
+            border_style="cyan",
         )
     )
     console.print(f"Project directory: [green]{report.project_dir}[/green]")

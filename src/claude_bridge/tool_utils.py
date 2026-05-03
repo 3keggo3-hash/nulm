@@ -35,6 +35,8 @@ _SENSITIVE_FILENAMES = {
     ".npmrc",
     ".netrc",
     ".pypirc",
+    ".dockercfg",
+    ".git-credentials",
     "credentials.json",
     "application_default_credentials.json",
     "id_rsa",
@@ -43,7 +45,7 @@ _SENSITIVE_FILENAMES = {
     "credentials",
     "known_hosts",
     "claude_desktop_config.json",
-}
+}  # FIX: Added .dockercfg and .git-credentials
 _SECRET_PATTERNS: dict[str, str] = {
     "api_key_assignment": r"(?i)\bapi[_-]?key\s*[:=]\s*['\"][^'\"]+['\"]",
     "secret_assignment": r"(?i)\bsecret\s*[:=]\s*['\"][^'\"]+['\"]",
@@ -117,6 +119,25 @@ def sensitive_path_reason(target: Path) -> str | None:
         return name
     if any(name.endswith(suffix) for suffix in _SENSITIVE_SUFFIXES):
         return target.suffix.lower()
+    # FIX: Block sensitive paths inside .git and .docker directories
+    try:
+        parts = [p.lower() for p in target.resolve().parts]
+    except (OSError, ValueError):
+        parts = [p.lower() for p in target.parts]
+    if ".git" in parts:
+        git_idx = parts.index(".git")
+        rel = parts[git_idx + 1 :]
+        if not rel:
+            return ".git directory"
+        if rel[0] == "hooks":
+            return ".git/hooks/*"
+        if rel[0] in ("config", "head", "orig_head", "packed-refs"):
+            return f".git/{rel[0]}"
+    if ".docker" in parts:
+        docker_idx = parts.index(".docker")
+        rel = parts[docker_idx + 1 :]
+        if rel == ["config.json"]:
+            return ".docker/config.json"
     custom_reason = custom_sensitive_path_reason(target)
     if custom_reason is not None:
         return custom_reason
@@ -139,19 +160,47 @@ def find_secret_patterns(content: str) -> list[str]:
     return matches
 
 
+def _mask_secrets(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    masked = value
+    for name, pattern in _SECRET_PATTERNS.items():
+        masked = re.sub(pattern, "[REDACTED]", masked)
+    return masked
+
+
 def is_binary_bytes(raw: bytes) -> bool:
     if not raw:
         return False
     return b"\x00" in raw
 
 
-def safe_read_text(target: Path) -> str:
-    return target.read_bytes().decode("utf-8")
+def safe_read_text(target: Path, *, errors: str = "replace") -> str:
+    """Read a file as UTF-8 text, never raising UnicodeDecodeError.
+
+    By default invalid byte sequences are replaced with the Unicode
+    replacement character (U+FFFD) so callers always receive a string.
+    Pass ``errors="strict"`` to restore the original raise-on-decode-error
+    behaviour.
+    """
+    raw = target.read_bytes()
+    try:
+        return raw.decode("utf-8", errors=errors)
+    except UnicodeDecodeError:
+        # In case errors="strict" was passed explicitly, surface a clear
+        # message instead of a raw traceback.
+        raise UnicodeDecodeError(
+            "utf-8",
+            raw,
+            0,
+            len(raw),
+            f"File '{target}' is not valid UTF-8; pass errors='replace' for fallback",
+        ) from None
 
 
 def is_within_root(target: Path, root: Path) -> bool:
     try:
-        target.relative_to(root)
+        target.resolve().relative_to(root.resolve())
         return True
     except ValueError:
         return False
@@ -167,9 +216,12 @@ def resolve_path(user_path: str) -> Path:
         return target
 
     base = project_dir()
-    target = (base / candidate).resolve()
-    if not is_within_root(target, base):
-        raise PermissionError("Access denied: path outside active project directory")
+    combined = base / candidate
+    target = combined.resolve()  # FIX: Removed pre-resolution ".." check; is_within_root after resolve() is sufficient
+    # Check resolved target against ALL allowed roots, not just the active project dir.
+    # This allows symlinks inside the workspace to point to secondary allowed roots.
+    if not any(is_within_root(target, root) for root in allowed_roots()):
+        raise PermissionError("Access denied: path outside allowed roots")
     return target
 
 
@@ -215,7 +267,8 @@ async def request_approval(tool_name: str, params: dict[str, Any]) -> bool:
         file=sys.stderr,
     )
     for key, value in params.items():
-        print(f"  {key}: {value}", file=sys.stderr)
+        safe_value = _mask_secrets(value)  # FIX: Mask sensitive param values before printing to stderr
+        print(f"  {key}: {safe_value}", file=sys.stderr)
     return False
 
 

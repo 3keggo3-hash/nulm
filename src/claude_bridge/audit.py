@@ -5,15 +5,27 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
+from enum import Enum
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+if sys.platform == "win32":
+    import msvcrt  # type: ignore[import-untyped]
+else:
+    import fcntl  # type: ignore[import-untyped]
+
+from claude_bridge.anomaly import compute_anomaly_scores
+
 _AUDIT_LOCK = threading.RLock()
 _CURRENT_SESSION_ID = ""
+_MAX_AUDIT_SESSION_SCAN_FILES = 256
+_MAX_AUDIT_RECORD_SCAN_LINES = 10000
 _SUMMARY_MAX_STRING = 300
 _SUMMARY_MAX_ITEMS = 20
 _SUMMARY_MAX_DEPTH = 3
@@ -103,8 +115,38 @@ def current_session_id() -> str:
         return _CURRENT_SESSION_ID
 
 
+_VALID_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
 def _session_file(session_id: str) -> Path:
+    # FIX: Validate session_id to prevent path traversal
+    if not _VALID_SESSION_ID_RE.match(session_id):
+        raise ValueError(f"invalid session_id: {session_id!r}")
     return _audit_dir() / f"{session_id}.jsonl"
+
+
+def _append_audit_record(path: Path, line: str) -> None:
+    """Append a line to an audit file with process locking and restricted permissions."""
+    try:
+        with _AUDIT_LOCK:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                # FIX: Process-level file locking via flock (msvcrt on Windows)
+                if sys.platform == "win32":
+                    try:
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    except (ImportError, OSError):
+                        pass
+                else:
+                    try:
+                        fcntl.flock(handle, fcntl.LOCK_EX)
+                    except (ImportError, OSError):
+                        pass
+                handle.write(line + "\n")
+                # FIX: Restrict file permissions to owner-only
+                os.chmod(path, 0o600)
+    except OSError:
+        return
 
 
 def _truncate_string(value: str) -> dict[str, Any] | str:
@@ -346,7 +388,6 @@ def build_activity_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "patch_previews": patch_previews,
         "approval_rejections": approval_rejections,
         "risky_actions": risky_actions,
-        "policy": _compute_policy_decision_counts(records),
         "policy_decisions": _compute_policy_decision_counts(records),
         "validation": _build_validation_summary(records),
         "timeline": [_activity_item(record) for record in records[:_ACTIVITY_MAX_ITEMS]],
@@ -666,61 +707,66 @@ def log_tool_call(
 
     path = _session_file(session_id)
     line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with _AUDIT_LOCK:
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
-    except OSError:
-        return
+    _append_audit_record(path, line)
 
 
-def _load_records(session_id: str) -> list[dict[str, Any]]:
+def _load_records(session_id: str, *, max_lines: int | None = None) -> list[dict[str, Any]]:
     path = _session_file(session_id)
     if not path.exists():
         return []
     records: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            raw = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(raw, dict):
-            records.append(raw)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for index, line in enumerate(handle):
+                if max_lines is not None and index >= max_lines:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(raw, dict):
+                    records.append(raw)
+    except OSError:
+        return []
     return records
 
 
 def latest_session_id() -> str | None:
-    audit_dir = _audit_dir()
-    if not audit_dir.exists():
-        return None
-    candidates = sorted(
-        [path for path in audit_dir.glob("*.jsonl") if path.is_file()],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    candidates = _session_files_newest_first(limit=_MAX_AUDIT_SESSION_SCAN_FILES)
     if not candidates:
         return None
     return candidates[0].stem
 
 
-def _iter_session_ids_newest_first() -> list[str]:
+def _session_files_newest_first(*, limit: int | None = None) -> list[Path]:
     audit_dir = _audit_dir()
     if not audit_dir.exists():
         return []
-    candidates = sorted(
-        [path for path in audit_dir.glob("*.jsonl") if path.is_file()],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return [path.stem for path in candidates]
+    candidates: list[tuple[float, Path]] = []
+    try:
+        paths = list(audit_dir.glob("*.jsonl"))
+    except OSError:
+        return []
+    for path in paths:
+        try:
+            if path.is_file():
+                candidates.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    selected = candidates[:limit] if limit is not None else candidates
+    return [path for _, path in selected]
+
+
+def _iter_session_ids_newest_first() -> list[str]:
+    return [path.stem for path in _session_files_newest_first(limit=_MAX_AUDIT_SESSION_SCAN_FILES)]
 
 
 def find_audit_record(record_id: str) -> dict[str, Any] | None:
     for session_id in _iter_session_ids_newest_first():
-        for record in _load_records(session_id):
+        for record in _load_records(session_id, max_lines=_MAX_AUDIT_RECORD_SCAN_LINES):
             if record.get("record_id") == record_id:
                 return record
     return None
@@ -822,6 +868,8 @@ def summarize_session(
             )
             if telemetry.get("result_truncated") is True:
                 truncated_results += 1
+    anomaly_result = compute_anomaly_scores(recent["records"])
+
     return {
         "session_id": recent["session_id"],
         "recent_records": recent["records"],
@@ -830,6 +878,7 @@ def summarize_session(
         "tool_counts": counts,
         "failure_count": failure_count,
         "activity": build_activity_summary(recent["records"]),
+        "anomaly_counts": anomaly_result["anomaly_counts"],
         "telemetry": {
             "total_duration_ms": round(total_duration_ms, 3),
             "avg_duration_ms": round(total_duration_ms / max(1, len(recent["records"])), 3),
@@ -842,4 +891,600 @@ def summarize_session(
     }
 
 
-reset_audit_session()
+# ---------------------------------------------------------------------------
+# Appeal Data Models and Logging
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AppealRequest:
+    """Request to appeal a policy decision.
+
+    Attributes:
+        appeal_id: Unique identifier for this appeal.
+        original_record_id: Audit record ID of the original decision being appealed.
+        justification: User-provided justification for the appeal.
+        metadata: Optional additional context about the appeal.
+    """
+
+    appeal_id: str
+    original_record_id: str
+    justification: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dictionary."""
+        return {
+            "appeal_id": self.appeal_id,
+            "original_record_id": self.original_record_id,
+            "justification": self.justification,
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def create(
+        cls,
+        original_record_id: str,
+        justification: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> "AppealRequest":
+        """Create a new AppealRequest with a generated appeal_id.
+
+        Args:
+            original_record_id: Audit record ID being appealed.
+            justification: Reason for the appeal.
+            metadata: Optional additional context.
+
+        Returns:
+            A new AppealRequest instance.
+
+        Raises:
+            ValueError: If justification is empty or whitespace-only.
+        """
+        if not justification or not justification.strip():
+            raise ValueError("justification cannot be empty")
+        return cls(
+            appeal_id=uuid.uuid4().hex,
+            original_record_id=original_record_id,
+            justification=justification.strip(),
+            metadata=dict(metadata) if metadata else {},
+        )
+
+
+@dataclass
+class AppealResult:
+    """Result of processing an appeal.
+
+    Attributes:
+        appeal_id: Reference to the original AppealRequest.
+        status: Final status of the appeal (pending, approved, rejected).
+        reviewed_by: Identifier of the reviewer (user, admin, ai, etc.).
+        decision_reason: Explanation for the appeal decision.
+        metadata: Optional additional context about the decision.
+        timestamp: ISO-8601 timestamp when the decision was made.
+    """
+
+    appeal_id: str
+    status: str
+    reviewed_by: str
+    decision_reason: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dictionary."""
+        return {
+            "appeal_id": self.appeal_id,
+            "status": self.status,
+            "reviewed_by": self.reviewed_by,
+            "decision_reason": self.decision_reason,
+            "metadata": dict(self.metadata),
+            "timestamp": self.timestamp,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AppealResult":
+        """Deserialize from a dictionary.
+
+        Args:
+            data: Dictionary with appeal result fields.
+
+        Returns:
+            An AppealResult instance.
+        """
+        return cls(
+            appeal_id=str(data.get("appeal_id", "")),
+            status=str(data.get("status", "pending")),
+            reviewed_by=str(data.get("reviewed_by", "unknown")),
+            decision_reason=str(data.get("decision_reason", "")),
+            metadata=dict(data.get("metadata", {})),
+            timestamp=str(data.get("timestamp", "")),
+        )
+
+
+class ExportFormat(str, Enum):
+    """Supported audit export formats.
+
+    - JSONL: one JSON object per line (raw records, same as on-disk format)
+    - SUMMARY_JSON: a single JSON object with metadata and activity summary
+
+    Default retention is 90 days and 100 sessions (see RetentionConfig).
+    """
+
+    JSONL = "jsonl"
+    SUMMARY_JSON = "summary-json"
+
+
+_DEFAULT_RETENTION_DAYS = 90
+_DEFAULT_MAX_SESSIONS = 100
+_DEFAULT_EXPORT_FORMAT = ExportFormat.JSONL
+_DEFAULT_INCLUDE_TELEMETRY = True
+_DEFAULT_INCLUDE_REDACTED = True
+
+
+@dataclass
+class RetentionConfig:
+    """Audit retention and export configuration.
+
+    Defaults:
+        retention_days: 90 — records older than this are eligible for
+            cleanup by :func:`apply_retention`.
+        max_sessions: 100 — when exceeded, the oldest sessions are
+            eligible for cleanup.
+        export_format: :class:`ExportFormat`.JSONL — the default format
+            used by :func:`export_audit_records`.
+        include_telemetry: True — include token/cost telemetry in
+            exports.
+        include_redacted: True — include redacted (masked) sensitive
+            values rather than stripping them entirely.
+    """
+
+    retention_days: int = _DEFAULT_RETENTION_DAYS
+    max_sessions: int = _DEFAULT_MAX_SESSIONS
+    export_format: ExportFormat = _DEFAULT_EXPORT_FORMAT
+    include_telemetry: bool = _DEFAULT_INCLUDE_TELEMETRY
+    include_redacted: bool = _DEFAULT_INCLUDE_REDACTED
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "retention_days": self.retention_days,
+            "max_sessions": self.max_sessions,
+            "export_format": self.export_format.value,
+            "include_telemetry": self.include_telemetry,
+            "include_redacted": self.include_redacted,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RetentionConfig":
+        export_raw = data.get("export_format", _DEFAULT_EXPORT_FORMAT.value)
+        if isinstance(export_raw, ExportFormat):
+            export_fmt = export_raw
+        else:
+            try:
+                export_fmt = ExportFormat(str(export_raw))
+            except ValueError:
+                export_fmt = _DEFAULT_EXPORT_FORMAT
+        return cls(
+            retention_days=int(data.get("retention_days", _DEFAULT_RETENTION_DAYS)),
+            max_sessions=int(data.get("max_sessions", _DEFAULT_MAX_SESSIONS)),
+            export_format=export_fmt,
+            include_telemetry=bool(data.get("include_telemetry", _DEFAULT_INCLUDE_TELEMETRY)),
+            include_redacted=bool(data.get("include_redacted", _DEFAULT_INCLUDE_REDACTED)),
+        )
+
+    def is_record_expired(self, record: dict[str, Any], *, now_iso: str | None = None) -> bool:
+        now = now_iso or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        record_ts: str = str(record.get("timestamp", ""))
+        if not record_ts:
+            return False
+        cutoff = _timestamp_offset_days(now, self.retention_days)
+        return record_ts < cutoff
+
+
+@dataclass
+class AuditExport:
+    """A packaged audit export with metadata.
+
+    Attributes:
+        session_id: The session that was exported.
+        export_format: The format used for :attr:`records_payload`.
+        records_payload: Raw JSONL lines (when jsonl) or summary dict
+            (when summary-json).
+        record_count: Number of records in the export.
+        exported_at: ISO-8601 timestamp of when the export was created.
+        retention_config: The retention configuration applied.
+    """
+
+    session_id: str
+    export_format: ExportFormat
+    records_payload: list[dict[str, Any]] | dict[str, Any]
+    record_count: int
+    exported_at: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    )
+    retention_config: RetentionConfig = field(default_factory=RetentionConfig)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: Any
+        if isinstance(self.records_payload, list):
+            payload = self.records_payload
+        else:
+            payload = self.records_payload
+        return {
+            "session_id": self.session_id,
+            "export_format": self.export_format.value,
+            "records_payload": payload,
+            "record_count": self.record_count,
+            "exported_at": self.exported_at,
+            "retention_config": self.retention_config.to_dict(),
+        }
+
+    def to_jsonl(self) -> str:
+        if self.export_format != ExportFormat.JSONL:
+            raise ValueError("to_jsonl only valid for JSONL export format")
+        assert isinstance(self.records_payload, list)
+        lines: list[str] = []
+        for record in self.records_payload:
+            lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        return "\n".join(lines) + "\n" if lines else ""
+
+    def to_summary_json(self) -> str:
+        if self.export_format != ExportFormat.SUMMARY_JSON:
+            raise ValueError("to_summary_json only valid for summary-json export format")
+        assert isinstance(self.records_payload, dict)
+        return json.dumps(self.records_payload, ensure_ascii=False, sort_keys=True, indent=2)
+
+
+def _timestamp_offset_days(reference_iso: str, days: int) -> str:
+    """Return an ISO-8601 timestamp *days* before *reference_iso*."""
+    import datetime
+
+    dt = datetime.datetime.strptime(reference_iso, "%Y-%m-%dT%H:%M:%SZ")
+    offset = dt - datetime.timedelta(days=days)
+    return offset.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_retention_config(
+    config: RetentionConfig | dict[str, Any] | None,
+) -> RetentionConfig:
+    if config is None:
+        return RetentionConfig()
+    if isinstance(config, RetentionConfig):
+        return config
+    return RetentionConfig.from_dict(config)
+
+
+def export_audit_records(
+    session_id: str | None = None,
+    *,
+    export_format: ExportFormat | None = None,
+    retention_config: RetentionConfig | dict[str, Any] | None = None,
+    limit: int | None = None,
+) -> AuditExport:
+    """Export audit records for a session in the requested format.
+
+    Args:
+        session_id: Session to export. Uses the latest session when None.
+        export_format: Output format (defaults to the retention config
+            format, which defaults to JSONL).
+        retention_config: RetentionConfig or dict to control export.
+        limit: Optional max number of records to include.
+
+    Returns:
+        An :class:`AuditExport` with the packaged records.
+    """
+    cfg = _parse_retention_config(retention_config)
+    fmt = export_format or cfg.export_format
+
+    selected_session = session_id or latest_session_id() or current_session_id()
+    records = _load_records(selected_session)
+    if limit is not None:
+        records = records[:max(1, limit)]
+
+    if not cfg.include_telemetry:
+        records = [{k: v for k, v in r.items() if k != "telemetry"} for r in records]
+    if not cfg.include_redacted:
+        records = [_strip_redacted(r) for r in records]
+
+    if fmt == ExportFormat.SUMMARY_JSON:
+        summary = summarize_session(selected_session, limit=limit or 20)
+        payload: list[dict[str, Any]] | dict[str, Any] = summary
+    else:
+        payload = records
+
+    return AuditExport(
+        session_id=selected_session,
+        export_format=fmt,
+        records_payload=payload,
+        record_count=len(records),
+        retention_config=cfg,
+    )
+
+
+def _strip_redacted(record: dict[str, Any]) -> dict[str, Any]:
+    """Remove redacted value markers from a single audit record."""
+    cleaned: dict[str, Any] = {}
+    for key, value in record.items():
+        cleaned[key] = _strip_redacted_value(value)
+    return cleaned
+
+
+def _strip_redacted_value(value: Any, *, depth: int = 0) -> Any:
+    if depth >= 20:
+        return value
+    if isinstance(value, dict):
+        if value.get("redacted") is True and "sha256" in value:
+            return "[REDACTED]"
+        return {k: _strip_redacted_value(v, depth=depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_strip_redacted_value(item, depth=depth + 1) for item in value]
+    return value
+
+
+def apply_retention(
+    *,
+    retention_config: RetentionConfig | dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Apply retention policy: remove expired sessions and trim old records.
+
+    Defaults (see :class:`RetentionConfig`):
+        - retention_days = 90
+        - max_sessions = 100
+
+    Args:
+        retention_config: Override defaults with a RetentionConfig or dict.
+        dry_run: When True, report what would be removed without deleting.
+
+    Returns:
+        A dict with ``sessions_removed``, ``records_expired``, and
+        ``dry_run`` keys.
+    """
+    cfg = _parse_retention_config(retention_config)
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    all_sessions = _session_files_newest_first()
+    sessions_removed = 0
+    records_expired = 0
+
+    excess_sessions = all_sessions[cfg.max_sessions :]
+    for path in excess_sessions:
+        if not dry_run:
+            try:
+                path.unlink()
+            except OSError:
+                continue
+        sessions_removed += 1
+
+    for path in all_sessions[: cfg.max_sessions]:
+        sid = path.stem
+        records = _load_records(sid)
+        expired_indices: list[int] = []
+        for idx, record in enumerate(records):
+            if cfg.is_record_expired(record, now_iso=now_iso):
+                expired_indices.append(idx)
+        if not expired_indices:
+            continue
+        records_expired += len(expired_indices)
+        kept = [r for i, r in enumerate(records) if i not in expired_indices]
+        if not dry_run:
+            try:
+                with path.open("w", encoding="utf-8") as handle:
+                    for record in kept:
+                        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+            except OSError:
+                continue
+
+    return {
+        "sessions_removed": sessions_removed,
+        "records_expired": records_expired,
+        "dry_run": dry_run,
+        "retention_config": cfg.to_dict(),
+    }
+
+
+def validate_appeal_justification(justification: str) -> tuple[bool, str | None]:
+    """Validate that an appeal justification is non-empty.
+
+    Args:
+        justification: The justification string to validate.
+
+    Returns:
+        A tuple of (is_valid, error_message). If valid, error_message is None.
+    """
+    if not justification or not justification.strip():
+        return False, "justification cannot be empty"
+    return True, None
+
+
+def get_appeal_history(
+    record_id: str,
+    *,
+    session_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve all appeal events for a given original audit record.
+
+    Scans session files (newest first) and returns every ``appeal_event``
+    record whose ``original_record_id`` matches *record_id*.
+
+    Args:
+        record_id: The audit record_id whose appeals are requested.
+        session_id: Optional session to limit the search to.
+
+    Returns:
+        A list of appeal audit records ordered newest-first.
+    """
+    results: list[dict[str, Any]] = []
+
+    if session_id is not None:
+        session_ids = [session_id]
+    else:
+        session_ids = _iter_session_ids_newest_first()
+
+    for sid in session_ids:
+        for record in _load_records(sid, max_lines=_MAX_AUDIT_RECORD_SCAN_LINES):
+            if (
+                record.get("tool_name") == "appeal_event"
+                and record.get("original_record_id") == record_id
+            ):
+                results.append(record)
+
+    return results
+
+
+def process_appeal(
+    record_id: str,
+    justification: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+    reviewed_by: str = "user",
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """Process an appeal for a given audit record.
+
+    Looks up the original decision by *record_id*, runs a deterministic
+    replay with the justification embedded as metadata, and produces an
+    ``AppealResult`` that is chained to the audit log.
+
+    When no AI evaluator is configured the replay is deterministic and the
+    result status is ``"ask"`` (requires human review).
+
+    Args:
+        record_id: The audit record_id to appeal.
+        justification: User-provided reason for the appeal.
+        metadata: Optional additional context.
+        reviewed_by: Identifier of the reviewer (default ``"user"``).
+        session_id: Optional session to search within.
+
+    Returns:
+        A dict with keys ``appeal_request``, ``appeal_result``,
+        ``original_record``, ``replay_result``, and ``appeal_history``.
+
+    Raises:
+        ValueError: If the original record is not found or justification
+            is empty.
+    """
+    is_valid, error_msg = validate_appeal_justification(justification)
+    if not is_valid:
+        raise ValueError(error_msg or "invalid justification")
+
+    original_record = find_audit_record(record_id)
+    if original_record is None:
+        raise ValueError(f"original record not found: {record_id}")
+
+    from claude_bridge.replay import replay_with_justification
+
+    replay_result = replay_with_justification(
+        original_record,
+        justification=justification,
+    )
+
+    appeal_req = AppealRequest.create(
+        original_record_id=record_id,
+        justification=justification,
+        metadata=metadata,
+    )
+
+    replayed = replay_result.replayed_decision
+    appeal_result = AppealResult(
+        appeal_id=appeal_req.appeal_id,
+        status=replayed.action.value,
+        reviewed_by=reviewed_by,
+        decision_reason=replayed.reason,
+        metadata={
+            "replay_changed": replay_result.changed,
+            "replay_change_reason": replay_result.change_reason,
+            "justification_provided": True,
+            **(replay_result.metadata or {}),
+        },
+    )
+
+    log_appeal_event(appeal_req, appeal_result)
+
+    appeal_history = get_appeal_history(record_id, session_id=session_id)
+
+    return {
+        "appeal_request": appeal_req.to_dict(),
+        "appeal_result": appeal_result.to_dict(),
+        "original_record": {
+            "record_id": original_record.get("record_id"),
+            "tool_name": original_record.get("tool_name"),
+            "timestamp": original_record.get("timestamp"),
+            "decision_action": original_record.get("decision_action"),
+            "decision_source": original_record.get("decision_source"),
+            "decision_risk_level": original_record.get("decision_risk_level"),
+        },
+        "replay_result": replay_result.to_dict(),
+        "appeal_history_count": len(appeal_history),
+    }
+
+
+def log_appeal_event(
+    appeal_request: AppealRequest,
+    appeal_result: AppealResult | None = None,
+) -> None:
+    """Log an appeal event to the audit log.
+
+    Args:
+        appeal_request: The appeal request details.
+        appeal_result: Optional result of the appeal. If None, the appeal
+            is logged as pending.
+    """
+    session_id = current_session_id()
+    result_obj: dict[str, Any] = {
+        "ok": True,
+        "message": "appeal logged",
+        "details": {
+            "appeal": appeal_request.to_dict(),
+        },
+    }
+    if appeal_result:
+        result_obj["details"]["result"] = appeal_result.to_dict()
+
+    result = json.dumps(result_obj, ensure_ascii=False, sort_keys=True)
+    summary, result_hash = _result_summary(result)
+    summary = _redact_sensitive_values(summary)
+    params_summary = _summarize_value(appeal_request.to_dict())
+    params_redacted = _redact_sensitive_values(params_summary)
+
+    record: dict[str, Any] = {
+        "record_id": uuid.uuid4().hex,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "session_id": session_id,
+        "tool_name": "appeal_event",
+        "params": params_redacted,
+        "params_hash": sha256(
+            json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "duration_ms": 0.0,
+        "result": summary,
+        "result_hash": result_hash,
+        "telemetry": {
+            "input_chars": len(json.dumps(params_redacted, ensure_ascii=False, sort_keys=True)),
+            "output_chars": len(result),
+            "estimated_input_tokens": _estimate_tokens(
+                json.dumps(params_redacted, ensure_ascii=False, sort_keys=True)
+            ),
+            "estimated_output_tokens": _estimate_tokens(result),
+            "estimated_total_tokens": _estimate_tokens(
+                json.dumps(params_redacted, ensure_ascii=False, sort_keys=True)
+            )
+            + _estimate_tokens(result),
+            "result_truncated": False,
+        },
+        "replay_context": {
+            "tool_name": "appeal_event",
+            "params": params_redacted,
+        },
+        "appeal_id": appeal_request.appeal_id,
+        "original_record_id": appeal_request.original_record_id,
+    }
+    if appeal_result:
+        record["appeal_status"] = appeal_result.status
+        record["appeal_reviewed_by"] = appeal_result.reviewed_by
+
+    path = _session_file(session_id)
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    _append_audit_record(path, line)

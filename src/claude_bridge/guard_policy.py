@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass, field as dc_field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from claude_bridge.config import project_dir
 
@@ -19,6 +19,14 @@ _POLICY_FILENAME = ".claude-bridge-guard.json"
 _RULES_YAML_FILENAME = ".claude-bridge/rules.yaml"
 _MAX_ITEMS = 100
 _MAX_PATTERN_LENGTH = 500
+_MAX_REGEX_PATTERN_LENGTH = 256  # FIX: stricter limit for user-defined regexes
+_REGEX_QUANTIFIER = r"(?:[*+?]|\{\d+(?:,\d*)?\})"
+_NESTED_QUANTIFIER_PATTERN = re.compile(
+    rf"\((?:[^()\\]|\\.)*{_REGEX_QUANTIFIER}(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
+)
+_ALTERNATION_QUANTIFIER_PATTERN = re.compile(  # FIX: catch (a|aa)* style ReDoS
+    rf"\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
+)
 
 
 def _policy_path() -> Path:
@@ -53,14 +61,36 @@ def _regex_map(value: Any) -> dict[str, str]:
         pattern = item.strip()
         if not name or not pattern:
             continue
-        if len(name) > _MAX_PATTERN_LENGTH or len(pattern) > _MAX_PATTERN_LENGTH:
+        if len(name) > _MAX_PATTERN_LENGTH or len(pattern) > _MAX_REGEX_PATTERN_LENGTH:  # FIX: enforce 256 char limit for regex values
             continue
-        try:
-            re.compile(pattern)
-        except re.error:
+        regex_error = validate_regex_pattern(pattern)
+        if regex_error is not None:
             continue
         patterns[name] = pattern
     return patterns
+
+
+def regex_safety_reason(pattern: str) -> str | None:
+    """Return a rejection reason for regex patterns with obvious ReDoS risk."""
+    if len(pattern) > _MAX_REGEX_PATTERN_LENGTH:  # FIX: 256 char limit for user-defined regexes
+        return "regex pattern exceeds maximum length"
+    if _NESTED_QUANTIFIER_PATTERN.search(pattern):
+        return "regex pattern contains nested quantifiers with ReDoS risk"
+    if _ALTERNATION_QUANTIFIER_PATTERN.search(pattern):  # FIX: catch (a|aa)* style ReDoS
+        return "regex pattern contains alternation with outer quantifier (ReDoS risk)"
+    return None
+
+
+def validate_regex_pattern(pattern: str) -> str | None:
+    """Validate user-supplied regex syntax and cheap ReDoS heuristics."""
+    safety_reason = regex_safety_reason(pattern)
+    if safety_reason is not None:
+        return safety_reason
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        return f"Invalid regex pattern: {exc}"
+    return None
 
 
 def custom_shell_block_reason(command: str) -> str | None:
@@ -131,11 +161,11 @@ class RuleCondition:
     type: ConditionType
     field: str = ""
     value: Any = None
-    metadata: Dict[str, Any] = dc_field(default_factory=dict)
+    metadata: dict[str, Any] = dc_field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "type": self.type.value,
         }
         if self.field:
@@ -147,7 +177,7 @@ class RuleCondition:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RuleCondition":
+    def from_dict(cls, data: dict[str, Any]) -> "RuleCondition":
         """Deserialize from a dictionary.
 
         Returns a RuleCondition even if data is incomplete; validation
@@ -188,10 +218,10 @@ class GuardRule:
     action: RuleAction = RuleAction.DENY
     priority: int = 100
     enabled: bool = True
-    conditions: List[RuleCondition] = dc_field(default_factory=list)
-    metadata: Dict[str, Any] = dc_field(default_factory=dict)
+    conditions: list[RuleCondition] = dc_field(default_factory=list)
+    metadata: dict[str, Any] = dc_field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
         return {
             "name": self.name,
@@ -204,7 +234,7 @@ class GuardRule:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "GuardRule":
+    def from_dict(cls, data: dict[str, Any]) -> "GuardRule":
         """Deserialize from a dictionary.
 
         Returns a GuardRule even if data is incomplete; validation
@@ -242,10 +272,10 @@ class GuardRule:
 class RuleSet:
     """A collection of guard rules loaded from a policy file."""
 
-    rules: List[GuardRule] = dc_field(default_factory=list)
-    metadata: Dict[str, Any] = dc_field(default_factory=dict)
+    rules: list[GuardRule] = dc_field(default_factory=list)
+    metadata: dict[str, Any] = dc_field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
         return {
             "rules": [r.to_dict() for r in self.rules],
@@ -253,7 +283,7 @@ class RuleSet:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RuleSet":
+    def from_dict(cls, data: dict[str, Any]) -> "RuleSet":
         """Deserialize from a dictionary."""
         if not isinstance(data, dict):
             return cls()
@@ -275,7 +305,7 @@ class ValidationError:
     message: str
     code: str = "invalid_value"
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         """Serialize to a JSON-compatible dictionary."""
         return {
             "path": self.path,
@@ -322,14 +352,18 @@ def validate_rule_condition(
                 )
             )
         else:
-            try:
-                re.compile(condition.value)
-            except re.error as exc:
+            regex_error = validate_regex_pattern(condition.value)
+            if regex_error is not None:
+                code = (
+                    "unsafe_regex"
+                    if "ReDoS" in regex_error or "maximum length" in regex_error
+                    else "invalid_regex"
+                )
                 errors.append(
                     ValidationError(
                         path=f"{path}.value",
-                        message=f"Invalid regex pattern: {exc}",
-                        code="invalid_regex",
+                        message=regex_error,
+                        code=code,
                     )
                 )
 
@@ -435,7 +469,7 @@ def validate_rule_set(rule_set: RuleSet) -> list[ValidationError]:
     return errors
 
 
-def validate_rules_dict(data: Dict[str, Any]) -> list[ValidationError]:
+def validate_rules_dict(data: dict[str, Any]) -> list[ValidationError]:
     """Parse raw policy dict into a RuleSet and validate it.
 
     Returns a list of ValidationError; an empty list means the rules are valid.
@@ -507,12 +541,12 @@ def validate_rules_dict(data: Dict[str, Any]) -> list[ValidationError]:
 # ---------------------------------------------------------------------------
 
 
-_POLICY_CACHE: Dict[str, Any] = {}
+_POLICY_CACHE: dict[str, Any] = {}
 _POLICY_CACHE_MTIME: float = 0.0
 _POLICY_CACHE_LOCK = threading.RLock()
 
 
-def _read_file_with_fallback(path: Path) -> Optional[str]:
+def _read_file_with_fallback(path: Path) -> str | None:
     """Read file contents or return None on any error."""
     try:
         return path.read_text(encoding="utf-8")
@@ -520,7 +554,7 @@ def _read_file_with_fallback(path: Path) -> Optional[str]:
         return None
 
 
-def _parse_json_safe(raw: str, path: Path) -> Optional[Dict[str, Any]]:
+def _parse_json_safe(raw: str, path: Path) -> dict[str, Any] | None:
     """Parse JSON string into dict; return None on parse error."""
     try:
         result = json.loads(raw)
@@ -531,22 +565,24 @@ def _parse_json_safe(raw: str, path: Path) -> Optional[Dict[str, Any]]:
     return result
 
 
-def _parse_yaml_safe(raw: str) -> Optional[Dict[str, Any]]:
+def _parse_yaml_safe(raw: str) -> dict[str, Any] | None:
     """Parse YAML string into dict if PyYAML is available; return None otherwise."""
+    if len(raw) > 1_048_576:  # FIX: 1MB input size limit to prevent memory exhaustion
+        raise ValueError("YAML input exceeds maximum size of 1MB")
     try:
         import yaml  # type: ignore[import-untyped]
     except ImportError:
         return None
     try:
         result = yaml.safe_load(raw)
-    except Exception:
+    except yaml.YAMLError:
         return None
     if not isinstance(result, dict):
         return None
     return result
 
 
-def _resolve_policy_files() -> list[Tuple[Path, str]]:
+def _resolve_policy_files() -> list[tuple[Path, str]]:
     """Return ordered list of (path, format) tuples to check for rules.
 
     Priority:
@@ -554,7 +590,7 @@ def _resolve_policy_files() -> list[Tuple[Path, str]]:
     2. <project>/.claude-bridge-guard.json
     3. <project>/.claude-bridge/rules.yaml (future, checked if present)
     """
-    result: list[Tuple[Path, str]] = []
+    result: list[tuple[Path, str]] = []
     override = os.environ.get("CLAUDE_BRIDGE_GUARD_POLICY", "").strip()
     if override:
         override_path = Path(override).expanduser().resolve()
@@ -576,13 +612,13 @@ def _resolve_policy_files() -> list[Tuple[Path, str]]:
     return result
 
 
-def _load_policy_files() -> Dict[str, Any]:
+def _load_policy_files() -> dict[str, Any]:
     """Load and merge policy files into a unified dict.
 
     Files are loaded in priority order. Rules from higher-priority files
     take precedence (later files in the list append/add to rules).
     """
-    merged: Dict[str, Any] = {}
+    merged: dict[str, Any] = {}
     for path, fmt in _resolve_policy_files():
         raw = _read_file_with_fallback(path)
         if raw is None:
@@ -604,7 +640,7 @@ def _load_policy_files() -> Dict[str, Any]:
 
         # Rules are accumulated across all files
         if "rules" in parsed and isinstance(parsed["rules"], list):
-            existing: list[Dict[str, Any]] = merged.get("rules", [])
+            existing: list[dict[str, Any]] = merged.get("rules", [])
             existing = list(existing)  # make a copy
             for rule in parsed["rules"]:
                 if isinstance(rule, dict):
@@ -613,7 +649,7 @@ def _load_policy_files() -> Dict[str, Any]:
 
         # Metadata from each file
         if "metadata" in parsed and isinstance(parsed["metadata"], dict):
-            existing_meta: Dict[str, Any] = dict(merged.get("metadata", {}))
+            existing_meta: dict[str, Any] = dict(merged.get("metadata", {}))
             existing_meta.update(parsed["metadata"])
             merged["metadata"] = existing_meta
 
@@ -651,10 +687,11 @@ def load_guard_policy() -> dict[str, Any]:
     global _POLICY_CACHE_MTIME
 
     primary_path = _policy_path()
-    current_mtime = _policy_mtime(primary_path)
+    policy_files = _resolve_policy_files()
+    current_mtime = sum(_policy_mtime(path) for path, _ in policy_files)
 
     with _POLICY_CACHE_LOCK:
-        # Use cache if the primary file hasn't changed
+        # Use cache if none of the policy files have changed
         if _POLICY_CACHE and current_mtime == _POLICY_CACHE_MTIME and current_mtime > 0:
             return dict(_POLICY_CACHE)
 
@@ -742,9 +779,9 @@ class PolicyDecision:
     risk_level: RiskLevel = RiskLevel.LOW
     reason: str = ""
     risk_reasons: list[str] = dc_field(default_factory=list)
-    metadata: Dict[str, Any] = dc_field(default_factory=dict)
+    metadata: dict[str, Any] = dc_field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize the decision to a JSON-compatible dictionary.
 
         Returns a dict with keys matching the structured response format
@@ -760,12 +797,24 @@ class PolicyDecision:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> PolicyDecision:
+    def from_dict(cls, data: dict[str, Any]) -> PolicyDecision:
         """Deserialize a dictionary back into a PolicyDecision."""
+        try:
+            action = DecisionAction(data.get("action", "deny"))
+        except ValueError:
+            action = DecisionAction.DENY
+        try:
+            source = DecisionSource(data.get("source", "builtin_guard"))
+        except ValueError:
+            source = DecisionSource.BUILTIN_GUARD
+        try:
+            risk_level = RiskLevel(data.get("risk_level", "medium"))
+        except ValueError:
+            risk_level = RiskLevel.MEDIUM
         return cls(
-            action=DecisionAction(data.get("action", "deny")),
-            source=DecisionSource(data.get("source", "builtin_guard")),
-            risk_level=RiskLevel(data.get("risk_level", "medium")),
+            action=action,
+            source=source,
+            risk_level=risk_level,
             reason=str(data.get("reason", "")),
             risk_reasons=[str(r) for r in data.get("risk_reasons", [])],
             metadata=dict(data.get("metadata", {})),
@@ -774,21 +823,37 @@ class PolicyDecision:
 
 @dataclass
 class ToolRequestContext:
-    """Metadata about the tool invocation that triggered a policy check."""
+    """Metadata about the tool invocation that triggered a policy check.
+
+    Attributes:
+        tool_name: The name of the tool being invoked.
+        params: Parameters passed to the tool.
+        project_dir: The active project directory.
+        allowed_roots: List of allowed workspace roots.
+        role: Optional role name for role-based policy evaluation.
+        user: Optional user identifier for role-based policy evaluation.
+    """
 
     tool_name: str
-    params: Dict[str, Any] = dc_field(default_factory=dict)
-    project_dir: Optional[str] = None
+    params: dict[str, Any] = dc_field(default_factory=dict)
+    project_dir: str | None = None
     allowed_roots: list[str] = dc_field(default_factory=list)
+    role: str | None = None
+    user: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize the context to a JSON-compatible dictionary."""
-        return {
+        result: dict[str, Any] = {
             "tool_name": self.tool_name,
             "params": dict(self.params),
             "project_dir": self.project_dir,
             "allowed_roots": list(self.allowed_roots),
         }
+        if self.role is not None:
+            result["role"] = self.role
+        if self.user is not None:
+            result["user"] = self.user
+        return result
 
 
 def make_policy_decision(
@@ -935,7 +1000,19 @@ def evaluate_rules(
     policy: GuardPolicy | None = None,
 ) -> PolicyDecision | None:
     """Evaluate loaded user rules for a tool request without executing the tool."""
-    selected_policy = policy or validate_guard_policy_file(_policy_path())
+    if policy is not None:
+        selected_policy = policy
+    else:
+        policy_data = load_guard_policy()  # FIX: use cached load_guard_policy() instead of disk read
+        rules_raw = policy_data.get("rules", [])
+        rules = RuleSet.from_dict({"rules": rules_raw}).rules if rules_raw else []
+        validation_errors = policy_data.get("rules_validation", [])
+        selected_policy = GuardPolicy(
+            path=Path(policy_data["path"]),
+            exists=policy_data["exists"],
+            rules=rules,
+            errors=[e["message"] for e in validation_errors],
+        )
     if not selected_policy.exists and policy is None:
         return None
     if selected_policy.errors:

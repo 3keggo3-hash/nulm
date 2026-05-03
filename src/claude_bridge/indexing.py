@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import fnmatch
 import importlib
 import json
@@ -198,7 +199,10 @@ def _extract_go_imports(source: str) -> list[str]:
 
 
 def _extract_python_symbols(_: Path, source: str) -> dict[str, Any]:
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {"functions": [], "classes": [], "imports": [], "language": "python"}
     return {
         "functions": sorted(
             {
@@ -370,6 +374,21 @@ _EXTRACTORS_BY_SUFFIX: dict[str, Extractor] = {
     ".rb": _extract_ruby_symbols,
     ".php": _extract_php_symbols,
     ".gd": _extract_gdscript_symbols,
+}
+_LANGUAGE_BY_SUFFIX = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".gd": "gdscript",
 }
 _TREE_SITTER_LANGUAGE_NAMES = {
     ".py": "python",
@@ -559,12 +578,13 @@ def clear_index_cache() -> None:
 
 def get_cached_index(cache_key: str) -> dict[str, Any] | None:
     with _INDEX_CACHE_LOCK:
-        return _INDEX_CACHE.get(cache_key)
+        cached = _INDEX_CACHE.get(cache_key)
+        return copy.deepcopy(cached) if cached is not None else None
 
 
 def set_cached_index(cache_key: str, snapshot: tuple[Any, ...], payload: dict[str, Any]) -> None:
     with _INDEX_CACHE_LOCK:
-        _INDEX_CACHE[cache_key] = {"snapshot": snapshot, "payload": payload}
+        _INDEX_CACHE[cache_key] = {"snapshot": snapshot, "payload": copy.deepcopy(payload)}
         while len(_INDEX_CACHE) > _MAX_INDEX_CACHE_ENTRIES:
             oldest_key = next(iter(_INDEX_CACHE))
             _INDEX_CACHE.pop(oldest_key, None)
@@ -993,12 +1013,11 @@ def _extract_tree_sitter_symbols(file: Path, source: str) -> dict[str, Any] | No
     if not (functions or classes or imports):
         return None
 
-    fallback_language = extract_symbols(file, source)["language"]
     return {
         "functions": sorted(functions),
         "classes": sorted(classes),
         "imports": sorted(imports),
-        "language": fallback_language,
+        "language": _LANGUAGE_BY_SUFFIX.get(file.suffix, "unknown"),
     }
 
 
@@ -1024,8 +1043,16 @@ def build_index(
 
     project_root = infer_project_root(target)
     source_files = iter_source_files(target, project_root, is_within_root=is_within_root)
+    file_signatures: dict[Path, dict[str, Any]] = {}
+    for file in source_files:
+        try:
+            file_signatures[file] = _file_signature(file, target)
+        except OSError:
+            continue
+    source_files = [file for file in source_files if file in file_signatures]
     snapshot = tuple(
-        (file.relative_to(target).as_posix(), file.stat().st_mtime_ns) for file in source_files
+        (signature["relative_path"], signature["mtime_ns"])
+        for signature in file_signatures.values()
     )
     snapshot_key = _snapshot_key(snapshot)
     cache_key = str(target)
@@ -1048,7 +1075,7 @@ def build_index(
     next_file_cache: dict[str, dict[str, Any]] = {}
     python_file_count = 0
     for file in source_files:
-        signature = _file_signature(file, target)
+        signature = file_signatures[file]
         relative_path = signature["relative_path"]
         cached_file = reusable_file_cache.get(relative_path)
         if (
@@ -1102,7 +1129,7 @@ def build_index(
                 continue
             try:
                 symbols, parser_backend = extract_symbols_with_backend(file, source)
-            except SyntaxError:
+            except (SyntaxError, ValueError):
                 continue
             token_metadata = _token_metadata_for_index_entry(
                 relative_path=relative_path,

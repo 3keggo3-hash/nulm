@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import threading
 from collections import OrderedDict
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 from claude_bridge.smart import budget_metadata
 from claude_bridge.smart import count_tokens_for_path as smart_count_tokens_for_path
 from claude_bridge.tool_utils import path_outside_project_details
@@ -34,6 +33,38 @@ _WORKFLOW_CACHE_VERSION = 1
 _MAX_WORKFLOW_DISK_CACHE_FILES = 64
 _CONTEXT_PACK_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
 _WORKFLOW_PLAN_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
+_VALIDATION_OPERATOR_TOKENS = {
+    "|",
+    "||",
+    "&",
+    "&&",
+    ";",
+    ">",
+    ">>",
+    "<",
+    "<<",
+    "2>",
+    "2>>",
+    "1>",
+    "1>>",
+    "&>",
+}
+_VALIDATION_ALLOWED_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("pytest",),
+    ("python", "-m", "pytest"),
+    ("python3", "-m", "pytest"),
+    ("ruff", "check"),
+    ("black", "--check"),
+    ("mypy",),
+    ("npm", "test"),
+    ("npm", "run", "test"),
+    ("pnpm", "test"),
+    ("yarn", "test"),
+    ("cargo", "test"),
+    ("go", "test"),
+    ("make", "test"),
+    ("git", "diff"),
+)
 
 
 def _touch_cache_entry(
@@ -184,6 +215,56 @@ def _safe_json_response_load(
             details={"tool": tool_name, "payload_type": type(payload).__name__},
         )
     return payload, None
+
+
+def _safe_cached_json_payload(raw: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _validation_command_error(command: str) -> dict[str, Any] | None:
+    stripped = command.strip()
+    if not stripped:
+        return {"code": "missing_validation_command", "reason": "validation command is empty"}
+    if "\n" in stripped or "\r" in stripped:
+        return {
+            "code": "unsafe_validation_command",
+            "reason": "validation command contains a newline",
+        }
+    try:
+        argv = shlex.split(stripped)
+    except ValueError as exc:
+        return {
+            "code": "invalid_validation_command",
+            "reason": f"validation command could not be parsed: {exc}",
+        }
+    if not argv:
+        return {"code": "missing_validation_command", "reason": "validation command is empty"}
+    for token in argv:
+        if token in _VALIDATION_OPERATOR_TOKENS or any(ch in token for ch in "|&;<>`"):
+            return {
+                "code": "unsafe_validation_command",
+                "reason": "validation command contains shell injection operators",
+                "argv": argv,
+            }
+        if "$(" in token or "${" in token:
+            return {
+                "code": "unsafe_validation_command",
+                "reason": "validation command contains shell expansion syntax",
+                "argv": argv,
+            }
+    for prefix in _VALIDATION_ALLOWED_PREFIXES:
+        if tuple(argv[: len(prefix)]) == prefix:
+            return None
+    return {
+        "code": "unsupported_validation_command",
+        "reason": "validation command is not in the allowlisted validation set",
+        "argv": argv,
+        "allowed_prefixes": [" ".join(prefix) for prefix in _VALIDATION_ALLOWED_PREFIXES],
+    }
 
 
 def _display_path(
@@ -785,9 +866,10 @@ def build_context_pack(
                 if cached_payload is not None:
                     _store_cache_entry(_CONTEXT_PACK_CACHE, cache_key, cached_payload)
         if cached_payload is not None:
-            cached = json.loads(cached_payload)
-            cached["details"]["cached"] = True
-            return json.dumps(cached, ensure_ascii=False)
+            cached = _safe_cached_json_payload(cached_payload)
+            if cached is not None and isinstance(cached.get("details"), dict):
+                cached["details"]["cached"] = True
+                return json.dumps(cached, ensure_ascii=False)
 
         config_paths = [
             _display_path(
@@ -953,6 +1035,20 @@ async def run_agent_loop_step(
             code="invalid_iteration_budget",
             details={"iteration": iteration, "max_iterations": max_iterations},
         )
+    validation_error = _validation_command_error(validation_command)
+    if validation_error is not None:
+        return json_response(
+            False,
+            validation_error["reason"],
+            code=validation_error["code"],
+            details={
+                "iteration": iteration,
+                "max_iterations": max_iterations,
+                "validation_command": validation_command,
+                "decision": "stop",
+                **validation_error,
+            },
+        )
 
     try:
         patch_payload = json.loads(await patch_file(file=file, search=search, replace=replace))
@@ -979,10 +1075,18 @@ async def run_agent_loop_step(
     try:
         validation_payload = json.loads(await run_shell(validation_command))
     except (json.JSONDecodeError, TypeError):
-        validation_ok = False
-        validation_payload = {"ok": False}
-    else:
-        validation_ok = bool(validation_payload.get("ok", False))
+        return json_response(
+            False,
+            "Agent loop step failed: validation command returned invalid JSON",
+            code="agent_loop_validation_failed",
+            details={
+                "iteration": iteration,
+                "max_iterations": max_iterations,
+                "validation_command": validation_command,
+                "decision": "stop",
+            },
+        )
+    validation_ok = bool(validation_payload.get("ok", False))
     decision = (
         "stop_success"
         if validation_ok
@@ -1195,16 +1299,28 @@ async def run_agent_loop_session(
                 details={"iteration": iteration, "missing_fields": missing},
             )
 
-        step_result = json.loads(
-            await run_agent_loop_step(
-                file=step["file"],
-                search=step["search"],
-                replace=step["replace"],
-                validation_command=step["validation_command"],
-                iteration=iteration,
-                max_iterations=max_iterations,
+        try:
+            step_result = json.loads(
+                await run_agent_loop_step(
+                    file=step["file"],
+                    search=step["search"],
+                    replace=step["replace"],
+                    validation_command=step["validation_command"],
+                    iteration=iteration,
+                    max_iterations=max_iterations,
+                )
             )
-        )
+        except (json.JSONDecodeError, TypeError) as exc:
+            return json_response(
+                False,
+                f"Agent loop step {iteration} returned invalid JSON: {exc}",
+                code="agent_loop_step_invalid_payload",
+                details={
+                    "iteration": iteration,
+                    "max_iterations": max_iterations,
+                    "decision": "stop",
+                },
+            )
         session_results.append(step_result)
 
         if not step_result["ok"]:
@@ -1313,9 +1429,10 @@ async def run_workflow(
                 if cached_payload is not None:
                     _store_cache_entry(_WORKFLOW_PLAN_CACHE, cache_key, cached_payload)
         if cached_payload is not None:
-            cached = json.loads(cached_payload)
-            cached["details"]["cached"] = True
-            return json.dumps(cached, ensure_ascii=False)
+            cached = _safe_cached_json_payload(cached_payload)
+            if cached is not None and isinstance(cached.get("details"), dict):
+                cached["details"]["cached"] = True
+                return json.dumps(cached, ensure_ascii=False)
     recommended_tools = ["list_directory", "read_file"]
     if mode == "todo":
         recommended_tools.append("run_shell")
@@ -1359,7 +1476,10 @@ async def run_workflow(
                 "max_iterations": max_iterations,
                 "execution": execution,
             }
-            error_payload = json.loads(execution_error)
+            try:
+                error_payload = json.loads(execution_error)
+            except (json.JSONDecodeError, TypeError):
+                error_payload = {"message": "Execution failed with invalid response", "code": "agent_loop_execution_failed"}
             return json_response(
                 False,
                 error_payload["message"],
@@ -1401,276 +1521,6 @@ async def run_workflow(
             except OSError:
                 pass
     return response
-
-
-def register_prompts(mcp: FastMCP) -> None:
-    def review_prompt(target: str = ".", focus: str = "bugs and missing tests") -> Message:
-        return Message(workflow_prompt("review", target, focus, "Turkish"), role="user")
-
-    def optimize_prompt(target: str = ".", focus: str = "performance and readability") -> Message:
-        return Message(workflow_prompt("optimize", target, focus, "Turkish"), role="user")
-
-    def orchestrate_prompt(
-        target: str = ".",
-        focus: str = "decompose into independent workstreams with clear ownership",
-    ) -> Message:
-        return Message(workflow_prompt("orchestrate", target, focus, "Turkish"), role="user")
-
-    def agent_loop_prompt(
-        target: str = ".",
-        goal: str = "fix the current issue with small validated steps",
-    ) -> Message:
-        return Message(workflow_prompt("agent_loop", target, goal, "Turkish"), role="user")
-
-    def quality_prompt(
-        target: str = ".",
-        focus: str = "correctness, regression safety, readability, tests, and verification depth",
-    ) -> Message:
-        return Message(workflow_prompt("quality", target, focus, "Turkish"), role="user")
-
-    def test_prompt(target: str = ".", test_style: str = "regression tests") -> Message:
-        return Message(workflow_prompt("test", target, test_style, "Turkish"), role="user")
-
-    def todo_prompt(target: str = ".", keywords: str = "TODO, FIXME, HACK, XXX") -> Message:
-        return Message(workflow_prompt("todo", target, keywords, "Turkish"), role="user")
-
-    def explain_prompt(
-        target: str = ".",
-        audience: str = "a junior developer",
-        language: str = "Turkish",
-    ) -> Message:
-        return Message(workflow_prompt("explain", target, audience, language), role="user")
-
-    def commit_prompt(
-        target: str = ".",
-        style: str = "short imperative commit message with a concise summary",
-    ) -> Message:
-        return Message(workflow_prompt("commit", target, style, "Turkish"), role="user")
-
-    def shadow_prompt(
-        target: str = ".",
-        focus: str = "challenge prior assumptions, verify from files, and be skeptical of earlier conclusions",
-    ) -> Message:
-        return Message(
-            workflow_prompt("review", target, focus, "Turkish")
-            + "\nTreat earlier assumptions as untrusted until the files confirm them.\n"
-            + "Prefer a cold, critical reread over agreement-seeking.",
-            role="user",
-        )
-
-    def benchmark_prompt(
-        target: str = ".",
-        focus: str = "startup cost, relevance latency, token efficiency, and cache behavior",
-    ) -> Message:
-        return Message(
-            "Prepare a benchmark-first investigation plan.\n"
-            f"Target: {target}\n"
-            f"Focus: {focus}\n"
-            "Response language: Turkish\n"
-            "Start with the cheapest signals first.\n"
-            "Separate measurement from interpretation.\n"
-            "Call out what can be learned without spending a full benchmark run yet.",
-            role="user",
-        )
-
-    def platform_prompt(
-        target: str = ".",
-        focus: str = "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
-    ) -> Message:
-        return Message(
-            "Audit cross-platform and editor compatibility.\n"
-            f"Target: {target}\n"
-            f"Focus: {focus}\n"
-            "Response language: Turkish\n"
-            "List platform assumptions, packaging risks, path issues, shell differences, and client integration gaps.\n"
-            "Prefer a matrix of concrete risks and verifications over vague advice.",
-            role="user",
-        )
-
-    def compact_prompt(
-        target: str = ".",
-        goal: str = "continue the task with a smaller, cheaper working context",
-    ) -> Message:
-        return Message(
-            "Shrink the active context before doing more work.\n"
-            f"Target: {target}\n"
-            f"Goal: {goal}\n"
-            "Response language: Turkish\n"
-            "Prefer the smallest useful set of files, the narrowest read windows, and the cheapest next step.\n"
-            "Call out what can be deferred until later if it does not fit the current budget.",
-            role="user",
-        )
-
-    prompt_specs = [
-        (
-            "review",
-            "Review code for bugs and missing tests.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to review", required=False
-                ),
-                PromptArgument(name="focus", description="Specific review focus", required=False),
-            ],
-            review_prompt,
-        ),
-        (
-            "optimize",
-            "Optimize code for performance and maintainability.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to optimize", required=False
-                ),
-                PromptArgument(name="focus", description="Optimization focus", required=False),
-            ],
-            optimize_prompt,
-        ),
-        (
-            "orchestrate",
-            "Turn a larger task into parallel workstreams plus an integration plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to orchestrate", required=False
-                ),
-                PromptArgument(name="focus", description="How to split the work", required=False),
-            ],
-            orchestrate_prompt,
-        ),
-        (
-            "agent_loop",
-            "Plan a bounded inspect-patch-validate loop for a focused coding task.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory for the loop", required=False
-                ),
-                PromptArgument(
-                    name="goal", description="What the loop should accomplish", required=False
-                ),
-            ],
-            agent_loop_prompt,
-        ),
-        (
-            "quality",
-            "Evaluate code quality against a practical shipping standard.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to evaluate", required=False
-                ),
-                PromptArgument(name="focus", description="Specific quality focus", required=False),
-            ],
-            quality_prompt,
-        ),
-        (
-            "test",
-            "Plan tests for the selected target.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to test", required=False
-                ),
-                PromptArgument(
-                    name="test_style", description="Preferred testing style", required=False
-                ),
-            ],
-            test_prompt,
-        ),
-        (
-            "todo",
-            "Scan for TODO-style markers and prioritize them.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to scan", required=False
-                ),
-                PromptArgument(
-                    name="keywords", description="Keywords to search for", required=False
-                ),
-            ],
-            todo_prompt,
-        ),
-        (
-            "explain",
-            "Explain how a piece of code works.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to explain", required=False
-                ),
-                PromptArgument(name="audience", description="Audience level", required=False),
-                PromptArgument(name="language", description="Response language", required=False),
-            ],
-            explain_prompt,
-        ),
-        (
-            "commit",
-            "Summarize changes and suggest a commit message.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to summarize", required=False
-                ),
-                PromptArgument(
-                    name="style", description="Preferred commit message style", required=False
-                ),
-            ],
-            commit_prompt,
-        ),
-        (
-            "compact",
-            "Shrink the active context and continue with a lower-cost plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to narrow", required=False
-                ),
-                PromptArgument(
-                    name="goal", description="What to preserve while compacting", required=False
-                ),
-            ],
-            compact_prompt,
-        ),
-        (
-            "shadow",
-            "Re-review a target skeptically and challenge prior assumptions.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to re-review", required=False
-                ),
-                PromptArgument(name="focus", description="Critical review focus", required=False),
-            ],
-            shadow_prompt,
-        ),
-        (
-            "benchmark",
-            "Prepare a benchmark-first investigation plan.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to assess", required=False
-                ),
-                PromptArgument(name="focus", description="Benchmark focus", required=False),
-            ],
-            benchmark_prompt,
-        ),
-        (
-            "platform",
-            "Audit cross-platform and editor compatibility gaps.",
-            [
-                PromptArgument(
-                    name="target", description="File or directory to assess", required=False
-                ),
-                PromptArgument(
-                    name="focus", description="Platform or client focus", required=False
-                ),
-            ],
-            platform_prompt,
-        ),
-    ]
-
-    for name, description, arguments, fn in prompt_specs:
-        mcp.add_prompt(
-            Prompt(
-                name=name,
-                title=description,
-                description=description,
-                arguments=arguments,
-                fn=fn,
-                context_kwarg=None,
-            )
-        )
 
 
 def build_prompt_catalog_payload() -> dict[str, Any]:

@@ -166,6 +166,8 @@ Claude can call these tools from a normal MCP conversation:
 - `switch_project_root(path="/absolute/path/to/project")` - switch to another allowed root.
 - `activity_summary()` - summarize recent touched paths, commands, writes, patches, approval
   rejections, risky actions, and the short session timeline.
+- `appeal_decision(record_id="<record_id>", justification="...")` - appeal a policy decision
+  and return allow, deny, or ask with an audit chain.
 - `run_workflow(mode="review", target="src/")` - generate a structured workflow prompt.
 - `run_workflow(mode="review", target="src/", execute=true)` - run the safe read-only discovery
   step for a workflow.
@@ -379,6 +381,57 @@ Notes:
 - **Optional dependency safety**: optional readers fail with structured `dependency_missing` errors
   instead of import-time crashes.
 
+### AI Evaluator (Optional Advisor)
+
+The AI evaluator is an **optional advisory layer** within the policy chain, not an independent
+decision-maker. It is disabled by default and only activates when
+`ai_evaluator_enabled` is set to `true`.
+
+**Security boundaries:**
+
+- The AI evaluator can suggest `allow`, `deny`, or `ask` for tool requests.
+- It **cannot override** a built-in hard deny (e.g., `curl | bash`, `sudo rm -rf /`, path
+  traversal, sensitive file access). The built-in guard always wins.
+- An AI `allow` suggestion does not override a rule-level `deny`; deny rules from user policy
+  still win.
+- The AI evaluator's `allow` can bypass the approval prompt for user convenience, similar to
+  a rule-level `allow`. This is configurable via `ai_evaluator_fallback_action`.
+- On timeout or failure, the evaluator fails closed (default: `ask`). This behavior is
+  configurable: `ai_evaluator_fallback_action` can be `allow`, `deny`, or `ask`.
+- The local provider (`ai_evaluator_provider: "local"`) uses deterministic keyword matching
+  with no network calls. Production SaaS endpoints are out of scope for this release.
+- All AI decisions are recorded in audit records with `decision_source: "ai"` and include
+  reasoning metadata (`ai_reason`, risk reasons).
+
+**Configuration:**
+
+```bash
+# Enable the AI evaluator
+export CLAUDE_BRIDGE_AI_EVALUATOR_ENABLED=1
+# Provider: "local" (only supported provider)
+export CLAUDE_BRIDGE_AI_EVALUATOR_PROVIDER=local
+# Timeout in seconds
+export CLAUDE_BRIDGE_AI_EVALUATOR_TIMEOUT=5
+# Fallback action on timeout/failure: allow, deny, ask
+export CLAUDE_BRIDGE_AI_EVALUATOR_FALLBACK_ACTION=ask
+```
+
+**Policy simulation with AI advisor:**
+
+```bash
+claude-bridge policy simulate \
+  --path .claude-bridge-guard.json \
+  --tool run_shell \
+  --param "command=rm -rf /" \
+  --with-ai \
+  --ai-deny "rm -rf"
+```
+
+In simulation mode, `--with-ai` runs the local AI evaluator alongside the policy engine.
+The output shows both the policy decision and the AI advisory with a delta indicator.
+This helps evaluate how the AI would respond to tool requests before enabling it in
+production.
+
 ### Custom Guard Policy
 
 Add `.claude-bridge-guard.json` to the active project root to make the guard layer stricter without
@@ -483,6 +536,82 @@ Replay is intentionally limited to deterministic rules and the masked params sav
 record. It does not replay approval prompts, AI evaluators, filesystem snapshots, shell commands, or
 tool side effects. If the current policy no longer matches the masked context, replay reports that
 the decision changed instead of silently allowing the action.
+
+### Appeal
+
+Appeal lets you challenge a policy decision after it happened. You provide the audit `record_id` and
+a `justification`; the bridge replays the decision deterministically and returns a new result
+(`allow`, `deny`, or `ask`) chained to the audit log.
+
+From the CLI:
+
+```bash
+claude-bridge appeal --record-id <record_id> --justification "Need access for debugging"
+```
+
+From MCP:
+
+```
+appeal_decision(record_id="<record_id>", justification="Need access for debugging")
+```
+
+What appeal does:
+
+- Replays the original tool request against the current deterministic rule engine.
+- Embeds your justification into the replay metadata.
+- Logs an `appeal_event` audit record with the new decision.
+- Returns the appeal result, original record summary, replay delta, and appeal history count.
+
+What appeal does **not** do:
+
+- It does **not** change the original audit record.
+- It does **not** execute the tool or re-run side effects.
+- It does **not** implement team-lead approval, trust scoring, or SaaS escalation.
+- It does **not** override a built-in hard deny (e.g., `sudo`, `curl | bash`, path traversal);
+  deterministic replay still produces `deny`, and the status becomes `ask` so a human can review.
+
+### Anomaly Detection
+
+Claude Bridge includes a rule-based anomaly detection system that scans audit records for
+suspicious patterns. This is an MVP with deterministic heuristics only (no ML model).
+
+From the CLI:
+
+```bash
+claude-bridge anomaly scan --last
+claude-bridge anomaly scan --last --limit 100 --json
+```
+
+From MCP:
+
+```
+anomaly_summary(limit=50)
+```
+
+Detected anomaly types:
+
+| Type | Description | Base score |
+| --- | --- | --- |
+| `new_tool_use` | First use of a tool in the session | 20 |
+| `high_volume_file_access` | 10+ file-access calls within 5 min window | 30 |
+| `sensitive_path_burst` | 3+ records touching sensitive paths within 5 min | 60 |
+| `unusual_hour` | Tool called between 01:00-05:59 | 15 |
+| `high_risk_spike` | 3+ high/critical risk decisions within 5 min | 40 |
+
+Scores are additive and capped at 100. Severity levels: `normal` (0), `low` (1-25), `medium`
+(26-55), `critical` (56-100).
+
+Critical anomalies include policy decision metadata (`decision_action`, `decision_source`,
+`decision_risk_level`, `decision_reason`) and a `recommended_action` (`escalate` or `review`)
+to guide follow-up.
+
+**MVP limits:**
+
+- Rule-based only, no ML training or inference.
+- Per-session analysis; no cross-session baseline or drift detection.
+- No SOC/SIEM integration, email, or Slack alerting.
+- No network-facing anomaly endpoint; audit data stays local.
+- Sensitive path list is hardcoded; custom patterns require a guard policy file.
 
 ## Development and Validation
 
@@ -610,7 +739,8 @@ Claude Bridge is not just a file reader. Its value is the combination of:
 
 The short positioning is:
 
-> A secure, local-first, multi-project MCP bridge for Claude Desktop.
+> A secure, local-first, multi-project MCP bridge for Claude Desktop with explicit approval
+> model, deterministic policy engine, audit logging, and replay capabilities.
 
 ## Requirements
 

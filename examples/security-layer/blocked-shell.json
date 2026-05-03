@@ -1,0 +1,25 @@
+{
+  "blocked_shell_patterns": [
+    "rm *",
+    "sudo *",
+    "chmod *",
+    "mkfs *",
+    "* | sh",
+    "* | bash",
+    "* | zsh",
+    "* | python",
+    "* | python3",
+    "* | perl",
+    "* | ruby",
+    "curl * | *",
+    "wget * | *"
+  ],
+  "sensitive_path_patterns": [],
+  "secret_patterns": {},
+  "rules": [],
+  "metadata": {
+    "name": "blocked-shell",
+    "description": "Demo: shell commands blocked by custom patterns",
+    "scenario": "blocked_shell"
+  }
+}

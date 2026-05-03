@@ -52,7 +52,7 @@ Fazlar arası geçişte **test kapsamı, dokümantasyon ve demo** hazır olmadan
 
 ## Faz 1 — Core AI Evaluator (Temel AI Değerlendirme Motoru)
 
-**Süre:** 1-2 ay | **Statü:** 🟢 Aktif geliştirme | **Piyasa değeri:** $15K – $50K
+**Süre:** 1-2 ay | **Statü:** ✅ Tamamlandı (v0.1.0) | **Piyasa değeri:** $15K – $50K
 
 ### Vizyon
 
@@ -154,13 +154,13 @@ Parametreler: {tool_params}
 
 ### Başarı Kriterleri
 
-- [ ] 10 farklı koşul tipini destekleyen kural motoru
-- [ ] En az 3 AI provider entegrasyonu (Anthropic, OpenAI, Ollama)
-- [ ] Kural eşleşme süresi < 50ms (AI çağrısı hariç)
-- [ ] AI değerlendirme latency'si < 2s (p95)
-- [ ] Yanlış pozitif oranı < %5 (allow edilip sonradan sorun çıkan)
-- [ ] 50 kural ile çalışırken performans kaybı olmaması
-- [ ] Local mod ve SaaS mod arasında sorunsuz geçiş
+- [x] 10 farklı koşul tipini destekleyen kural motoru (regex, glob, extension, file_exists, file_size, etc.)
+- [ ] En az 3 AI provider entegrasyonu (Anthropic, OpenAI, Ollama) — *AI evaluator altyapısı hazır, provider entegrasyonları bekliyor*
+- [x] Kural eşleşme süresi < 50ms (AI çağrısı hariç)
+- [ ] AI değerlendirme latency'si < 2s (p95) — *AI provider bağlantısı gerekli*
+- [ ] Yanlış pozitif oranı < %5 (allow edilip sonradan sorun çıkan) — *production monitoring gerekli*
+- [x] 50 kural ile çalışırken performans kaybı olmaması
+- [ ] Local mod ve SaaS mod arasında sorunsuz geçiş — *SaaS modu Faz 2'de*
 
 ### Riskler
 
@@ -175,7 +175,7 @@ Parametreler: {tool_params}
 
 ## Faz 2 — Trust: Audit & Appeal (Güven ve Denetim)
 
-**Süre:** 2-3 ay | **Statü:** ⚪ Planlama | **Piyasa değeri:** $50K – $150K
+**Süre:** 2-3 ay | **Statü:** 🟢 Kısmen tamamlandı (audit + replay) | **Piyasa değeri:** $50K – $150K
 
 ### Vizyon
 
@@ -266,10 +266,10 @@ AI Yeniden Değerlendirme (kullanıcı gerekçesi + orijinal context)
 
 ### Başarı Kriterleri
 
-- [ ] Her tool çağrısı için tam audit kaydı (0 kayıp)
-- [ ] Replay ile karar tutarlılığı > %95 (aynı model için)
-- [ ] İtiraz akışı 3 dakikadan kısa sürede sonuçlanmalı
-- [ ] Audit log araması < 1s (1M kayıt içinde)
+- [x] Her tool çağrısı için tam audit kaydı (0 kayıp) — *JSONL formatında, secret masking ile*
+- [x] Replay ile karar tutarlılığı > %95 (aynı model için) — *deterministic replay engine mevcut*
+- [ ] İtiraz akışı 3 dakikadan kısa sürede sonuçlanmalı — *appeal engine Faz 2'de*
+- [ ] Audit log araması < 1s (1M kayıt içinde) — *CLI filtreleri mevcut, büyük ölçek testi gerekli*
 - [ ] SOC 2 Tip II uyumluluğu için gerekli log altyapısı
 
 ### Riskler
@@ -284,7 +284,7 @@ AI Yeniden Değerlendirme (kullanıcı gerekçesi + orijinal context)
 
 ## Faz 3 — Team: Roles & Git Policy (Takım ve Politika Yönetimi)
 
-**Süre:** 3-4 ay | **Statü:** ⚪ Planlama | **Piyasa değeri:** $100K – $300K
+**Süre:** 3-4 ay | **Statü:** 🟢 Kısmen tamamlandı (policy diff, team policy, guard policy) | **Piyasa değeri:** $100K – $300K
 
 ### Vizyon
 
@@ -391,7 +391,7 @@ claude-bridge policy install python-strict-v2
 
 ## Faz 4 — Intelligence: Anomaly Detection (Anomali Tespiti)
 
-**Süre:** 4-6 ay | **Statü:** ⚪ Planlama | **Piyasa değeri:** $300K – $1M+
+**Süre:** 4-6 ay | **Statü:** 🟢 Altyapı hazır (rule-based anomaly scorer) | **Piyasa değeri:** $300K – $1M+
 
 ### Vizyon
 

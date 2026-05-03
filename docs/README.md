@@ -28,6 +28,12 @@ referans kabul edilir.
   gelistirme plani.
 - `competitive-analysis-template.md`
   Yeni rakip analizleri icin tekrar kullanilabilir sablon.
+- `security-model.md`
+  Guvenlik modeli: trust boundary, approval modes, guard policy layer, audit logging.
+- `compliance-readiness.md`
+  Uyumluluk hazirlik: access control, audit trail, policy enforcement, data protection.
+- `policy-pr-workflow.md`
+  CI-friendly policy-as-code PR workflow: policy diff, simulate, validate.
 
 ### Tamamlanmis / Referans
 

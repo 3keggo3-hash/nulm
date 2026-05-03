@@ -73,3 +73,19 @@ class TestIndexingCache:
         indexing_module._prune_disk_cache(cache_dir)
         remaining = sorted(path.name for path in cache_dir.glob("index-*.json"))
         assert len(remaining) == 2
+
+    def test_get_cached_index_returns_defensive_copy(self):
+        indexing_module.clear_index_cache()
+        indexing_module.set_cached_index(
+            "key",
+            (("module.py", 1),),
+            {"files": [{"path": "module.py"}], "cached": False},
+        )
+
+        cached = indexing_module.get_cached_index("key")
+        assert cached is not None
+        cached["payload"]["files"][0]["path"] = "mutated.py"
+
+        fresh = indexing_module.get_cached_index("key")
+        assert fresh is not None
+        assert fresh["payload"]["files"][0]["path"] == "module.py"

@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import ast
+import concurrent.futures
 import difflib
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from claude_bridge.ai_evaluator import evaluate_tool_with_ai
+from claude_bridge.config import current_config
 from claude_bridge.git_ops import git_commit
 from claude_bridge.guard_policy import (
     DecisionAction,
@@ -27,6 +31,7 @@ from claude_bridge.guard_policy import (
 from claude_bridge.indexing import iter_searchable_files
 from claude_bridge.smart import DEFAULT_CONTEXT_BUDGET_TOKENS, budget_metadata, estimate_token_count
 from claude_bridge.tool_utils import (
+    allowed_roots,
     find_secret_patterns,
     infer_project_root,
     is_binary_bytes,
@@ -50,6 +55,7 @@ _MAX_MULTI_FILE_READS = 20
 _git_commit = git_commit
 _LAST_BRIDGE_CHANGE_LOCK = threading.Lock()
 _LAST_BRIDGE_CHANGE: dict[str, Any] | None = None
+_LAST_BRIDGE_CHANGE_VERSION = 0
 
 
 def _remember_bridge_change(
@@ -62,7 +68,7 @@ def _remember_bridge_change(
     operation: str,
     git_result: dict[str, Any],
 ) -> None:
-    global _LAST_BRIDGE_CHANGE
+    global _LAST_BRIDGE_CHANGE, _LAST_BRIDGE_CHANGE_VERSION
     with _LAST_BRIDGE_CHANGE_LOCK:
         _LAST_BRIDGE_CHANGE = {
             "target": str(target),
@@ -74,11 +80,19 @@ def _remember_bridge_change(
             "operation": operation,
             "git_result": git_result,
         }
+        _LAST_BRIDGE_CHANGE_VERSION += 1
 
 
 def _last_bridge_change() -> dict[str, Any] | None:
     with _LAST_BRIDGE_CHANGE_LOCK:
         return dict(_LAST_BRIDGE_CHANGE) if _LAST_BRIDGE_CHANGE is not None else None
+
+
+def _last_bridge_change_snapshot() -> tuple[int, dict[str, Any]] | None:
+    with _LAST_BRIDGE_CHANGE_LOCK:
+        if _LAST_BRIDGE_CHANGE is None:
+            return None
+        return (_LAST_BRIDGE_CHANGE_VERSION, dict(_LAST_BRIDGE_CHANGE))
 
 
 def clear_last_bridge_change() -> None:
@@ -207,9 +221,36 @@ def _log_fuzzy_match_attempt(*, file: str, search: str, suggestions: list[str]) 
 
 
 def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) -> None:
-    mode = "x" if exclusive else "w"
-    with target.open(mode, encoding="utf-8", newline="") as handle:
-        handle.write(content)
+    # FIX: Non-atomic file write — write to temp then os.replace atomically
+    data = content.encode("utf-8")
+    if exclusive:
+        # FIX: TOCTOU — O_CREAT|O_EXCL|O_NOFOLLOW atomically checks existence and symlinks
+        try:
+            fd = os.open(
+                str(target), os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY
+            )
+        except FileExistsError:
+            raise FileExistsError(f"File already exists: {target}")
+        try:
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    else:
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(target.parent))
+        try:
+            os.write(tmp_fd, data)
+            os.fsync(tmp_fd)
+        finally:
+            os.close(tmp_fd)
+        try:
+            os.replace(tmp_path, str(target))
+        except OSError:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
 
 def _read_text_preserve_line_endings(target: Path) -> str:
@@ -604,20 +645,56 @@ async def list_directory(path: str = ".") -> str:
         )
 
     try:
-        entries = [
-            {
-                "name": entry.name,
-                "type": "directory" if entry.is_dir() else "file",
-                "size": entry.stat().st_size if entry.is_file() else None,
-            }
-            for entry in sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name))
-        ]
+        raw_entries = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name))
     except OSError as exc:
         return json_response(
             False,
             f"Failed to list directory: {exc}",
             code="directory_read_error",
             details={"path": path},
+        )
+
+    entries: list[dict[str, Any]] = []
+    for entry in raw_entries:
+        entry_type: str
+        entry_size: int | None = None
+        try:
+            is_sym = entry.is_symlink()
+        except OSError:
+            # Can't stat the entry at all; skip it rather than crash the whole listing
+            continue
+        if is_sym:
+            try:
+                resolved_target = entry.resolve()
+            except (OSError, RuntimeError):
+                # Broken or inaccessible symlink; mark as symlink but don't leak target
+                entry_type = "symlink"
+            else:
+                if any(is_within_root(resolved_target, root) for root in allowed_roots()):
+                    # Symlink points within allowed roots; report as file/directory
+                    try:
+                        entry_type = "directory" if entry.is_dir() else "file"
+                        if entry_type == "file":
+                            entry_size = entry.stat().st_size
+                    except OSError:
+                        entry_type = "symlink"
+                else:
+                    # Symlink target is outside allowed roots; don't leak info
+                    entry_type = "symlink"
+        else:
+            try:
+                entry_type = "directory" if entry.is_dir() else "file"
+                if entry_type == "file":
+                    entry_size = entry.stat().st_size
+            except OSError:
+                # Can't stat; skip this entry
+                continue
+        entries.append(
+            {
+                "name": entry.name,
+                "type": entry_type,
+                "size": entry_size,
+            }
         )
 
     return json_response(
@@ -643,6 +720,7 @@ async def write_file(
     max_lines: int = _WRITE_FILE_WARNING_LINES,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+    ai_provider: Any = None,
 ) -> str:
     if max_lines < 1:
         return json_response(
@@ -733,6 +811,47 @@ async def write_file(
             decision_in_details=True,
         )
 
+    # AI evaluator layer (optional, default off)
+    config = current_config()
+    ai_enabled = bool(config.get("ai_evaluator_enabled", False))
+    ai_timeout = int(config.get("ai_evaluator_timeout", 5))
+    ai_fallback = str(config.get("ai_evaluator_fallback_action", "ask"))
+    ai_decision = await evaluate_tool_with_ai(
+        ToolRequestContext(
+            tool_name="write_file",
+            params={
+                "path": path,
+                "file": path,
+                "content": content,
+                "overwrite": overwrite,
+                "create_parents": create_parents,
+            },
+            project_dir=str(infer_project_root(target.parent if not target.exists() else target)),
+        ),
+        provider=ai_provider,
+        enabled=ai_enabled,
+        timeout=ai_timeout,
+        fallback_action=ai_fallback,
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={"path": path},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="approval_rejected",
+            details={"path": path},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+
     if target.exists() and target.is_dir():
         return json_response(
             False,
@@ -771,7 +890,9 @@ async def write_file(
     decision_risk_reasons = ["writes modify workspace contents"]
     if overwrite:
         decision_risk_reasons.append("overwrite requested")
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
+        allow_decision = ai_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         approved = await request_approval("write_file", approval_params)
@@ -810,6 +931,14 @@ async def write_file(
             False,
             f"Not a file: {path}",
             code="not_a_file",
+            details={"path": path},
+        )
+    # FIX: TOCTOU symlink check — reject symlink write targets before opening
+    if target.is_symlink():
+        return json_response(
+            False,
+            f"Refusing to write to symlink: {path}",
+            code="symlink_blocked",
             details={"path": path},
         )
     try:
@@ -996,6 +1125,14 @@ async def move_file(
     try:
         if destination_path.exists() and overwrite:
             if destination_path.is_dir():
+                # FIX: rmtree on symlink directory — reject to prevent following symlink
+                if destination_path.is_symlink():
+                    return json_response(
+                        False,
+                        "Refusing to rmtree on a symlink directory",
+                        code="symlink_rmtree_blocked",
+                        details={"destination": destination},
+                    )
                 shutil.rmtree(destination_path)
             else:
                 destination_path.unlink()
@@ -1119,10 +1256,38 @@ async def copy_path(
         if source_path.is_dir():
             if destination_path.exists() and overwrite:
                 if destination_path.is_dir():
+                    # FIX: rmtree on symlink directory — reject to prevent following symlink
+                    if destination_path.is_symlink():
+                        return json_response(
+                            False,
+                            "Refusing to rmtree on a symlink directory",
+                            code="symlink_rmtree_blocked",
+                            details={"destination": destination},
+                        )
                     shutil.rmtree(destination_path)
                 else:
                     destination_path.unlink()
-            shutil.copytree(source_path, destination_path)
+            # FIX: copy_path directory size limit — reject dirs larger than 500MB
+            total_size = 0
+            for f in source_path.rglob("*"):
+                if f.is_file() and not f.is_symlink():
+                    try:
+                        total_size += f.stat().st_size
+                    except OSError:
+                        pass
+            if total_size > 500 * 1024 * 1024:
+                return json_response(
+                    False,
+                    "Directory size exceeds 500MB limit",
+                    code="dir_too_large",
+                    details={
+                        "source": source,
+                        "size_bytes": total_size,
+                        "limit_bytes": 500 * 1024 * 1024,
+                    },
+                )
+            # FIX: copytree symlink following — use symlinks=True to copy not follow
+            shutil.copytree(source_path, destination_path, symlinks=True)
         else:
             if destination_path.exists() and destination_path.is_dir():
                 return json_response(
@@ -1195,6 +1360,14 @@ async def search_in_files(
             f"Limit must be between 1 and {_MAX_SEARCH_RESULTS}",
             code="invalid_limit",
             details={"limit": limit, "max_limit": _MAX_SEARCH_RESULTS},
+        )
+    # FIX: include_glob ReDoS prevention — max 256 characters for glob patterns
+    if include_glob is not None and len(include_glob) > 256:
+        return json_response(
+            False,
+            "include_glob pattern exceeds 256 character limit",
+            code="glob_too_long",
+            details={"include_glob_length": len(include_glob), "max_length": 256},
         )
 
     try:
@@ -1275,15 +1448,27 @@ async def search_in_files(
         )
 
     flags = 0 if case_sensitive else re.IGNORECASE
-    try:
-        pattern = re.compile(query if regex else re.escape(query), flags)
-    except re.error as exc:
-        return json_response(
-            False,
-            f"Invalid regular expression: {exc}",
-            code="invalid_regex",
-            details={"query": query},
+    # FIX: ReDoS protection — re.compile with 2s timeout via ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            re.compile, query if regex else re.escape(query), flags
         )
+        try:
+            pattern = future.result(timeout=2)
+        except concurrent.futures.TimeoutError:
+            return json_response(
+                False,
+                "Regular expression compilation timed out (potential ReDoS)",
+                code="regex_timeout",
+                details={"query": query},
+            )
+        except re.error as exc:
+            return json_response(
+                False,
+                f"Invalid regular expression: {exc}",
+                code="invalid_regex",
+                details={"query": query},
+            )
 
     results: list[dict[str, Any]] = []
     files_searched = 0
@@ -1297,9 +1482,13 @@ async def search_in_files(
         except (OSError, UnicodeDecodeError):
             continue
         files_searched += 1
-        relative_path = (
-            file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
-        )
+        try:
+            relative_path = (
+                file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
+            )
+        except ValueError:
+            # file_path may not be under root (e.g. symlink escape); skip
+            continue
         for line_number, line in enumerate(content.splitlines(), start=1):
             if not pattern.search(line):
                 continue
@@ -1354,6 +1543,7 @@ async def patch_file(
     replace: str,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+    ai_provider: Any = None,
 ) -> str:
     try:
         target = resolve_path(file)
@@ -1450,7 +1640,48 @@ async def patch_file(
             decision_in_details=True,
         )
 
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    # AI evaluator layer (optional, default off)
+    config = current_config()
+    ai_enabled = bool(config.get("ai_evaluator_enabled", False))
+    ai_timeout = int(config.get("ai_evaluator_timeout", 5))
+    ai_fallback = str(config.get("ai_evaluator_fallback_action", "ask"))
+    ai_decision = await evaluate_tool_with_ai(
+        ToolRequestContext(
+            tool_name="patch_file",
+            params={
+                "file": file,
+                "search": search,
+                "replace": replace,
+            },
+            project_dir=str(target_project_dir),
+        ),
+        provider=ai_provider,
+        enabled=ai_enabled,
+        timeout=ai_timeout,
+        fallback_action=ai_fallback,
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={"path": file},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="approval_rejected",
+            details={"path": file},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+
+    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
+        pass  # bypass approval for AI-allow matches
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         pass  # bypass approval for rule-allow matches
     else:
         rejection = await require_approval(
@@ -1492,8 +1723,10 @@ async def patch_file(
         git_result=git_result,
     )
     message = f"Patched {file}"
-    if not git_result["commit"]:
-        message += f" (git commit failed: {git_result['output'].strip() or 'unknown error'})"
+    if not git_result.get("commit"):
+        message += (
+            f" (git commit failed: {git_result.get('output', '').strip() or 'unknown error'})"
+        )
 
     return json_response(
         True,
@@ -1569,14 +1802,15 @@ async def undo_last_patch(
     request_approval_fn: Callable[[str, dict[str, Any]], Awaitable[bool]] = request_approval,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
 ) -> str:
-    change = _last_bridge_change()
-    if change is None:
+    snapshot = _last_bridge_change_snapshot()
+    if snapshot is None:
         return json_response(
             False,
             "No Bridge-managed change is available to undo",
             code="no_undo_state",
             details={},
         )
+    version, change = snapshot
 
     target = Path(change["target"])
     project_dir = Path(change["project_dir"])
@@ -1614,6 +1848,19 @@ async def undo_last_patch(
     if rejection is not None:
         return rejection
 
+    # FIX: lock scope — atomically verify and clear _LAST_BRIDGE_CHANGE
+    # to prevent clearing a newer change that was registered after our snapshot
+    global _LAST_BRIDGE_CHANGE
+    with _LAST_BRIDGE_CHANGE_LOCK:
+        if _LAST_BRIDGE_CHANGE is None or _LAST_BRIDGE_CHANGE_VERSION != version:
+            return json_response(
+                False,
+                "Bridge change state was modified; cannot undo safely",
+                code="undo_stale_state",
+                details=details,
+            )
+        _LAST_BRIDGE_CHANGE = None
+
     if previous_exists:
         if previous_content is None:
             return json_response(
@@ -1621,6 +1868,21 @@ async def undo_last_patch(
                 "Original file content is unavailable; cannot undo safely",
                 code="undo_snapshot_unavailable",
                 details=details,
+            )
+        secret_patterns = find_secret_patterns(previous_content)
+        if secret_patterns:
+            return json_response(
+                False,
+                "Content looks sensitive and was blocked",
+                code="secret_pattern_detected",
+                details={"path": change["path"], "patterns": secret_patterns},
+                decision=builtin_deny_decision(
+                    "Content matched sensitive data patterns",
+                    risk_level=RiskLevel.HIGH,
+                    risk_reasons=[f"secret pattern: {pattern}" for pattern in secret_patterns],
+                    metadata={"tool": "undo_last_patch", "path": change["path"]},
+                ),
+                decision_in_details=True,
             )
         try:
             _write_text_exact(target, previous_content)
@@ -1653,10 +1915,6 @@ async def undo_last_patch(
     details["restored_bytes"] = (
         len(previous_content.encode("utf-8")) if previous_content is not None else 0
     )
-
-    global _LAST_BRIDGE_CHANGE
-    with _LAST_BRIDGE_CHANGE_LOCK:
-        _LAST_BRIDGE_CHANGE = None
 
     return json_response(
         True,

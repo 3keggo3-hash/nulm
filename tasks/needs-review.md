@@ -23,8 +23,8 @@ Bu dosya, otomatik tasinmayan Markdown dosyalarini ve neden manuel gozden gecirm
 - `tasks/active/security-layer-execution-plan.md`
   Durum: devam ediyor. Yeni urun pivotu fazlara bolundu; ilk uygulanacak surec
   `Policy Decision Kernel` olarak secildi ve uygulamasi tamamlandi. `Rules Engine
-  MVP` ve `Audit, Replay ve Masking` surecleri de tamamlandi. Siradaki surec
-  `Security Hardening ve Bugfix Gate`.
+  MVP`, `Audit, Replay ve Masking` ve `Security Hardening ve Bugfix Gate` surecleri
+  tamamlandi. Siradaki surec `Optional AI Evaluator`.
 
 - `tasks/active/doctor-and-competitive-analysis.md`
   Durum: devam ediyor. Doctor, optional dependency dokumani ve ilk rakip analizi
