@@ -334,7 +334,7 @@ AŞAMA 3 — Kolay Feature'lar (paralel, Aşama 2'den bağımsız)
 ├── K6: move_file + copy_path
 └── O12: inline interpreter politikası + implementasyon
 
-AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra) ✅ Tamamlandı
+AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra) 🔄 Kısmen tamamlandı (O9 ✅; O2/O3/O4/O6/O7/O8 kaldı)
 ├── O2: smart onboarding genişletme
 ├── O3: read_url tool'u (güvenlik spec'iyle)
 ├── O4: auto-update (check-only)
@@ -343,7 +343,7 @@ AŞAMA 4 — Orta Feature'lar (paralel, Aşama 2'den sonra) ✅ Tamamlandı
 ├── O8: disk cache boyut kotası
 └── O9: client_managed_approval testleri
 
-AŞAMA 5 — Zor Feature'lar (kısmen paralel, kısmen sıralı) ✅ Tamamlandı
+AŞAMA 5 — Zor Feature'lar (kısmen paralel, kısmen sıralı) 🔄 Kısmen tamamlandı (Z1a ✅; diğerleri kaldı)
 │
 ├── Paralel Grup A: İndeks Performansı
 │   ├── Z3: Tree-sitter parser cache
@@ -715,16 +715,16 @@ paket dışı refactor riskini azaltmaktır.
 ### 11.1 Handoff Status
 
 | Paket | Zorluk | Önerilen model | Durum | Branch/PR | Merge sırası | Not |
-|---|---|---|---|---|---|---|
-| Paket A — İlk Sprint | Kolay | Low / fast model | In progress |  | 1 | K1, K2, K7, K8, K4. K4 en sonda olmalı. |
-| Paket B1 — Prompt/Meta Registration | Orta | Medium model | In progress |  | 2 | K4 tamamlanmadan merge edilmemeli. |
-| Paket B2 — File Tool Wrapper'ları | Orta | Medium model | In progress |  | 3 | B1 merge edildikten sonra alınmalı. |
-| Paket B3 — Shell/Workflow Registration | Orta | Medium model | In progress |  | 4 | B2 merge edildikten sonra alınmalı. |
-| Paket C — Test Altyapısı | Orta | Medium model | Not started |  | 7 | B paketlerinden sonra daha güvenli. |
-| Paket D — Yeni Tool'lar | Kolay-Orta | Medium model | In progress |  | 5 | K5, K6, O12. Server split ile çakışma riski var. |
-| Paket E — UX Paketi | Orta | Medium model | In progress |  | 6 | O2/O3/O4/O6/O7/O8. Güvenlik sınırları korunmalı. |
-| Paket F — Multi-Format MVP | Zor | High model | In progress |  | 8 | Z1a. Core install opsiyonel dependency olmadan çalışmalı. |
-| Paket F2 — Excel | Zor | High model | Not started |  | 9 | F merge edildikten sonra. |
+|---|---|---|---|---|---|---|---|
+| Paket A — İlk Sprint | Kolay | Low / fast model | Merged | main | 1 | K1(no issue), K2✅, K7🔄(pre-filter var, tam okuma kaldı), K8(no issue), K4✅. |
+| Paket B1 — Prompt/Meta Registration | Orta | Medium model | Merged | main | 2 | meta_tool_server.py (706 satır), 11 meta tool + register_prompts. |
+| Paket B2 — File Tool Wrapper'ları | Orta | Medium model | Merged | main | 3 | file_tool_server.py (294 satır), 10 tool. |
+| Paket B3 — Shell/Workflow Registration | Orta | Medium model | Merged | main | 4 | shell_tool_server.py (189 satır), workflow_tool_server.py (396 satır). |
+| Paket C — Test Altyapısı | Orta | Medium model | In progress |  | 7 | O9✅ (client_managed_approval testi var), O10❌, O11❌. |
+| Paket D — Yeni Tool'lar | Kolay-Orta | Medium model | Merged | main | 5 | K5✅(max_lines var), K6(ek dosyadan), move_file✅, copy_path✅, O12✅. |
+| Paket E — UX Paketi | Orta | Medium model | In progress |  | 6 | O2/O3/O4/O6/O7/O8 hiçbiri yapılmadı. Güvenlik sınırları korunmalı. |
+| Paket F — Multi-Format MVP | Zor | High model | Merged | main | 8 | Z1a✅ (multi_format.py, read_image+read_pdf MCP surface'da). |
+| Paket F2 — Excel | Zor | High model | Not started |  | 9 | read_excel yok, openpyxl dependency gerekiyor. |
 | Paket G — İndeks Performansı | Zor | High model | Not started |  | 10 | Z3/Z4. Benchmark ile doğrulanmalı. |
 | Paket H — Agent Loop | Zor | High model | Not started |  | 11 | Z6 → Z5 → Z7 sıralı. |
 | Paket I — CI / Kalite | Zor | High model | Not started |  | 12 | Cross-platform dikkatli ele alınmalı. |

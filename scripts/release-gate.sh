@@ -7,11 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
-# Use the same Python that runs claude-bridge
-CB_PYTHON="$(head -1 "$(command -v claude-bridge)" | sed 's|^#![ ]*||')"
-if [[ ! -x "$CB_PYTHON" ]]; then
-    CB_PYTHON="python3"
-fi
+# Use the local venv Python or fall back to python3
+CB_PYTHON="${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"
+CB_PYTHON="${CB_PYTHON:-python3}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -87,7 +85,7 @@ cat > "$POLICY_EXAMPLE" <<'EOF'
   ]
 }
 EOF
-check "  policy validate (JSON)" claude-bridge policy validate --path "$POLICY_EXAMPLE"
+check "  policy validate (JSON)" "$CB_PYTHON" -m claude_bridge policy validate --path "$POLICY_EXAMPLE"
 
 POLICY_YAML_EXAMPLE=$(mktemp /tmp/cb-policy-XXXXXX.yaml)
 cat > "$POLICY_YAML_EXAMPLE" <<'EOF'
@@ -101,14 +99,14 @@ rules:
     action: deny
     message: "rm -rf is not allowed"
 EOF
-check_optional "  policy validate (YAML)" claude-bridge policy validate --path "$POLICY_YAML_EXAMPLE"
+check_optional "  policy validate (YAML)" "$CB_PYTHON" -m claude_bridge policy validate --path "$POLICY_YAML_EXAMPLE"
 rm -f "$POLICY_EXAMPLE" "$POLICY_YAML_EXAMPLE"
 
 # --- Audit replay smoke ---
 echo ""
 echo "[4/6] Audit & Replay Smoke"
-check "  audit summary" claude-bridge audit summary
-check "  replay --help" claude-bridge replay --help
+check "  audit summary" "$CB_PYTHON" -m claude_bridge audit summary
+check "  replay --help" "$CB_PYTHON" -m claude_bridge replay --help
 
 # --- Package metadata ---
 echo ""

@@ -98,6 +98,7 @@ def register_file_tools(
         overwrite: bool = False,
         create_parents: bool = False,
         max_lines: int = 500,
+        auto_commit: bool = True,
     ) -> str:
         started_at = time.perf_counter()
         result = await write_file_impl(
@@ -106,6 +107,7 @@ def register_file_tools(
             overwrite=overwrite,
             create_parents=create_parents,
             max_lines=max_lines,
+            auto_commit=auto_commit,
             git_commit_fn=git_commit_fn,
         )
         return audit_tool_call(
@@ -116,6 +118,7 @@ def register_file_tools(
                 "overwrite": overwrite,
                 "create_parents": create_parents,
                 "max_lines": max_lines,
+                "auto_commit": auto_commit,
             },
             result,
             started_at=started_at,
@@ -237,12 +240,12 @@ def register_file_tools(
             destructive=True,
         )
     )
-    async def patch_file(file: str, search: str, replace: str) -> str:
+    async def patch_file(file: str, search: str, replace: str, auto_commit: bool = True) -> str:
         started_at = time.perf_counter()
-        result = await patch_file_impl(file, search, replace, git_commit_fn=git_commit_fn)
+        result = await patch_file_impl(file, search, replace, auto_commit=auto_commit, git_commit_fn=git_commit_fn)
         return audit_tool_call(
             "patch_file",
-            {"file": file, "search": search, "replace": replace},
+            {"file": file, "search": search, "replace": replace, "auto_commit": auto_commit},
             result,
             started_at=started_at,
         )

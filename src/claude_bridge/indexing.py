@@ -7,6 +7,7 @@ import copy
 import fnmatch
 import importlib
 import json
+import logging
 import os
 import re
 import threading
@@ -19,8 +20,12 @@ from pathspec import PathSpec
 
 from claude_bridge.relevance import _tokenize_names, _tokenize_text
 
+logger = logging.getLogger(__name__)
+
 _INDEX_CACHE: dict[str, dict[str, Any]] = {}
 _INDEX_CACHE_LOCK = threading.RLock()
+_GITIGNORE_CACHE: dict[str, tuple[int, list[str]]] = {}
+_GITIGNORE_CACHE_LOCK = threading.Lock()
 _MAX_INDEX_CACHE_ENTRIES = 32
 _MAX_SEARCH_FILE_BYTES = 512 * 1024
 _BINARY_SNIFF_BYTES = 512
@@ -541,7 +546,7 @@ _TREE_SITTER_RULES_BY_LANGUAGE = {
         **_DEFAULT_TREE_SITTER_RULES,
         "functions": {"function_declaration", "method_declaration"},
         "classes": {"type_declaration", "type_spec", "interface_type"},
-        "imports": {"import_declaration", "import_spec"},
+        "imports": {"import_spec"},
         "function_fields": ("name", "identifier"),
         "class_fields": ("name", "type", "identifier"),
         "import_fields": ("path", "name"),
@@ -591,22 +596,20 @@ def set_cached_index(cache_key: str, snapshot: tuple[Any, ...], payload: dict[st
 
 
 def public_index_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    _STRIPPED_KEYS = {
+        "content",
+        "content_lower",
+        "path_lower",
+        "path_tokens",
+        "function_tokens",
+        "class_tokens",
+        "import_tokens",
+        "content_tokens",
+    }
     return {
         **{key: value for key, value in payload.items() if not key.startswith("_")},
         "files": [
-            {
-                key: value
-                for key, value in item.items()
-                if key
-                not in {
-                    "content",
-                    "path_tokens",
-                    "function_tokens",
-                    "class_tokens",
-                    "import_tokens",
-                    "content_tokens",
-                }
-            }
+            {key: value for key, value in item.items() if key not in _STRIPPED_KEYS}
             for item in payload["files"]
         ],
     }
@@ -680,15 +683,6 @@ def _prune_disk_cache(cache_dir: Path) -> None:
             pass
 
 
-def _file_signature(file: Path, root: Path) -> dict[str, Any]:
-    stat = file.stat()
-    return {
-        "relative_path": file.relative_to(root).as_posix(),
-        "mtime_ns": stat.st_mtime_ns,
-        "size": stat.st_size,
-    }
-
-
 def _token_metadata_for_index_entry(
     *,
     relative_path: str,
@@ -720,16 +714,33 @@ def read_gitignore_patterns(project_root: Path) -> list[str]:
     if not gitignore.exists():
         return []
 
+    resolved = str(gitignore.resolve())
+    try:
+        mtime_ns = gitignore.stat().st_mtime_ns
+    except OSError:
+        return []
+
+    with _GITIGNORE_CACHE_LOCK:
+        entry = _GITIGNORE_CACHE.get(resolved)
+        if entry is not None and entry[0] == mtime_ns:
+            return list(entry[1])
+
     patterns: list[str] = []
     try:
         lines = gitignore.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
+        if entry is not None:
+            return list(entry[1])
         return []
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         patterns.append(stripped)
+
+    with _GITIGNORE_CACHE_LOCK:
+        _GITIGNORE_CACHE[resolved] = (mtime_ns, patterns)
+
     return patterns
 
 
@@ -773,10 +784,10 @@ def iter_source_files(
     *,
     max_depth: int = 12,
     is_within_root: Callable[[Path, Path], bool],
-) -> list[Path]:
+) -> list[tuple[Path, int, int]]:
     patterns = read_gitignore_patterns(project_root)
     spec = build_gitignore_spec(patterns)
-    files: list[Path] = []
+    results: list[tuple[Path, int, int]] = []
     for dirpath, dirnames, filenames in os.walk(root):
         depth = len(Path(dirpath).relative_to(root).parts)
         if depth > max_depth:
@@ -793,8 +804,12 @@ def iter_source_files(
                 continue
             if is_ignored(file_path, root, project_root, patterns, spec):
                 continue
-            files.append(file_path)
-    return sorted(files)
+            try:
+                st = file_path.stat()
+            except OSError:
+                continue
+            results.append((file_path, st.st_mtime_ns, st.st_size))
+    return sorted(results, key=lambda x: x[0])
 
 
 def is_likely_binary(file_path: Path, n: int = _BINARY_SNIFF_BYTES) -> bool:
@@ -819,23 +834,23 @@ def iter_searchable_files(
     *,
     max_depth: int = 12,
     is_within_root: Callable[[Path, Path], bool],
-    is_binary_bytes: Callable[[bytes], bool],
     include_glob: str | None = None,
 ) -> list[Path]:
     patterns = read_gitignore_patterns(project_root)
     spec = build_gitignore_spec(patterns)
     files: list[Path] = []
+    file_count = 0
     if not root.is_dir():
         if root.is_file():
             try:
                 if is_likely_binary(root):
                     return []
-                raw = root.read_bytes()
+                if root.stat().st_size > _MAX_SEARCH_FILE_BYTES:
+                    return []
             except OSError:
                 return []
-            if len(raw) <= _MAX_SEARCH_FILE_BYTES and not is_binary_bytes(raw):
-                if not is_ignored(root, project_root, project_root, patterns, spec):
-                    files.append(root)
+            if not is_ignored(root, project_root, project_root, patterns, spec):
+                files.append(root)
         return sorted(files)
     for dirpath, dirnames, filenames in os.walk(root):
         depth = len(Path(dirpath).relative_to(root).parts)
@@ -856,12 +871,14 @@ def iter_searchable_files(
             try:
                 if is_likely_binary(file_path):
                     continue
-                raw = file_path.read_bytes()
+                if file_path.stat().st_size > _MAX_SEARCH_FILE_BYTES:
+                    continue
             except OSError:
                 continue
-            if len(raw) > _MAX_SEARCH_FILE_BYTES or is_binary_bytes(raw):
-                continue
             files.append(file_path)
+            file_count = len(files)
+            if file_count % 100 == 0:
+                logger.info("[indexing] %d %s", file_count, file_path.name)
     return sorted(files)
 
 
@@ -1042,14 +1059,16 @@ def build_index(
         raise NotADirectoryError(path)
 
     project_root = infer_project_root(target)
-    source_files = iter_source_files(target, project_root, is_within_root=is_within_root)
+    source_files_with_stat = iter_source_files(target, project_root, is_within_root=is_within_root)
     file_signatures: dict[Path, dict[str, Any]] = {}
-    for file in source_files:
-        try:
-            file_signatures[file] = _file_signature(file, target)
-        except OSError:
-            continue
-    source_files = [file for file in source_files if file in file_signatures]
+    source_files: list[Path] = []
+    for file_path, mtime_ns, size in source_files_with_stat:
+        file_signatures[file_path] = {
+            "relative_path": file_path.relative_to(target).as_posix(),
+            "mtime_ns": mtime_ns,
+            "size": size,
+        }
+        source_files.append(file_path)
     snapshot = tuple(
         (signature["relative_path"], signature["mtime_ns"])
         for signature in file_signatures.values()
@@ -1074,7 +1093,10 @@ def build_index(
     indexed_files: list[dict[str, Any]] = []
     next_file_cache: dict[str, dict[str, Any]] = {}
     python_file_count = 0
-    for file in source_files:
+    total_source_files = len(source_files)
+    for idx, file in enumerate(source_files, start=1):
+        if idx % 100 == 0 or idx == total_source_files:
+            logger.info("[indexing] %d/%d %s", idx, total_source_files, file.name)
         signature = file_signatures[file]
         relative_path = signature["relative_path"]
         cached_file = reusable_file_cache.get(relative_path)
@@ -1104,8 +1126,11 @@ def build_index(
                     imports=imports,
                     content=content,
                 )
+            content_lower = content.lower()
             entry = {
                 "path": relative_path,
+                "path_lower": relative_path.lower(),
+                "content_lower": content_lower,
                 "functions": functions,
                 "classes": classes,
                 "imports": imports,
@@ -1115,6 +1140,8 @@ def build_index(
             }
             next_file_cache[relative_path] = {
                 **signature,
+                "path_lower": relative_path.lower(),
+                "content_lower": content_lower,
                 "functions": functions,
                 "classes": classes,
                 "imports": imports,
@@ -1138,8 +1165,11 @@ def build_index(
                 imports=list(symbols["imports"]),
                 content=source,
             )
+            source_lower = source.lower()
             entry = {
                 "path": relative_path,
+                "path_lower": relative_path.lower(),
+                "content_lower": source_lower,
                 "functions": symbols["functions"],
                 "classes": symbols["classes"],
                 "imports": symbols["imports"],
@@ -1149,6 +1179,8 @@ def build_index(
             }
             next_file_cache[relative_path] = {
                 **signature,
+                "path_lower": relative_path.lower(),
+                "content_lower": source_lower,
                 "functions": list(symbols["functions"]),
                 "classes": list(symbols["classes"]),
                 "imports": list(symbols["imports"]),

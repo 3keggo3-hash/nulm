@@ -226,7 +226,7 @@ class TestShellSecurity:
         assert payload["code"] == "blocked_command"
 
     async def test_sudoku_not_false_positive_blocked(self, temp_project):
-        payload = parse_payload(await mcp_server.run_shell("python3 -c 'print(\"sudoku\")'"))
+        payload = parse_payload(await mcp_server.run_shell("echo sudoku"))
         assert payload["ok"] is True
         assert payload["details"]["stdout"].strip() == "sudoku"
 
@@ -261,9 +261,10 @@ class TestShellSecurity:
         assert payload["code"] == "blocked_command"
         assert payload["details"]["blocked_pattern"] == "node -e"
 
-    async def test_python_inline_remains_allowed_for_compatibility(self, temp_project):
+    async def test_python_inline_blocked(self, temp_project):
         payload = parse_payload(await mcp_server.analyze_shell_command("python3 -c 'print(1)'"))
-        assert payload["ok"] is True
+        assert payload["ok"] is False
+        assert payload["code"] == "blocked_command"
 
     async def test_custom_guard_policy_blocks_shell_pattern(self, temp_project):
         project, _ = temp_project
@@ -382,10 +383,10 @@ class TestShellSecurity:
         assert payload["ok"] is False
         assert payload["code"] == "interactive_command_unsupported"
 
-    async def test_python_inline_command_allowed(self, temp_project):
+    async def test_python_inline_command_blocked(self, temp_project):
         payload = parse_payload(await mcp_server.run_shell("python3 -c 'print(42)'"))
-        assert payload["ok"] is True
-        assert payload["details"]["stdout"].strip() == "42"
+        assert payload["ok"] is False
+        assert payload["code"] == "blocked_command"
 
     async def test_unbalanced_quotes_return_parse_error(self, temp_project):
         payload = parse_payload(await mcp_server.run_shell("python3 -c 'print(42)"))
@@ -394,7 +395,7 @@ class TestShellSecurity:
 
     async def test_timeout_returns_structured_error(self, temp_project):
         payload = parse_payload(
-            await mcp_server.run_shell("python3 -c 'import time; time.sleep(3)'")
+            await mcp_server.run_shell("sleep 3")
         )
         assert payload["ok"] is False
         assert payload["code"] == "command_timeout"
@@ -752,7 +753,7 @@ class TestShellGuardHardening:
     async def test_env_i_python3_allowed_not_interactive(self, temp_project):
         payload = parse_payload(
             await mcp_server.analyze_shell_command(
-                "env -i python3 -c 'print(1)'"
+                "env -i echo hello"
             )
         )
         assert payload["ok"] is True

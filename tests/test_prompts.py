@@ -2,6 +2,8 @@
 
 from claude_bridge import server as mcp_server
 
+mcp_server._register_prompts_once()
+
 
 class TestPrompts:
     async def test_core_prompts_are_listed(self):

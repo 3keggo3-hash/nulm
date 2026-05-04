@@ -709,6 +709,8 @@ def load_guard_policy() -> dict[str, Any]:
             "blocked_shell_patterns": _string_list(merged.get("blocked_shell_patterns")),
             "sensitive_path_patterns": _string_list(merged.get("sensitive_path_patterns")),
             "secret_patterns": _regex_map(merged.get("secret_patterns")),
+            "allowed_shell_commands": _string_list(merged.get("allowed_shell_commands")),
+            "default_deny": bool(merged.get("default_deny", False)),
             "rules": merged.get("rules", []),
             "rules_validation": rules_validation,
         }

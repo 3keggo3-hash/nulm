@@ -978,7 +978,7 @@ class TestExportAuditRecords:
         async def _run():
             await mcp_server.read_file("hello.txt")
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
         export = export_audit_records()
         assert isinstance(export, AuditExport)
@@ -997,7 +997,7 @@ class TestExportAuditRecords:
         async def _run():
             await mcp_server.read_file("hello.txt")
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
         export = export_audit_records(export_format=ExportFormat.SUMMARY_JSON)
         assert export.export_format == ExportFormat.SUMMARY_JSON
@@ -1015,7 +1015,7 @@ class TestExportAuditRecords:
         async def _run():
             await mcp_server.read_file("hello.txt")
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
         export = export_audit_records(retention_config={"include_telemetry": False})
         assert export.record_count >= 1
@@ -1034,7 +1034,7 @@ class TestExportAuditRecords:
         async def _run():
             await mcp_server.read_file("hello.txt")
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
         export = export_audit_records(retention_config={"include_redacted": False})
         assert export.record_count >= 1
@@ -1065,7 +1065,7 @@ class TestApplyRetention:
         async def _run():
             await mcp_server.read_file("hello.txt")
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
         result = apply_retention(dry_run=True)
         assert result["dry_run"] is True

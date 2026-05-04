@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -76,7 +78,7 @@ def json_response(
     and ``risk_reasons``.  The existing ``code`` / ``message`` / ``details`` shape
     is never altered, so existing callers are unaffected.
     """
-    response_details = details or {}
+    response_details = {k: v for k, v in (details or {}).items() if v is not None}
     decision_payload: dict[str, Any] | None = None
     if decision is not None:
         if isinstance(decision, PolicyDecision):
@@ -113,6 +115,47 @@ def path_outside_project_details(path: str) -> dict[str, Any]:
     }
 
 
+_LOAD_BRIDGEIGNORE_LOCK = threading.Lock()
+_bridgeignore_cache: dict[tuple[str, float], list[str]] = {}
+
+
+def load_bridgeignore_patterns(project_root: Path) -> list[str]:
+    """Read .bridgeignore from *project_root* and return non-empty, non-comment lines.
+
+    Cache is invalidated when the file's mtime changes.
+    """
+    bridgeignore = project_root / ".bridgeignore"
+    try:
+        mtime = bridgeignore.stat().st_mtime
+    except OSError:
+        with _LOAD_BRIDGEIGNORE_LOCK:
+            _bridgeignore_cache.pop((str(project_root),), None)
+        return []
+    cache_key = (str(project_root), mtime)
+    with _LOAD_BRIDGEIGNORE_LOCK:
+        cached = _bridgeignore_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+    if not bridgeignore.is_file():
+        with _LOAD_BRIDGEIGNORE_LOCK:
+            _bridgeignore_cache[cache_key] = []
+        return []
+    patterns: list[str] = []
+    try:
+        for line in bridgeignore.read_text(errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                patterns.append(stripped)
+    except OSError:
+        return []
+    with _LOAD_BRIDGEIGNORE_LOCK:
+        old_keys = [k for k in _bridgeignore_cache if k[0] == str(project_root) and k != cache_key]
+        for k in old_keys:
+            _bridgeignore_cache.pop(k, None)
+        _bridgeignore_cache[cache_key] = patterns
+    return list(patterns)
+
+
 def sensitive_path_reason(target: Path) -> str | None:
     name = target.name.lower()
     if name in _SENSITIVE_FILENAMES:
@@ -125,19 +168,21 @@ def sensitive_path_reason(target: Path) -> str | None:
     except (OSError, ValueError):
         parts = [p.lower() for p in target.parts]
     if ".git" in parts:
-        git_idx = parts.index(".git")
-        rel = parts[git_idx + 1 :]
-        if not rel:
-            return ".git directory"
-        if rel[0] == "hooks":
-            return ".git/hooks/*"
-        if rel[0] in ("config", "head", "orig_head", "packed-refs"):
-            return f".git/{rel[0]}"
+        return ".git directory"
     if ".docker" in parts:
         docker_idx = parts.index(".docker")
         rel = parts[docker_idx + 1 :]
         if rel == ["config.json"]:
             return ".docker/config.json"
+    # Check bridgeignore patterns
+    try:
+        relative = target.resolve().relative_to(project_dir()).as_posix()
+    except (OSError, ValueError):
+        relative = target.name
+    candidates = {target.name, relative}
+    for pattern in load_bridgeignore_patterns(project_dir()):
+        if any(fnmatch.fnmatchcase(c, pattern) for c in candidates):
+            return f"bridgeignore pattern: {pattern}"
     custom_reason = custom_sensitive_path_reason(target)
     if custom_reason is not None:
         return custom_reason
@@ -160,12 +205,30 @@ def find_secret_patterns(content: str) -> list[str]:
     return matches
 
 
+_COMPILED_SECRET_PATTERNS: list[tuple[str, re.Pattern]] | None = None
+_COMPILED_SECRET_LOCK = threading.Lock()
+
+
+def _get_compiled_secret_patterns() -> list[tuple[str, re.Pattern]]:
+    global _COMPILED_SECRET_PATTERNS
+    with _COMPILED_SECRET_LOCK:
+        if _COMPILED_SECRET_PATTERNS is not None:
+            return _COMPILED_SECRET_PATTERNS
+        compiled = [(name, re.compile(pattern)) for name, pattern in _SECRET_PATTERNS.items()]
+        _COMPILED_SECRET_PATTERNS = compiled
+        return compiled
+
+
 def _mask_secrets(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     masked = value
-    for name, pattern in _SECRET_PATTERNS.items():
-        masked = re.sub(pattern, "[REDACTED]", masked)
+    for name, pattern in _get_compiled_secret_patterns():
+        masked = pattern.sub("[REDACTED]", masked)
+    from claude_bridge.guard_policy import load_guard_policy
+
+    for custom_name, custom_pattern in load_guard_policy()["secret_patterns"].items():
+        masked = re.sub(custom_pattern, "[REDACTED]", masked)
     return masked
 
 
@@ -217,7 +280,9 @@ def resolve_path(user_path: str) -> Path:
 
     base = project_dir()
     combined = base / candidate
-    target = combined.resolve()  # FIX: Removed pre-resolution ".." check; is_within_root after resolve() is sufficient
+    target = (
+        combined.resolve()
+    )  # FIX: Removed pre-resolution ".." check; is_within_root after resolve() is sufficient
     # Check resolved target against ALL allowed roots, not just the active project dir.
     # This allows symlinks inside the workspace to point to secondary allowed roots.
     if not any(is_within_root(target, root) for root in allowed_roots()):
@@ -267,7 +332,9 @@ async def request_approval(tool_name: str, params: dict[str, Any]) -> bool:
         file=sys.stderr,
     )
     for key, value in params.items():
-        safe_value = _mask_secrets(value)  # FIX: Mask sensitive param values before printing to stderr
+        safe_value = _mask_secrets(
+            value
+        )  # FIX: Mask sensitive param values before printing to stderr
         print(f"  {key}: {safe_value}", file=sys.stderr)
     return False
 

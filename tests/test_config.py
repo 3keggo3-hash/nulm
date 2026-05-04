@@ -1,0 +1,142 @@
+"""Tests for config module."""
+
+import threading
+
+import pytest
+
+from claude_bridge import config as config_module
+
+
+class TestApplyConfig:
+    async def test_apply_config_valid(self, temp_project):
+        config_module.apply_config(
+            project_dir=temp_project,
+            shell_timeout=60,
+            context_budget_profile="low-cost",
+            auto_approve=True,
+        )
+        cfg = config_module.current_config()
+        assert cfg["shell_timeout"] == 60
+        assert cfg["context_budget_profile"] == "low-cost"
+        assert cfg["auto_approve"] is True
+        assert cfg["project_dir"] == temp_project.resolve()
+
+    async def test_invalid_shell_timeout_rejected(self, temp_project):
+        with pytest.raises(ValueError, match="shell_timeout must be a positive integer"):
+            config_module.apply_config(project_dir=temp_project, shell_timeout=0)
+
+    async def test_invalid_budget_profile_rejected(self, temp_project):
+        with pytest.raises(ValueError, match="Unknown context budget profile"):
+            config_module.apply_config(project_dir=temp_project, context_budget_profile="bogus")
+
+    async def test_budget_profile_validation(self, temp_project):
+        for profile in ("low-cost", "balanced", "deep"):
+            config_module.apply_config(project_dir=temp_project, context_budget_profile=profile)
+            assert config_module.current_config()["context_budget_profile"] == profile
+
+
+class TestResolveApprovalMode:
+    def test_read_only(self):
+        auto, client, preset = config_module.resolve_approval_mode(approval_preset="read-only")
+        assert (auto, client, preset) == (False, False, "read-only")
+
+    def test_dev_safe(self):
+        auto, client, preset = config_module.resolve_approval_mode(approval_preset="dev-safe")
+        assert (auto, client, preset) == (False, True, "dev-safe")
+
+    def test_ci_like(self):
+        auto, client, preset = config_module.resolve_approval_mode(approval_preset="ci-like")
+        assert (auto, client, preset) == (False, True, "ci-like")
+
+    def test_power_user(self):
+        auto, client, preset = config_module.resolve_approval_mode(approval_preset="power-user")
+        assert (auto, client, preset) == (True, False, "power-user")
+
+    def test_explicit_flags_no_preset(self):
+        auto, client, preset = config_module.resolve_approval_mode(
+            auto_approve=True, client_managed_approval=True
+        )
+        assert (auto, client, preset) == (True, True, None)
+
+    def test_unknown_preset_raises(self):
+        with pytest.raises(ValueError, match="Unknown approval preset"):
+            config_module.resolve_approval_mode(approval_preset="made-up")
+
+
+class TestCurrentConfig:
+    async def test_thread_safety(self, temp_project):
+        errors = []
+
+        def read_config():
+            try:
+                for _ in range(50):
+                    cfg = config_module.current_config()
+                    assert "project_dir" in cfg
+                    assert "shell_timeout" in cfg
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=read_config) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(errors) == 0
+
+
+class TestUpdateRuntimeConfig:
+    async def test_update_shell_timeout(self, temp_project):
+        result = config_module.update_runtime_config("shell_timeout", 45)
+        assert result["shell_timeout"] == 45
+
+    async def test_update_auto_approve(self, temp_project):
+        result = config_module.update_runtime_config("auto_approve", True)
+        assert result["auto_approve"] is True
+
+    async def test_update_approval_preset(self, temp_project):
+        result = config_module.update_runtime_config("approval_preset", "power-user")
+        assert result["auto_approve"] is True
+        assert result["client_managed_approval"] is False
+        assert result["approval_preset"] == "power-user"
+
+    async def test_invalid_key_raises(self, temp_project):
+        with pytest.raises(ValueError, match="Unsupported config key"):
+            config_module.update_runtime_config("nope", 42)
+
+    async def test_invalid_shell_timeout_raises(self, temp_project):
+        with pytest.raises(ValueError, match="shell_timeout must be a positive integer"):
+            config_module.update_runtime_config("shell_timeout", -1)
+
+
+class TestConfigureFromEnvState:
+    async def test_env_var_reading(self, temp_project, monkeypatch):
+        env_dir = str(temp_project.resolve())
+        monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", env_dir)
+        monkeypatch.setenv("CLAUDE_BRIDGE_SHELL_TIMEOUT", "90")
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "1")
+        monkeypatch.setenv("CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE", "deep")
+
+        config_module.configure_from_env_state()
+        cfg = config_module.current_config()
+
+        assert cfg["project_dir"] == temp_project.resolve()
+        assert cfg["shell_timeout"] == 90
+        assert cfg["auto_approve"] is True
+        assert cfg["context_budget_profile"] == "deep"
+
+
+class TestConfigGetters:
+    async def test_project_dir(self, temp_project):
+        assert config_module.project_dir() == temp_project.resolve()
+
+    async def test_allowed_roots(self, temp_project):
+        roots = config_module.allowed_roots()
+        assert temp_project.resolve() in roots
+
+    async def test_shell_timeout(self, temp_project):
+        assert config_module.shell_timeout() == 30
+
+    async def test_approval_mode(self, temp_project):
+        auto, client = config_module.approval_mode()
+        assert auto is True
+        assert client is False

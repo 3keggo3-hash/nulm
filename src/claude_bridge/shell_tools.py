@@ -22,6 +22,7 @@ from claude_bridge.guard_policy import (
     ToolRequestContext,
     custom_shell_block_reason,
     evaluate_rules,
+    load_guard_policy,
     make_policy_decision,
 )
 from claude_bridge.tool_utils import json_response, require_approval
@@ -51,13 +52,19 @@ _DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore", "revert
 _FORK_BOMB_RE = re.compile(
     r""":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"""  # classic (spaces ok)
     r"""|(\w+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""  # named variant
+    r"""|(\$\d+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""  # $N variant
 )
 _INLINE_INTERPRETER_FLAGS = {
+    "bash": {"-c"},
     "lua": {"-e"},
     "node": {"-e"},
     "perl": {"-e"},
     "php": {"-r"},
+    "python": {"-c"},
+    "python3": {"-c"},
     "ruby": {"-e"},
+    "sh": {"-c"},
+    "zsh": {"-c"},
 }
 _BLOCKED_PIPE_TARGETS = {
     "bash",
@@ -75,9 +82,46 @@ _BLOCKED_PIPE_TARGETS = {
     "ruby",
     "node",
 }
-_MAX_SHELL_OUTPUT_CHARS = 12000
+_WRAPPER_COMMANDS = {
+    "nohup",
+    "setsid",
+    "script",
+    "timeout",
+    "nice",
+    "unshare",
+    "chroot",
+    "nsenter",
+    "prlimit",
+    "taskset",
+    "stdbuf",
+    "ionice",
+    "pkexec",
+    "sudoedit",
+    "su",
+    "watch",
+    "flock",
+    "systemd-run",
+}
+_MAX_SHELL_OUTPUT_CHARS = 2000
 _MAX_PROCESS_SESSIONS = 16
-_MAX_PROCESS_OUTPUT_CHARS = 200000
+_MAX_PROCESS_OUTPUT_CHARS = 2000
+
+_LONG_RUNNING_TIMEOUT = 120
+
+_LONG_RUNNING_COMMANDS = {
+    "npm install",
+    "npm ci",
+    "cargo build",
+    "cargo test",
+    "go build",
+    "go test",
+    "pip install",
+    "pip3 install",
+    "make",
+    "cmake",
+    "docker build",
+    "docker compose",
+}
 
 
 class _ProcessSession:
@@ -186,12 +230,17 @@ _PROCESS_SESSIONS_LOCK = threading.RLock()
 
 def _trim_process_sessions() -> None:
     with _PROCESS_SESSIONS_LOCK:
+        completed = [s for s in _PROCESS_SESSIONS.values() if s.exit_code is not None]
+        for s in completed:
+            output_len = len(s.output)
+            s.output = s.output[: min(output_len, 200)]
+            s.command = s.command[:200]
         if len(_PROCESS_SESSIONS) <= _MAX_PROCESS_SESSIONS:
             return
         ordered = sorted(_PROCESS_SESSIONS.values(), key=lambda session: session.started_at)
         for session in ordered[:-_MAX_PROCESS_SESSIONS]:
             if session.exit_code is None:
-                logger.warning(  # FIX: log before killing oldest session
+                logger.warning(
                     "Killing oldest process session %s (%s) to stay within limit %d",
                     session.session_id,
                     session.command,
@@ -272,29 +321,30 @@ def _command_basename(token: str) -> str:
     return Path(token).name.lower()
 
 
+def _is_long_running_command(tokens: list[str]) -> bool:
+    command_tokens = _tokens_after_env(tokens)
+    if not command_tokens:
+        return False
+    head = _command_basename(command_tokens[0])
+    if head in _LONG_RUNNING_COMMANDS:
+        return True
+    if len(command_tokens) >= 2:
+        sub = command_tokens[1].lower()
+        if f"{head} {sub}" in _LONG_RUNNING_COMMANDS:
+            return True
+    return False
+
+
 def _interactive_target(tokens: list[str]) -> str | None:
-    if not tokens:
+    command_tokens = _tokens_after_env(tokens)
+    if not command_tokens:
         return None
-    head = _command_basename(tokens[0])
-    if head != "env":
-        return head
-    for i, token in enumerate(tokens[1:], start=1):
-        if "=" in token:
-            continue
-        if token == "-S":
-            # FIX: env -S splits the next arg into command; extract it
-            if i + 1 < len(tokens):
-                try:
-                    inner = shlex.split(tokens[i + 1])
-                except ValueError:
-                    return None
-                if inner:
-                    return _command_basename(inner[0])
-            continue
-        if token.startswith("-"):
-            continue
-        return _command_basename(token)
-    return None
+    head = _command_basename(command_tokens[0])
+    if head in {"command", "exec", "builtin"}:
+        if len(command_tokens) > 1:
+            return _command_basename(command_tokens[1])
+        return None
+    return head
 
 
 def _tokens_after_env(tokens: list[str]) -> list[str]:
@@ -310,7 +360,7 @@ def _tokens_after_env(tokens: list[str]) -> list[str]:
                     inner = shlex.split(tokens[index + 1])
                 except ValueError:
                     inner = [tokens[index + 1]]
-                return inner + list(tokens[index + 2:])
+                return inner + list(tokens[index + 2 :])
             continue
         if token.startswith("-"):
             continue
@@ -339,10 +389,7 @@ def is_interactive_command(command: str) -> bool:
                 executable_index = index
                 break
         # FIX: detect python -i as interactive
-        if any(
-            tok == "-i"
-            for tok in tokens[executable_index + 1:]
-        ):
+        if any(tok == "-i" for tok in tokens[executable_index + 1 :]):
             return True
         return len(tokens) == executable_index + 1
     return head in _INTERACTIVE_COMMANDS
@@ -403,6 +450,317 @@ def _truncate_output(value: str) -> tuple[str, bool]:
     )
 
 
+# ── per-family blocked-command matchers ────────────────────────────────────
+
+
+def _blocked_shell_construct(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    return _find_unquoted_shell_construct(stripped)
+
+
+def _blocked_custom_policy(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    return custom_shell_block_reason(stripped)
+
+
+def _blocked_whitelist(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    policy = load_guard_policy()
+    if not policy.get("default_deny", False):
+        return None
+    allowed = policy.get("allowed_shell_commands", [])
+    if head not in allowed:
+        return f"not in shell whitelist: {head}"
+    return None
+
+
+def _blocked_direct_commands(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head == "sudo":
+        return "sudo"
+    if head == "chmod":
+        return "chmod"
+    if head == "mkfs":
+        return "mkfs"
+    return None
+
+
+def _blocked_inline_interpreter(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head not in _INLINE_INTERPRETER_FLAGS:
+        return None
+    if any(token in _INLINE_INTERPRETER_FLAGS[head] for token in lower_tokens[1:]):
+        flag = next(token for token in lower_tokens[1:] if token in _INLINE_INTERPRETER_FLAGS[head])
+        return f"{head} {flag}"
+    return None
+
+
+_PIPE_TARGET_REGEX = re.compile(
+    rf"(?:[|;]|&&)\s*(?:\S*/)?({'|'.join(sorted(_BLOCKED_PIPE_TARGETS))})\b",
+    re.IGNORECASE,
+)
+
+
+def _blocked_curl_wget(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head not in {"curl", "wget"}:
+        return None
+    control_tokens_present = any(token in {"|", "&&", ";"} for token in all_lower_tokens)
+    output_file_tokens: set[str] = set()
+    output_flags = {"-o", "--output"} if head == "curl" else {"-O", "--output-document"}
+    for i, token in enumerate(lower_tokens[:-1]):
+        if token in output_flags:
+            output_file_tokens.add(lower_tokens[i + 1])
+    if re.search(r"[|;]|&&", stripped) and _PIPE_TARGET_REGEX.search(stripped):
+        return f"{head} to shell"
+    if control_tokens_present:
+        suspect = [
+            t
+            for t in lower_tokens
+            if _command_basename(t) in _BLOCKED_PIPE_TARGETS and t not in output_file_tokens
+        ]
+        if suspect:
+            return f"{head} to shell"
+    return None
+
+
+def _blocked_dd(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head != "dd":
+        return None
+    for token in lower_tokens[1:]:
+        if token.startswith("if="):
+            return "dd if="
+        if token.startswith("of=") and len(token) > 3 and token[3:].startswith("/dev/"):
+            return "dd of=/dev/"
+    return None
+
+
+def _blocked_wrappers(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head in _WRAPPER_COMMANDS:
+        return f"{head} wrapper"
+    return None
+
+
+def _blocked_tee_pv(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head == "tee":
+        for token in lower_tokens[1:]:
+            if token.startswith("/dev/"):
+                return "tee /dev/"
+    elif head == "pv":
+        for i, token in enumerate(lower_tokens):
+            if token in {">", ">>"} and i + 1 < len(lower_tokens):
+                if lower_tokens[i + 1].startswith("/dev/"):
+                    return "pv > /dev/"
+    return None
+
+
+def _blocked_find_xargs(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head == "find":
+        if re.search(r"(?:^|\s)find\b.*\|\s*xargs\b.*\brm\b", normalized):
+            return "find to xargs rm"
+        if any(
+            token.startswith("-exec") or token == "-delete" or token == "+"
+            for token in lower_tokens[1:]
+        ):
+            return "find -exec"
+    if head == "xargs" and len(lower_tokens) > 1:
+        return "xargs"
+    return None
+
+
+def _blocked_rm(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head != "rm":
+        return None
+    option_chars = "".join(token.lstrip("-") for token in lower_tokens[1:] if token.startswith("-"))
+    if "r" in option_chars:
+        return "rm -r"
+    if "--no-preserve-root" in lower_tokens:
+        return "rm --no-preserve-root"
+    return None
+
+
+def _blocked_git(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head != "git" or len(lower_tokens) < 2:
+        return None
+    sub_start: int = 1
+    while sub_start < len(lower_tokens):
+        t = lower_tokens[sub_start]
+        if t in {"-c", "-C"} and sub_start + 1 < len(lower_tokens):
+            sub_start += 2
+            continue
+        if t.startswith("-"):
+            sub_start += 1
+            continue
+        break
+    subcommand = lower_tokens[sub_start] if sub_start < len(lower_tokens) else ""
+    rest = lower_tokens[sub_start + 1 :]
+    if subcommand == "reset" and any(token == "--hard" for token in rest):
+        return "git reset --hard"
+    if subcommand == "clean" and any(
+        "f" in token.lstrip("-") for token in rest if token.startswith("-")
+    ):
+        return "git clean -f"
+    if subcommand == "checkout" and any(token == "--" for token in rest):
+        return "git checkout --"
+    if subcommand == "restore" and any(token.startswith("--source") for token in rest):
+        return "git restore --source"
+    return None
+
+
+def _blocked_pipe_targets(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    for index, token in enumerate(all_lower_tokens[:-1]):
+        pipe_target = _command_basename(all_lower_tokens[index + 1])
+        if token == "|" and pipe_target in _BLOCKED_PIPE_TARGETS:
+            return f"| {pipe_target}"
+    return None
+
+
+def _blocked_dev_redirection(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    for idx, token in enumerate(all_lower_tokens):
+        if token in {">", ">>"}:
+            next_idx = idx + 1
+            if next_idx < len(all_lower_tokens) and all_lower_tokens[next_idx].startswith("/dev/"):
+                return f"{token} /dev"
+        if re.match(r"^[12&]>>?$", token):
+            next_idx = idx + 1
+            if next_idx < len(all_lower_tokens) and all_lower_tokens[next_idx].startswith("/dev/"):
+                return f"{token} /dev"
+    dev_redirect_match = re.search(r"[12&]?>>?\s*/dev", normalized)
+    if dev_redirect_match:
+        match_start = dev_redirect_match.start()
+        in_single = False
+        in_double = False
+        escaped = False
+        for i in range(match_start):
+            ch = normalized[i]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\" and not in_single:
+                escaped = True
+                continue
+            if ch == "'" and not in_double:
+                in_single = not in_single
+                continue
+            if ch == '"' and not in_single:
+                in_double = not in_double
+                continue
+        if not in_single and not in_double:
+            return "> /dev"
+    if normalized.startswith("/dev/"):
+        return "/dev/ path"
+    return None
+
+
+def _blocked_fork_bomb(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if _FORK_BOMB_RE.search(normalized):
+        return "fork bomb"
+    return None
+
+
+_BLOCKED_MATCHERS = [
+    _blocked_shell_construct,
+    _blocked_custom_policy,
+    _blocked_whitelist,
+    _blocked_direct_commands,
+    _blocked_inline_interpreter,
+    _blocked_curl_wget,
+    _blocked_dd,
+    _blocked_wrappers,
+    _blocked_tee_pv,
+    _blocked_find_xargs,
+    _blocked_rm,
+    _blocked_git,
+    _blocked_pipe_targets,
+    _blocked_dev_redirection,
+    _blocked_fork_bomb,
+]
+
+
 def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     if not tokens:
         return None
@@ -411,125 +769,43 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     if not command_tokens:
         return None
     head = _command_basename(command_tokens[0])
+    while head in {"command", "exec", "builtin"} and len(command_tokens) > 1:
+        command_tokens = command_tokens[1:]
+        head = _command_basename(command_tokens[0])
+
+    while head == "env":
+        command_tokens = _tokens_after_env(command_tokens)
+        if not command_tokens:
+            return None
+        head = _command_basename(command_tokens[0])
     lower_tokens = [token.lower() for token in command_tokens]
     all_lower_tokens = [token.lower() for token in tokens]
     normalized = normalize_command_for_safety(stripped)
-    shell_construct = _find_unquoted_shell_construct(stripped)
-    if shell_construct is not None:
-        return shell_construct
-    custom_reason = custom_shell_block_reason(stripped)
-    if custom_reason is not None:
-        return custom_reason
-    control_tokens_present = any(token in {"|", "&&", ";"} for token in all_lower_tokens)
 
-    if head.lower() == "sudo":
-        return "sudo"
-    if head.lower() == "chmod":
-        return "chmod"
-    if head.lower() == "mkfs":
-        return "mkfs"
-    if head in _INLINE_INTERPRETER_FLAGS and any(
-        token in _INLINE_INTERPRETER_FLAGS[head] for token in lower_tokens[1:]
-    ):
-        flag = next(token for token in lower_tokens[1:] if token in _INLINE_INTERPRETER_FLAGS[head])
-        return f"{head} {flag}"
-    pipe_target_pattern = "|".join(sorted(_BLOCKED_PIPE_TARGETS))
-    pipe_target_regex = rf"(?:[|;]|&&)\s*(?:\S*/)?({pipe_target_pattern})\b"
-    # curl / wget pipe detection with output-file false-positive fix
-    if head in {"curl", "wget"}:
-        output_file_tokens: set[str] = set()
-        output_flags = {"-o", "--output"} if head.lower() == "curl" else {"-O", "--output-document"}
-        for i, token in enumerate(lower_tokens[:-1]):
-            if token in output_flags:
-                output_file_tokens.add(lower_tokens[i + 1])
-        # Real pipe-to-interpreter check (|/&&/; followed by blocked target)
-        if re.search(r"[|;]|&&", stripped) and re.search(
-            pipe_target_regex, stripped, re.IGNORECASE
-        ):
-            return f"{head} to shell"
-        # Fallback: any blocked target that is NOT an output-file argument
-        if control_tokens_present:
-            suspect = [
-                t
-                for t in lower_tokens
-                if _command_basename(t) in _BLOCKED_PIPE_TARGETS and t not in output_file_tokens
-            ]
-            if suspect:
-                return f"{head} to shell"
+    # ── full-path bypass hardening ──
+    raw_head = command_tokens[0]
+    if "/" in raw_head:
+        raw_basename = _command_basename(raw_head)
+        _FULL_PATH_BLOCKED = {"sudo", "chmod", "mkfs"}
+        if raw_basename in _FULL_PATH_BLOCKED:
+            return f"full-path {raw_basename}"
 
-    if head.lower() == "dd":
-        for token in lower_tokens[1:]:
-            if token.startswith("if="):
-                return "dd if="
-            # FIX: Block dd of=/dev/... writes to device files
-            if token.startswith("of=") and len(token) > 3 and token[3:].startswith("/dev/"):
-                return "dd of=/dev/"
-    _WRAPPER_COMMANDS = {"nohup", "setsid", "script", "timeout"}
-    if head in _WRAPPER_COMMANDS:
-        return f"{head} wrapper"
-    if head.lower() == "find" and re.search(
-        r"(?:^|\s)find\b.*\|\s*xargs\b.*\brm\b",
-        normalized,
-    ):
-        return "find to xargs rm"
-    if head.lower() == "find" and any(
-        token.startswith("-exec") or token == "-delete" or token == "+"
-        for token in lower_tokens[1:]
-    ):
-        return "find -exec"
-    if head.lower() == "xargs" and len(lower_tokens) > 1:
-        return "xargs"
-    if head.lower() == "rm":
-        option_chars = "".join(
-            token.lstrip("-") for token in lower_tokens[1:] if token.startswith("-")
-        )
-        if "r" in option_chars:
-            return "rm -r"
-        # FIX: detect --no-preserve-root flag
-        if "--no-preserve-root" in lower_tokens:
-            return "rm --no-preserve-root"
-    if head.lower() == "git" and len(lower_tokens) > 1:
-        # Skip flags (like -C, -c) to find the actual subcommand
-        sub_start: int = 1
-        while sub_start < len(lower_tokens):
-            t = lower_tokens[sub_start]
-            if t in {"-c", "-C"} and sub_start + 1 < len(lower_tokens):
-                sub_start += 2
-                continue
-            if t.startswith("-"):
-                sub_start += 1
-                continue
-            break
-        subcommand = lower_tokens[sub_start] if sub_start < len(lower_tokens) else ""
-        rest = lower_tokens[sub_start + 1 :]
-        if subcommand == "reset" and any(token == "--hard" for token in rest):
-            return "git reset --hard"
-        if subcommand == "clean" and any(
-            "f" in token.lstrip("-") for token in rest if token.startswith("-")
-        ):
-            return "git clean -f"
-        if subcommand == "checkout" and any(token == "--" for token in rest):
-            return "git checkout --"
-        if subcommand == "restore" and any(token.startswith("--source") for token in rest):
-            return "git restore --source"
-    for index, token in enumerate(all_lower_tokens[:-1]):
-        pipe_target = _command_basename(all_lower_tokens[index + 1])
-        if token == "|" and pipe_target in _BLOCKED_PIPE_TARGETS:
-            return f"| {pipe_target}"
-    # catch >, >>, 1>, 2>, &>, 1>>, 2>>, &>> redirections to /dev
-    for token in tokens:
-        if token in {">", ">>"}:
-            return f"{token} /dev"
-        if re.match(r"^[12&]>>?$", token):
-            return f"{token} /dev"
-    if re.search(r"[12&]?>>?\s*/dev", normalized):
-        return "> /dev"
-    # FIX: use /dev/ prefix instead of substring to avoid blocking legal paths
-    if normalized.startswith("/dev/"):
-        return "/dev/ path"
-    fork_bomb_match = _FORK_BOMB_RE.search(normalized)
-    if fork_bomb_match is not None:
-        return "fork bomb"
+    # ── env indirection hardening ──
+    env_raw = tokens[0]
+    if "/" in env_raw:
+        env_basename = _command_basename(env_raw)
+    else:
+        env_basename = env_raw.lower()
+    if env_basename == "env":
+        env_target = _interactive_target(tokens)
+        if env_target is not None and env_target in {"sudo", "chmod", "mkfs"}:
+            return f"env {env_target}"
+
+    # ── delegate to per-family matchers ──
+    for matcher in _BLOCKED_MATCHERS:
+        reason = matcher(head, lower_tokens, all_lower_tokens, stripped, normalized)
+        if reason is not None:
+            return reason
     return None
 
 
@@ -895,6 +1171,8 @@ async def run_shell(
 
     cwd_snapshot = project_dir()
     timeout_seconds = shell_timeout()
+    if _is_long_running_command(analysis["details"]["argv"]):
+        timeout_seconds = max(timeout_seconds, _LONG_RUNNING_TIMEOUT)
     try:
         result = subprocess.run(
             analysis["details"]["argv"],
@@ -1198,7 +1476,7 @@ async def read_process_output(session_id: str, offset: int = 0, limit: int = 400
             "offset": offset,
             "limit": limit,
             "has_more": has_more,
-            "next_offset": offset + len(output) if has_more else None,
+            "next_offset": offset + len(output) if has_more else -1,
             "total_output_chars": total_output_chars,
             "output": output,
             "output_complete": session.exit_code is not None and not has_more,

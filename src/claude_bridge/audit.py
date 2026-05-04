@@ -130,6 +130,7 @@ def _append_audit_record(path: Path, line: str) -> None:
     try:
         with _AUDIT_LOCK:
             path.parent.mkdir(parents=True, exist_ok=True)
+            is_new = not path.exists()
             with path.open("a", encoding="utf-8") as handle:
                 # FIX: Process-level file locking via flock (msvcrt on Windows)
                 if sys.platform == "win32":
@@ -143,8 +144,9 @@ def _append_audit_record(path: Path, line: str) -> None:
                     except (ImportError, OSError):
                         pass
                 handle.write(line + "\n")
-                # FIX: Restrict file permissions to owner-only
-                os.chmod(path, 0o600)
+                if is_new:
+                    # FIX: Restrict file permissions to owner-only
+                    os.chmod(path, 0o600)
     except OSError:
         return
 
@@ -194,7 +196,7 @@ def _result_summary(result: str) -> tuple[dict[str, Any], str]:
     details = payload.get("details", {})
     summary = {
         "ok": bool(payload.get("ok", False)),
-        "message": str(payload.get("message", "")),
+        "message": str(payload.get("message", ""))[:500],
         "code": payload.get("code"),
         "details": _summarize_value(details),
     }

@@ -34,7 +34,6 @@ from claude_bridge.tool_utils import (
     allowed_roots,
     find_secret_patterns,
     infer_project_root,
-    is_binary_bytes,
     is_within_root,
     json_response,
     path_guard_decision,
@@ -48,14 +47,14 @@ from claude_bridge.tool_utils import (
 )
 
 _MAX_SEARCH_RESULTS = 200
-_MAX_READ_FILE_LINES = 200
+_MAX_READ_FILE_LINES = 50
 _MAX_LIST_DIRECTORY_ENTRIES = 200
 _WRITE_FILE_WARNING_LINES = 500
 _MAX_MULTI_FILE_READS = 20
 _git_commit = git_commit
 _LAST_BRIDGE_CHANGE_LOCK = threading.Lock()
-_LAST_BRIDGE_CHANGE: dict[str, Any] | None = None
-_LAST_BRIDGE_CHANGE_VERSION = 0
+_LAST_BRIDGE_CHANGE: dict[str, dict[str, Any]] = {}
+_LAST_BRIDGE_CHANGE_VERSION: dict[str, int] = {}
 
 
 def _remember_bridge_change(
@@ -68,9 +67,9 @@ def _remember_bridge_change(
     operation: str,
     git_result: dict[str, Any],
 ) -> None:
-    global _LAST_BRIDGE_CHANGE, _LAST_BRIDGE_CHANGE_VERSION
+    key = str(project_dir.resolve())
     with _LAST_BRIDGE_CHANGE_LOCK:
-        _LAST_BRIDGE_CHANGE = {
+        _LAST_BRIDGE_CHANGE[key] = {
             "target": str(target),
             "project_dir": str(project_dir),
             "path": target.relative_to(project_dir).as_posix(),
@@ -80,25 +79,45 @@ def _remember_bridge_change(
             "operation": operation,
             "git_result": git_result,
         }
-        _LAST_BRIDGE_CHANGE_VERSION += 1
+        _LAST_BRIDGE_CHANGE_VERSION[key] = _LAST_BRIDGE_CHANGE_VERSION.get(key, 0) + 1
 
 
-def _last_bridge_change() -> dict[str, Any] | None:
+def _last_bridge_change(*, project_dir: Path | None = None) -> dict[str, Any] | None:
     with _LAST_BRIDGE_CHANGE_LOCK:
-        return dict(_LAST_BRIDGE_CHANGE) if _LAST_BRIDGE_CHANGE is not None else None
-
-
-def _last_bridge_change_snapshot() -> tuple[int, dict[str, Any]] | None:
-    with _LAST_BRIDGE_CHANGE_LOCK:
-        if _LAST_BRIDGE_CHANGE is None:
+        if project_dir is not None:
+            key = str(project_dir.resolve())
+            entry = _LAST_BRIDGE_CHANGE.get(key)
+            return dict(entry) if entry is not None else None
+        if not _LAST_BRIDGE_CHANGE_VERSION:
             return None
-        return (_LAST_BRIDGE_CHANGE_VERSION, dict(_LAST_BRIDGE_CHANGE))
+        best_key = max(_LAST_BRIDGE_CHANGE_VERSION, key=lambda k: _LAST_BRIDGE_CHANGE_VERSION[k])
+        return dict(_LAST_BRIDGE_CHANGE[best_key])
 
 
-def clear_last_bridge_change() -> None:
-    global _LAST_BRIDGE_CHANGE
+def _last_bridge_change_snapshot(
+    *, project_dir: Path | None = None
+) -> tuple[int, dict[str, Any]] | None:
     with _LAST_BRIDGE_CHANGE_LOCK:
-        _LAST_BRIDGE_CHANGE = None
+        if project_dir is not None:
+            key = str(project_dir.resolve())
+            if key not in _LAST_BRIDGE_CHANGE:
+                return None
+            return (_LAST_BRIDGE_CHANGE_VERSION[key], dict(_LAST_BRIDGE_CHANGE[key]))
+        if not _LAST_BRIDGE_CHANGE_VERSION:
+            return None
+        best_key = max(_LAST_BRIDGE_CHANGE_VERSION, key=lambda k: _LAST_BRIDGE_CHANGE_VERSION[k])
+        return (_LAST_BRIDGE_CHANGE_VERSION[best_key], dict(_LAST_BRIDGE_CHANGE[best_key]))
+
+
+def clear_last_bridge_change(*, project_dir: Path | None = None) -> None:
+    with _LAST_BRIDGE_CHANGE_LOCK:
+        if project_dir is not None:
+            key = str(project_dir.resolve())
+            _LAST_BRIDGE_CHANGE.pop(key, None)
+            _LAST_BRIDGE_CHANGE_VERSION.pop(key, None)
+        else:
+            _LAST_BRIDGE_CHANGE.clear()
+            _LAST_BRIDGE_CHANGE_VERSION.clear()
 
 
 def _estimate_patch_risk(file_path: str, original: str, updated: str) -> dict[str, Any]:
@@ -221,14 +240,10 @@ def _log_fuzzy_match_attempt(*, file: str, search: str, suggestions: list[str]) 
 
 
 def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) -> None:
-    # FIX: Non-atomic file write — write to temp then os.replace atomically
     data = content.encode("utf-8")
     if exclusive:
-        # FIX: TOCTOU — O_CREAT|O_EXCL|O_NOFOLLOW atomically checks existence and symlinks
         try:
-            fd = os.open(
-                str(target), os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY
-            )
+            fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY)
         except FileExistsError:
             raise FileExistsError(f"File already exists: {target}")
         try:
@@ -244,7 +259,12 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
         finally:
             os.close(tmp_fd)
         try:
-            os.replace(tmp_path, str(target))
+            if target.is_symlink():
+                try:
+                    os.unlink(str(target))
+                except OSError:
+                    pass
+            os.rename(tmp_path, str(target))
         except OSError:
             try:
                 os.unlink(tmp_path)
@@ -284,7 +304,7 @@ def _run_ripgrep_search(
         command.append("--fixed-strings")
     if include_glob:
         command.extend(["-g", include_glob])
-    command.extend([query, str(target)])
+    command.extend(["--", query, str(target)])
 
     try:
         completed = subprocess.run(
@@ -359,7 +379,7 @@ def _run_ripgrep_search(
         "files_searched": max(len(unique_files), 1 if results else 0),
         "search_backend": "ripgrep",
         "offset": offset,
-        "next_offset": offset + len(results) if truncated else None,
+        "next_offset": offset + len(results) if truncated else -1,
     }
 
 
@@ -718,6 +738,7 @@ async def write_file(
     overwrite: bool = False,
     create_parents: bool = False,
     max_lines: int = _WRITE_FILE_WARNING_LINES,
+    auto_commit: bool = True,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
     ai_provider: Any = None,
@@ -983,10 +1004,19 @@ async def write_file(
             code="path_outside_project",
             details=path_outside_project_details(path),
         )
-    git_result = git_commit_fn(
-        target.relative_to(target_project_dir).as_posix(),
-        project_dir=target_project_dir,
-    )
+    if auto_commit:
+        git_result = git_commit_fn(
+            target.relative_to(target_project_dir).as_posix(),
+            project_dir=target_project_dir,
+        )
+    else:
+        git_result = {
+            "auto_commit": False,
+            "init": False,
+            "add": False,
+            "commit": False,
+            "output": "",
+        }
     _remember_bridge_change(
         target=target,
         project_dir=target_project_dir,
@@ -1268,8 +1298,17 @@ async def copy_path(
                 else:
                     destination_path.unlink()
             # FIX: copy_path directory size limit — reject dirs larger than 500MB
+            # FIX: check each rglob result stays within allowed roots
             total_size = 0
+            roots = allowed_roots()
             for f in source_path.rglob("*"):
+                resolved_f = f
+                try:
+                    resolved_f = f.resolve()
+                except OSError:
+                    continue
+                if not any(is_within_root(resolved_f, root) for root in roots):
+                    continue
                 if f.is_file() and not f.is_symlink():
                     try:
                         total_size += f.stat().st_size
@@ -1336,7 +1375,7 @@ async def search_in_files(
     case_sensitive: bool = False,
     include_glob: str | None = None,
     offset: int = 0,
-    limit: int = 50,
+    limit: int = 20,
     budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
 ) -> str:
     stripped = query.strip()
@@ -1436,7 +1475,6 @@ async def search_in_files(
             target,
             project_root,
             is_within_root=is_within_root,
-            is_binary_bytes=is_binary_bytes,
             include_glob=include_glob,
         )
     except OSError as exc:
@@ -1450,9 +1488,7 @@ async def search_in_files(
     flags = 0 if case_sensitive else re.IGNORECASE
     # FIX: ReDoS protection — re.compile with 2s timeout via ThreadPoolExecutor
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            re.compile, query if regex else re.escape(query), flags
-        )
+        future = executor.submit(re.compile, query if regex else re.escape(query), flags)
         try:
             pattern = future.result(timeout=2)
         except concurrent.futures.TimeoutError:
@@ -1470,11 +1506,18 @@ async def search_in_files(
                 details={"query": query},
             )
 
+    MAX_SEARCH_SCAN_MS = 5000
     results: list[dict[str, Any]] = []
     files_searched = 0
     truncated = False
     match_count = 0
+    import time as _time
+
+    scan_deadline = _time.monotonic() + MAX_SEARCH_SCAN_MS / 1000.0
     for file_path in files:
+        if _time.monotonic() > scan_deadline:
+            truncated = True
+            break
         if sensitive_path_reason(file_path) is not None:
             continue
         try:
@@ -1519,7 +1562,7 @@ async def search_in_files(
             "case_sensitive": case_sensitive,
             "include_glob": include_glob,
             "offset": offset,
-            "next_offset": offset + len(results) if truncated else None,
+            "next_offset": offset + len(results) if truncated else -1,
             "results": results,
             "truncated": truncated,
             "files_searched": files_searched,
@@ -1541,6 +1584,7 @@ async def patch_file(
     file: str,
     search: str,
     replace: str,
+    auto_commit: bool = True,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
     ai_provider: Any = None,
@@ -1578,6 +1622,13 @@ async def patch_file(
             False,
             f"Not a file: {file}",
             code="not_a_file",
+            details={"path": file},
+        )
+    if target.is_symlink():
+        return json_response(
+            False,
+            f"Refusing to patch symlink: {file}",
+            code="symlink_blocked",
             details={"path": file},
         )
 
@@ -1709,10 +1760,19 @@ async def patch_file(
             details={"path": file},
         )
 
-    git_result = git_commit_fn(
-        target.relative_to(target_project_dir).as_posix(),
-        project_dir=target_project_dir,
-    )
+    if auto_commit:
+        git_result = git_commit_fn(
+            target.relative_to(target_project_dir).as_posix(),
+            project_dir=target_project_dir,
+        )
+    else:
+        git_result = {
+            "auto_commit": False,
+            "init": False,
+            "add": False,
+            "commit": False,
+            "output": "",
+        }
     _remember_bridge_change(
         target=target,
         project_dir=target_project_dir,
@@ -1813,18 +1873,36 @@ async def undo_last_patch(
     version, change = snapshot
 
     target = Path(change["target"])
-    project_dir = Path(change["project_dir"])
+    project_dir_path = Path(change["project_dir"])
     previous_exists = bool(change["previous_exists"])
     previous_content = change["previous_content"]
     details = {
         "path": change["path"],
         "resolved_path": str(target),
-        "project_dir": str(project_dir),
+        "project_dir": str(project_dir_path),
         "operation": change["operation"],
         "git": change["git_result"],
         "previous_exists": previous_exists,
         "current_exists": target.exists(),
     }
+
+    try:
+        resolved_target = resolve_path(change["path"])
+        if resolved_target.resolve() != target.resolve():
+            details["warning"] = "Undo target path differs from resolved path; skipping for safety"
+            return json_response(
+                False,
+                "Undo target path validation failed",
+                code="undo_path_mismatch",
+                details=details,
+            )
+    except PermissionError as exc:
+        return json_response(
+            False,
+            str(exc),
+            code="path_outside_project",
+            details=path_outside_project_details(change["path"]),
+        )
 
     if not confirm:
         return json_response(
@@ -1848,18 +1926,17 @@ async def undo_last_patch(
     if rejection is not None:
         return rejection
 
-    # FIX: lock scope — atomically verify and clear _LAST_BRIDGE_CHANGE
-    # to prevent clearing a newer change that was registered after our snapshot
-    global _LAST_BRIDGE_CHANGE
+    key = str(project_dir_path.resolve())
     with _LAST_BRIDGE_CHANGE_LOCK:
-        if _LAST_BRIDGE_CHANGE is None or _LAST_BRIDGE_CHANGE_VERSION != version:
+        if key not in _LAST_BRIDGE_CHANGE or _LAST_BRIDGE_CHANGE_VERSION.get(key) != version:
             return json_response(
                 False,
                 "Bridge change state was modified; cannot undo safely",
                 code="undo_stale_state",
                 details=details,
             )
-        _LAST_BRIDGE_CHANGE = None
+        _LAST_BRIDGE_CHANGE.pop(key, None)
+        _LAST_BRIDGE_CHANGE_VERSION.pop(key, None)
 
     if previous_exists:
         if previous_content is None:
@@ -1907,7 +1984,7 @@ async def undo_last_patch(
 
     git_result = git_commit_fn(
         change["path"],
-        project_dir=project_dir,
+        project_dir=project_dir_path,
         message=f"bridge: undo {change['path']}",
     )
     details["undo_git"] = git_result

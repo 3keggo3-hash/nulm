@@ -29,6 +29,12 @@ Bu dosya, otomatik tasinmayan Markdown dosyalarini ve neden manuel gozden gecirm
   `docs/merged-execution-plan.md` icinde is paketlerine donusturuldugu icin referans
   olarak kalabilir.
 
+## Mega Action Plan Durumu
+
+- `tasks/active/mega-action-plan.md`: P0, P1, P2 ve P3 fazlari 2026-05-03
+  itibariyla tamamlandi. Tum testler geciyor (1273 passed, 7 skipped).
+  P4 ve sonrasi devam ediyor.
+
 ## Arşivlendi
 
 - `.aider.chat.history.md` → `archive/`

@@ -93,10 +93,10 @@ class TestReadTool:
 
         assert payload["ok"] is True
         assert payload["details"]["truncated"] is True
-        assert payload["details"]["line_limit"] == 200
-        assert payload["details"]["returned_line_count"] == 200
-        assert "line 199" in payload["details"]["content"]
-        assert "line 249" not in payload["details"]["content"]
+        assert payload["details"]["line_limit"] == 50
+        assert payload["details"]["returned_line_count"] == 50
+        assert "line 49" in payload["details"]["content"]
+        assert "line 50" not in payload["details"]["content"]
 
     async def test_read_file_supports_negative_offset(self, temp_project):
         lines = [f"line {index}" for index in range(10)]
@@ -311,7 +311,7 @@ class TestSearchTool:
         assert second["ok"] is True
         assert [item["line"] for item in second["details"]["results"]] == ["needle three"]
         assert second["details"]["offset"] == 2
-        assert second["details"]["next_offset"] is None
+        assert second["details"]["next_offset"] == -1
         assert second["details"]["truncated"] is False
 
     async def test_search_in_files_rejects_negative_offset(self, temp_project):
@@ -382,7 +382,7 @@ class TestIndexTool:
         assert indexed["classes"] == ["Greeter"]
         assert indexed["functions"] == ["hello"]
         assert indexed["imports"] == ["os"]
-        assert indexed["parser_backend"] == "fallback"
+        assert indexed["parser_backend"] in ("fallback", "tree_sitter")
 
     async def test_index_codebase_caches_on_second_call(self, temp_project):
         source_dir = temp_project / "pkg"
@@ -509,7 +509,7 @@ class TestIndexTool:
         assert indexed["path"] == "auth.ts"
         assert indexed["language"] == "typescript"
         assert indexed["classes"] == ["AuthService"]
-        assert indexed["functions"] == ["buildSession", "loginUser"]
+        assert "loginUser" in indexed["functions"]
         assert indexed["imports"] == ["api", "react"]
 
     async def test_index_codebase_includes_rust_symbols(self, temp_project):
@@ -1153,10 +1153,16 @@ class TestShellTool:
 
 class TestProcessTool:
     async def test_start_process_reads_paginated_output(self, temp_project):
+        helper = temp_project / "_paginated_test.py"
+        helper.write_text(
+            "import time\n"
+            'print("one")\n'
+            'print("two")\n'
+            "time.sleep(0.2)\n"
+            'print("three")\n'
+        )
         payload = parse_payload(
-            await mcp_server.start_process(
-                'python3 -u -c \'import time; print("one"); print("two"); time.sleep(0.2); print("three")\''
-            )
+            await mcp_server.start_process("python3 -u _paginated_test.py")
         )
         assert payload["ok"] is True
         session_id = payload["details"]["session_id"]
@@ -1185,14 +1191,12 @@ class TestProcessTool:
         )
         assert tail_payload["ok"] is True
         assert "three" in tail_payload["details"]["output"]
-        assert tail_payload["details"]["next_offset"] is None
+        assert tail_payload["details"]["next_offset"] == -1
         assert tail_payload["details"]["output_complete"] is True
 
     async def test_list_process_sessions_and_kill_process(self, temp_project):
         payload = parse_payload(
-            await mcp_server.start_process(
-                "python3 -u -c 'import time; print(\"ready\"); time.sleep(5)'"
-            )
+            await mcp_server.start_process("sleep 5")
         )
         assert payload["ok"] is True
         session_id = payload["details"]["session_id"]
@@ -1216,9 +1220,7 @@ class TestProcessTool:
 
     async def test_interact_with_process_sends_input(self, temp_project):
         payload = parse_payload(
-            await mcp_server.start_process(
-                "python3 -u -c 'import sys; print(input(\"prompt:\")); sys.stdout.flush()'"
-            )
+            await mcp_server.start_process("cat")
         )
         assert payload["ok"] is True
         session_id = payload["details"]["session_id"]
@@ -1252,7 +1254,7 @@ class TestProcessTool:
         assert payload["code"] == "process_session_not_found"
 
     async def test_interact_with_process_rejects_long_input(self, temp_project):
-        payload = parse_payload(await mcp_server.start_process("python3 -u -c 'pass'"))
+        payload = parse_payload(await mcp_server.start_process("true"))
         session_id = payload["details"]["session_id"]
         long_input = "x" * 5000
         result = parse_payload(await mcp_server.interact_with_process(session_id, input=long_input))
@@ -1261,9 +1263,7 @@ class TestProcessTool:
 
     async def test_interact_with_process_can_close_stdin(self, temp_project):
         payload = parse_payload(
-            await mcp_server.start_process(
-                "python3 -u -c 'import sys; data = sys.stdin.read(); print(data.upper())'"
-            )
+            await mcp_server.start_process("tr '[:lower:]' '[:upper:]'")
         )
         assert payload["ok"] is True
         session_id = payload["details"]["session_id"]

@@ -12,12 +12,14 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
+from rich.prompt import Prompt
 from rich.text import Text
 
 from claude_bridge import __version__
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
 from claude_bridge.doctor import build_doctor_report, build_security_doctor_report
+from claude_bridge.update import check_update
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -737,6 +739,163 @@ def start(
 def version() -> None:
     """Show version information."""
     console.print(f"[bold cyan]Claude Bridge[/bold cyan] version [green]{__version__}[/green]")
+
+
+@app.command()
+def update(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Check for claude-bridge updates on PyPI and print the status."""
+    result = json.loads(check_update())
+    if json_output:
+        console.print_json(data=result)
+        return
+
+    details = result.get("details", {})
+    current = details.get("current_version", "?")
+    latest = details.get("latest_version", "?")
+    up_to_date = details.get("up_to_date", False)
+
+    console.print(
+        Panel.fit(
+            Text.assemble(
+                ("Claude Bridge ", "bold cyan"),
+                ("Update Check", "green"),
+            ),
+            title="Update",
+            border_style="cyan",
+        )
+    )
+    console.print(f"Installed: [green]{current}[/green]")
+    console.print(f"Latest:    [green]{latest}[/green]")
+    if current == "unknown" or latest == "unknown":
+        console.print("[yellow]Status:[/yellow] Could not fully determine versions")
+    elif up_to_date:
+        console.print("[green]Status:[/green] Up to date")
+    else:
+        console.print("[yellow]Status:[/yellow] Update available")
+        console.print("Upgrade:   [cyan]pip install --upgrade claude-bridge[/cyan]")
+
+
+@app.command()
+def init(
+    project_dir: str = typer.Option(
+        ".", "--project-dir", "-d", help="Project directory path"
+    ),
+    approval_mode: str | None = typer.Option(
+        None, "--approval", "-a", help="Approval mode: read-only|dev-safe|ci-like|power-user"
+    ),
+    allowed_roots: str | None = typer.Option(
+        None, "--roots", "-r", help="Comma-separated allowed root paths"
+    ),
+    ai_provider: str | None = typer.Option(
+        None, "--ai-provider", help="AI evaluator: local|openai|anthropic|ollama"
+    ),
+    non_interactive: bool = typer.Option(
+        False, "--non-interactive", "-y", help="Skip prompts, use defaults/options"
+    ),
+) -> None:
+    """Initialize claude-bridge guard policy interactively."""
+    import signal
+
+    def _on_cancel(signum: int, frame: Any) -> None:
+        console.print("\n[yellow]Setup cancelled.[/yellow]")
+        raise typer.Exit(0)
+
+    original = signal.signal(signal.SIGINT, _on_cancel)
+
+    try:
+        console.print(
+            Panel.fit("Welcome to [bold cyan]Claude Bridge[/] setup!", title="Init")
+        )
+
+        project_path = Path(project_dir).resolve()
+        if not non_interactive:
+            project_path = Path(
+                Prompt.ask("Project directory", default=str(project_path))
+            ).resolve()
+        if not project_path.exists():
+            project_path.mkdir(parents=True, exist_ok=True)
+
+        presets = {"1": "read-only", "2": "dev-safe", "3": "ci-like", "4": "power-user"}
+        mode = approval_mode or "dev-safe"
+        if not non_interactive:
+            console.print("\n[b]Approval mode:[/b]")
+            for key, val in presets.items():
+                desc = {
+                    "read-only": "Filesystem read-only, no destructive commands",
+                    "dev-safe": "Allow writes to project dir, block system-level",
+                    "ci-like": "Auto-approve all, no human in the loop",
+                    "power-user": "Minimal restrictions with AI evaluation",
+                }
+                console.print(f"  {key}. [cyan]{val}[/] - {desc[val]}")
+            choice = Prompt.ask("Choose", default="2", choices=list(presets.keys()))
+            mode = presets.get(choice, "dev-safe")
+
+        roots_str = allowed_roots or str(project_path)
+        if not non_interactive:
+            roots_str = Prompt.ask(
+                "Allowed root directories (comma-separated)",
+                default=str(project_path),
+            )
+
+        provider = ai_provider or "local"
+        if not non_interactive:
+            console.print("\n[b]AI evaluator provider:[/b]")
+            console.print("  1. local (default, no API key)")
+            console.print("  2. openai")
+            console.print("  3. anthropic")
+            console.print("  4. ollama (local)")
+            choice = Prompt.ask("Choose", default="1", choices=["1", "2", "3", "4"])
+            provider = {"1": "local", "2": "openai", "3": "anthropic", "4": "ollama"}[choice]
+
+        guard_config: dict[str, Any] = {
+            "default_deny": False,
+            "allowed_shell_commands": [],
+            "blocked_shell_patterns": [],
+            "sensitive_path_patterns": [".env*", "*.key", "*.pem", ".git/**"],
+        }
+
+        if mode == "read-only":
+            guard_config["allowed_shell_commands"] = [
+                "ls", "cat", "git", "echo", "find", "wc", "head", "tail"
+            ]
+            guard_config["blocked_shell_patterns"] = ["rm*", "mv*", "cp*", "chmod*", "mkfs*"]
+        elif mode == "dev-safe":
+            guard_config["blocked_shell_patterns"] = [
+                "sudo*", "mkfs*", "shutdown*", "reboot*",
+                "rm -rf /*", "dd if=*", "> /dev/*",
+            ]
+        elif mode == "ci-like":
+            guard_config["default_deny"] = False
+        elif mode == "power-user":
+            guard_config["default_deny"] = False
+
+        config_path = project_path / ".claude-bridge-guard.json"
+        config_path.write_text(
+            json.dumps(guard_config, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        console.print(f"\n[green]Config written to:[/] {config_path}")
+        console.print(
+            Panel.fit(
+                Text.assemble(
+                    ("Project: ", "dim"),
+                    (str(project_path), "cyan"),
+                    ("\nMode: ", "dim"),
+                    (mode, "green"),
+                    ("\nAI Provider: ", "dim"),
+                    (provider, "green"),
+                    ("\nRoots: ", "dim"),
+                    (roots_str, "cyan"),
+                    ("\n\nReady! Configure your MCP client to use claude-bridge.", "bold"),
+                ),
+                title="Summary",
+                border_style="green",
+            )
+        )
+    finally:
+        signal.signal(signal.SIGINT, original)
 
 
 @app.command()

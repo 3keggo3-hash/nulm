@@ -24,7 +24,7 @@ Claude Bridge is built for:
 ## Quick Start
 
 ```bash
-pipx install claude-bridge
+pip install -e .
 claude-bridge install
 ```
 
@@ -56,7 +56,7 @@ Then fully quit and reopen Claude Desktop, and start a new conversation.
 ### Install the Package
 
 ```bash
-pipx install claude-bridge
+pip install -e .
 ```
 
 Or install from a local checkout:
@@ -81,10 +81,10 @@ pip install -e .[smart]
 pip install -e .[multi-format]
 ```
 
-With `pipx`, install multi-format support up front with:
+With extras, install multi-format support:
 
 ```bash
-pipx install "claude-bridge[multi-format]"
+pip install -e .[multi-format]
 ```
 
 ### Add It to Claude Desktop
@@ -839,7 +839,6 @@ The short positioning is:
 
 - Python 3.8+
 - Claude Desktop or another MCP client
-- `pipx` for the recommended install path
 
 ## License
 

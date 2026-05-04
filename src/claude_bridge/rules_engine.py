@@ -361,10 +361,8 @@ def match_rules(
         The decision's metadata includes rule_name, rule_id (from
         rule.metadata), and rule_action.
     """
-    sorted_rules = sorted(
-        [r for r in rules if r.enabled],
-        key=lambda r: (r.priority, id(r)),
-    )
+    indexed = [(i, r) for i, r in enumerate(rules) if r.enabled]
+    sorted_rules = [r for _, r in sorted(indexed, key=lambda x: (x[1].priority, x[0]))]
     for rule in sorted_rules:
         if evaluate_rule(ctx, rule):
             decision_action = _decision_action_from_rule(rule.action)

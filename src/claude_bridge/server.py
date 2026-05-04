@@ -20,6 +20,8 @@ from claude_bridge.audit import (
     reset_audit_session,
     summarize_session as _summarize_session_impl,
 )
+from claude_bridge.feedback import send_feedback_impl
+from claude_bridge.trust_score import get_trust_score as get_trust_score_impl
 from claude_bridge.config import (
     APPROVAL_PRESETS,
     BUDGET_PROFILES,
@@ -64,7 +66,11 @@ from claude_bridge.file_tools import (
     write_file as _file_write_file,
 )
 from claude_bridge.file_tool_server import register_file_tools
-from claude_bridge.git_ops import git_commit, git_status_snapshot
+from claude_bridge.git_ops import (
+    commit_changes as _commit_changes_impl,
+    git_commit,
+    git_status_snapshot,
+)
 from claude_bridge.indexing import (
     build_index as _index_build_index,
 )
@@ -112,9 +118,6 @@ from claude_bridge.shell_tools import (
 )
 from claude_bridge.tool_utils import (
     current_allowed_roots as _allowed_roots,
-)
-from claude_bridge.tool_utils import (
-    is_binary_bytes as _is_binary_bytes,
 )
 from claude_bridge.tool_utils import (
     current_project_dir as _project_dir,
@@ -165,7 +168,37 @@ from claude_bridge.insights import (
     read_notes as _insights_read_notes,
 )
 from claude_bridge.insights_tool_registration import register_insights_tools
+from claude_bridge.plan_engine import (
+    create_plan as _create_plan_impl,
+)
+from claude_bridge.plan_engine import (
+    execute_step as _execute_step_impl,
+)
+from claude_bridge.plan_engine import (
+    get_plan_status as _get_plan_status_impl,
+)
+from claude_bridge.approach_explorer import (
+    compare_approaches as _compare_approaches_impl,
+)
+from claude_bridge.approach_explorer import (
+    execute_approach as _execute_approach_impl,
+)
+from claude_bridge.approach_explorer import (
+    explore_approaches as _explore_approaches_impl,
+)
+from claude_bridge.self_critique import self_critique as _self_critique_impl
+from claude_bridge.checkpoint import (
+    create_checkpoint as _create_checkpoint_impl,
+)
+from claude_bridge.checkpoint import (
+    list_checkpoints as _list_checkpoints_impl,
+)
+from claude_bridge.checkpoint import (
+    restore_checkpoint as _restore_checkpoint_impl,
+)
+from claude_bridge.url_tools import _url_hash, read_url as _url_read_url
 from claude_bridge.fun_content import generate_doodle as _generate_doodle
+from claude_bridge.meta_agent_server import register_meta_agent_tools
 from claude_bridge.meta_tool_server import register_meta_tools, register_prompts
 from claude_bridge.multi_format import (
     read_image as _multi_format_read_image,
@@ -277,7 +310,7 @@ def _build_index(path: str) -> dict[str, Any]:
     )
 
 def _iter_source_files(root: Path, project_root: Path) -> list[Path]:
-    return _index_iter_source_files(root, project_root, is_within_root=_is_within_root)
+    return [p for p, _, _ in _index_iter_source_files(root, project_root, is_within_root=_is_within_root)]
 
 def _iter_searchable_files(
     root: Path, project_root: Path, include_glob: str | None = None
@@ -286,7 +319,6 @@ def _iter_searchable_files(
         root,
         project_root,
         is_within_root=_is_within_root,
-        is_binary_bytes=_is_binary_bytes,
         include_glob=include_glob,
     )
 
@@ -400,6 +432,23 @@ async def read_pdf(path: str, page_start: int = 1, page_end: int | None = None) 
         {"path": path, "page_start": page_start, "page_end": page_end},
         result,
         started_at=started_at,
+    )
+
+
+@mcp.tool(
+    **_tool_options(
+        "Read content from an http/https URL. Only text/* content-types are allowed. "
+        "Response is truncated to 100KB and the URL is stored as a sha256 hash in "
+        "audit logs (the URL itself is never logged). "
+        "Max 1MB response, 10s timeout, 5 redirects.",
+        read_only=True,
+    )
+)
+async def read_url(url: str) -> str:
+    started_at = time.perf_counter()
+    result = await _url_read_url(url)
+    return _audit_tool_call(
+        "read_url", {"url_hash": _url_hash(url)}, result, started_at=started_at
     )
 
 
@@ -607,6 +656,8 @@ _META_TOOLS = register_meta_tools(
     budget_profiles=BUDGET_PROFILES,
     smart_compact_intent=_smart_compact_intent,
     smart_available=_smart_available,
+    send_feedback_impl=send_feedback_impl,
+    get_trust_score_impl=get_trust_score_impl,
     project_dir=_project_dir,
     allowed_roots=_allowed_roots,
     infer_project_root=_infer_project_root,
@@ -628,7 +679,38 @@ workspace_status = _META_TOOLS["workspace_status"]
 switch_project_root = _META_TOOLS["switch_project_root"]
 prompt_shortcuts = _META_TOOLS["prompt_shortcuts"]
 appeal_decision = _META_TOOLS["appeal_decision"]
+send_feedback = _META_TOOLS["send_feedback"]
 anomaly_summary = _META_TOOLS["anomaly_summary"]
+generate_pr_description = _META_TOOLS["generate_pr_description"]
+get_trust_score = _META_TOOLS["get_trust_score"]
+autocomplete = _META_TOOLS["autocomplete"]
+
+_META_AGENT_TOOLS = register_meta_agent_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    create_plan_impl=_create_plan_impl,
+    execute_step_impl=_execute_step_impl,
+    get_plan_status_impl=_get_plan_status_impl,
+    explore_approaches_impl=_explore_approaches_impl,
+    execute_approach_impl=_execute_approach_impl,
+    compare_approaches_impl=_compare_approaches_impl,
+    self_critique_impl=_self_critique_impl,
+    create_checkpoint_impl=_create_checkpoint_impl,
+    restore_checkpoint_impl=_restore_checkpoint_impl,
+    list_checkpoints_impl=_list_checkpoints_impl,
+)
+create_plan = _META_AGENT_TOOLS["create_plan"]
+execute_step = _META_AGENT_TOOLS["execute_step"]
+get_plan_status = _META_AGENT_TOOLS["get_plan_status"]
+explore_approaches = _META_AGENT_TOOLS["explore_approaches"]
+execute_approach = _META_AGENT_TOOLS["execute_approach"]
+compare_approaches = _META_AGENT_TOOLS["compare_approaches"]
+self_critique = _META_AGENT_TOOLS["self_critique"]
+create_checkpoint = _META_AGENT_TOOLS["create_checkpoint"]
+restore_checkpoint = _META_AGENT_TOOLS["restore_checkpoint"]
+list_checkpoints = _META_AGENT_TOOLS["list_checkpoints"]
 
 _SMART_TOOLS = register_smart_tools(
     mcp=mcp,
@@ -677,17 +759,53 @@ bridge_read_notes = _INSIGHTS_TOOLS["bridge_read_notes"]
 bridge_doodle = _INSIGHTS_TOOLS["bridge_doodle"]
 
 
+@mcp.tool(
+    **_tool_options(
+        "Commit all staged and unstaged changes in the current project with a message. "
+        "Use this for batch commits when auto_commit is set to False on individual "
+        "write_file / patch_file calls.",
+        destructive=True,
+    )
+)
+async def commit_changes(message: str) -> str:
+    started_at = time.perf_counter()
+    if not message.strip():
+        result = _json_response(
+            False,
+            "Commit message cannot be empty",
+            code="empty_message",
+            details={},
+        )
+        return _audit_tool_call("commit_changes", {"message": message}, result, started_at=started_at)
+    payload = _commit_changes_impl(message, project_dir=_project_dir())
+    result = _json_response(
+        payload["commit"],
+        "Changes committed" if payload["commit"] else "Commit failed",
+        details=payload,
+    )
+    return _audit_tool_call("commit_changes", {"message": message}, result, started_at=started_at)
+
+
 def run_mcp_server() -> None:
     """Run the Claude Bridge MCP server over stdio."""
+    _register_prompts_once()
     mcp.run(transport="stdio")
 
-register_prompts(
-    mcp=mcp,
-    prompt_shortcuts=_PROMPT_SHORTCUTS,
-    prompt_arguments=_PROMPT_ARGUMENTS,
-    prompt_focus_arg=_PROMPT_FOCUS_ARG,
-    workflow_default_focus=_WORKFLOW_DEFAULT_FOCUS,
-    prompt_custom_builders=_PROMPT_CUSTOM_BUILDERS,
-    custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
-    workflow_prompt=_workflow_prompt,
-)
+_prompts_registered = False
+
+
+def _register_prompts_once() -> None:
+    global _prompts_registered
+    if _prompts_registered:
+        return
+    register_prompts(
+        mcp=mcp,
+        prompt_shortcuts=_PROMPT_SHORTCUTS,
+        prompt_arguments=_PROMPT_ARGUMENTS,
+        prompt_focus_arg=_PROMPT_FOCUS_ARG,
+        workflow_default_focus=_WORKFLOW_DEFAULT_FOCUS,
+        prompt_custom_builders=_PROMPT_CUSTOM_BUILDERS,
+        custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
+        workflow_prompt=_workflow_prompt,
+    )
+    _prompts_registered = True

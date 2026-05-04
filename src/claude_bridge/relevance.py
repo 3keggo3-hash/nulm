@@ -16,6 +16,14 @@ _RELEVANCE_CACHE_LOCK = threading.RLock()
 _SHORTLIST_MULTIPLIER = 8
 _MIN_SHORTLIST_SIZE = 24
 
+_FIELD_REASON_MAP: dict[str, str] = {
+    "path": "path_match",
+    "functions": "function_match",
+    "classes": "class_match",
+    "imports": "import_match",
+    "content": "content_match",
+}
+
 
 def query_terms(query: str) -> list[str]:
     return [term.lower() for term in query.strip().split() if term]
@@ -104,9 +112,10 @@ def rank_indexed_files(
         path_tokens = set(item.get("path_tokens", [])) or _tokenize_text(item["path"])
         content_tokens = set(item.get("content_tokens", []))
         if not content_tokens:
-            content_tokens = _tokenize_text(str(item.get("content", "")))
+            content_lower = item.get("content_lower", "")
+            content_tokens = _tokenize_text(content_lower or str(item.get("content", "")))
         haystacks = {
-            "path": item["path"].lower(),
+            "path": item.get("path_lower", item["path"].lower()),
             "functions": " ".join(name.lower() for name in functions),
             "classes": " ".join(name.lower() for name in classes),
             "imports": " ".join(name.lower() for name in imports),
@@ -194,6 +203,12 @@ def rank_indexed_files(
                 score += len(unique_terms)
             if len(matched_fields) > 1:
                 score += len(matched_fields)
+            if len(matched_fields) > 1:
+                selection_reason = "combined"
+            else:
+                selection_reason = _FIELD_REASON_MAP.get(
+                    next(iter(matched_fields), ""), "combined"
+                )
             results.append(
                 {
                     "path": candidate["path"],
@@ -201,6 +216,7 @@ def rank_indexed_files(
                     "matched_terms": unique_terms,
                     "matched_fields": sorted(matched_fields),
                     "parser_backend": candidate["parser_backend"],
+                    "selection_reason": selection_reason,
                 }
             )
 

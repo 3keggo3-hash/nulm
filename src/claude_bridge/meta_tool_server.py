@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -10,7 +11,203 @@ from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 
 from claude_bridge.anomaly import build_anomaly_summary
 from claude_bridge.audit import process_appeal
+from claude_bridge.git_ops import generate_pr_description
 from claude_bridge.guard_policy import default_allow_decision, load_guard_policy
+
+_COMMON_SHELL_COMMANDS = sorted(
+    {
+        "git", "pytest", "ruff", "black", "mypy", "pip", "pip3", "npm", "pnpm", "yarn",
+        "python", "python3", "node", "cargo", "go", "make", "cmake", "docker",
+        "ls", "cat", "echo", "mkdir", "cp", "mv", "rm", "find", "grep", "sed",
+        "awk", "sort", "uniq", "wc", "head", "tail", "diff", "ssh", "scp", "rsync",
+        "curl", "wget",
+    }
+)
+
+
+def _autocomplete_suggestions(
+    partial_input: str,
+    *,
+    project_dir: Callable[[], Path],
+    context: str = "",
+) -> dict[str, Any]:
+    """Return file/tool/command suggestions for a partial input string.
+
+    Detects intent (file path, tool name, shell command) and returns up to
+    10 ranked suggestions.
+    """
+    stripped = partial_input.strip()
+    intent = "unknown"
+    if stripped.startswith("/") or stripped.startswith("./") or stripped.startswith("~"):
+        intent = "file"
+    elif " " in stripped:
+        intent = "command"
+    elif "." in stripped:
+        intent = "file"
+    else:
+        # Could be a single-word tool name, command, or file prefix
+        intent = "any"
+
+    suggestions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    # ── file path suggestions ──
+    if intent in {"file", "any"}:
+        base_dir = project_dir()
+        if stripped:
+            parent = os.path.dirname(stripped) or "."
+            prefix = os.path.basename(stripped)
+        else:
+            parent = "."
+            prefix = ""
+        search_root = (base_dir / parent).resolve()
+        if search_root.exists() and search_root.is_dir():
+            try:
+                entries = sorted(search_root.iterdir(), key=lambda e: (not e.is_dir(), e.name))
+            except OSError:
+                entries = []
+            for entry in entries:
+                try:
+                    rel = str(entry.relative_to(base_dir))
+                except ValueError:
+                    continue
+                if prefix and not entry.name.startswith(prefix):
+                    continue
+                if rel in seen:
+                    continue
+                entry_type = "directory" if entry.is_dir() else "file"
+                if entry.is_dir():
+                    display = rel + os.sep
+                else:
+                    display = rel
+                seen.add(rel)
+                suggestions.append(
+                    {
+                        "text": display,
+                        "type": entry_type,
+                        "intent": "file",
+                    }
+                )
+        # Also add from context if provided
+        if context and not stripped:
+            ctx_path = (base_dir / context).resolve()
+            if ctx_path.exists() and ctx_path.is_dir():
+                try:
+                    ctx_entries = sorted(ctx_path.iterdir(), key=lambda e: (not e.is_dir(), e.name))
+                except OSError:
+                    ctx_entries = []
+                for entry in ctx_entries:
+                    try:
+                        rel = str(entry.relative_to(base_dir))
+                    except ValueError:
+                        continue
+                    if rel in seen:
+                        continue
+                    entry_type = "directory" if entry.is_dir() else "file"
+                    if entry.is_dir():
+                        display = rel + os.sep
+                    else:
+                        display = rel
+                    seen.add(rel)
+                    suggestions.append(
+                        {
+                            "text": display,
+                            "type": entry_type,
+                            "intent": "file",
+                        }
+                    )
+
+    # ── tool name suggestions ──
+    if intent in {"any", "command"} and not stripped.startswith("/"):
+        _known_tools = sorted(
+            [
+                "read_file", "write_file", "patch_file", "preview_patch",
+                "undo_last_patch", "list_directory", "search_in_files",
+                "read_multiple_files", "move_file", "copy_path",
+                "read_image", "read_pdf", "read_url",
+                "run_shell", "start_process", "read_process_output",
+                "list_process_sessions", "kill_process", "interact_with_process",
+                "analyze_shell_command",
+                "index_codebase", "find_relevant_files",
+                "run_workflow", "run_agent_loop_step", "run_agent_loop_session",
+                "build_context_pack", "narrow_context",
+                "suggest_validation_commands",
+                "get_config", "set_config_value", "bridge_status",
+                "workspace_status", "switch_project_root",
+                "compact_user_intent", "tools_overview", "prompt_shortcuts",
+                "get_recent_tool_calls", "session_insights",
+                "activity_summary", "usage_insights",
+                "appeal_decision", "send_feedback", "anomaly_summary",
+                "generate_pr_description", "get_trust_score",
+                "commit_changes",
+                "count_file_tokens", "context_fit", "smart_status",
+                "project_insights", "todo_scan", "recent_files",
+                "language_distribution", "git_insights", "git_diff_insights",
+                "duplicate_code_scan", "dependency_insights",
+                "bridge_save_note", "bridge_read_notes", "bridge_doodle",
+                "create_plan", "execute_step", "get_plan_status",
+                "explore_approaches", "execute_approach", "compare_approaches",
+                "self_critique",
+                "create_checkpoint", "restore_checkpoint", "list_checkpoints",
+            ]
+        )
+        lookup = stripped.lower()
+        for tool in _known_tools:
+            if lookup and lookup not in tool.lower():
+                continue
+            if tool in seen:
+                continue
+            seen.add(tool)
+            suggestions.append(
+                {
+                    "text": tool,
+                    "type": "tool",
+                    "intent": "tool",
+                }
+            )
+
+    # ── shell command suggestions ──
+    if intent in {"any", "command"}:
+        lookup = stripped.lower()
+        for cmd in _COMMON_SHELL_COMMANDS:
+            if lookup and lookup not in cmd.lower():
+                continue
+            if cmd in seen:
+                continue
+            seen.add(cmd)
+            suggestions.append(
+                {
+                    "text": cmd,
+                    "type": "command",
+                    "intent": "command",
+                }
+            )
+
+    # Deduplicate by text, prioritize by intent match
+    deduped: dict[str, dict[str, Any]] = {}
+    for s in suggestions:
+        key = s["text"]
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = s
+        elif _intent_score(s["intent"]) > _intent_score(existing["intent"]):
+            deduped[key] = s
+
+    ranked = sorted(
+        deduped.values(),
+        key=lambda s: (-_intent_score(s["intent"]), s["type"] != "directory", s["text"]),
+    )[:10]
+
+    return {
+        "partial_input": partial_input,
+        "detected_intent": intent,
+        "suggestions": ranked,
+    }
+
+
+def _intent_score(intent_name: str) -> int:
+    order = {"file": 3, "tool": 2, "command": 2, "unknown": 0, "any": 1}
+    return order.get(intent_name, 0)
 
 
 def register_meta_tools(
@@ -27,6 +224,9 @@ def register_meta_tools(
     update_runtime_config: Callable[..., dict[str, Any]],
     approval_presets: dict[str, Any],
     budget_profiles: dict[str, Any],
+    # Feedback
+    send_feedback_impl: Callable[..., dict[str, Any]],
+    get_trust_score_impl: Callable[..., dict[str, Any]],
     # Smart
     smart_compact_intent: Any,
     smart_available: Any,
@@ -584,6 +784,57 @@ def register_meta_tools(
 
     @mcp.tool(
         **tool_options(
+            "Send user feedback with a rating (1-5) and optional comment. "
+            "Saves to .claude-bridge/feedback/ and optionally links "
+            "to the current audit session.",
+            destructive=True,
+        )
+    )
+    async def send_feedback(
+        rating: int,
+        comment: str,
+        include_session: bool = True,
+    ) -> str:
+        started_at = time.perf_counter()
+        impl_result = send_feedback_impl(
+            rating=rating,
+            comment=comment,
+            include_session=include_session,
+        )
+        if not impl_result["ok"]:
+            result = json_response(
+                False,
+                impl_result["message"],
+                details=impl_result.get("details", {}),
+            )
+            return audit_tool_call(
+                "send_feedback",
+                {
+                    "rating": rating,
+                    "comment_length": len(comment),
+                    "include_session": include_session,
+                },
+                result,
+                started_at=started_at,
+            )
+        result = json_response(
+            True,
+            impl_result["message"],
+            details=impl_result["details"],
+        )
+        return audit_tool_call(
+            "send_feedback",
+            {
+                "rating": rating,
+                "comment_length": len(comment),
+                "include_session": include_session,
+            },
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
             "Run anomaly detection on recent audit records. Returns per-record "
             "anomaly scores, overall severity level, and policy decision metadata "
             "for critical anomalies. Use this to identify suspicious sessions.",
@@ -613,6 +864,79 @@ def register_meta_tools(
             started_at=started_at,
         )
 
+    @mcp.tool(
+        **tool_options(
+            "Generate a structural PR description from a raw git diff. "
+            "Parses changed files, additions, deletions, affected file "
+            "extensions, and a short diff summary. Returns structured JSON.",
+            read_only=True,
+        )
+    )
+    async def generate_pr_description_tool(diff_text: str) -> str:
+        started_at = time.perf_counter()
+        parsed = generate_pr_description(diff_text)
+        result = json_response(
+            True,
+            "PR description generated",
+            details=parsed,
+        )
+        return audit_tool_call(
+            "generate_pr_description",
+            {"diff_text_length": len(diff_text)},
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
+            "Calculate a trust score based on recent audit records. "
+            "Returns deny rate, anomaly frequency, approval rejection trend, "
+            "and overall score (0-100). Higher is better.",
+            read_only=True,
+        )
+    )
+    async def get_trust_score(days: int = 7) -> str:
+        started_at = time.perf_counter()
+        score_result = get_trust_score_impl(days=days)
+        result = json_response(
+            score_result.get("ok", True),
+            score_result.get("message", "Trust score calculated"),
+            details=score_result.get("details", score_result),
+        )
+        return audit_tool_call(
+            "get_trust_score",
+            {"days": days},
+            result,
+            started_at=started_at,
+        )
+
+    @mcp.tool(
+        **tool_options(
+            "Autocomplete partial input with file, tool, and shell command "
+            "suggestions. Use this to help users complete paths, tool names, "
+            "or commands while typing.",
+            read_only=True,
+        )
+    )
+    async def autocomplete(partial_input: str, context: str = "") -> str:
+        started_at = time.perf_counter()
+        suggestions = _autocomplete_suggestions(
+            partial_input,
+            project_dir=project_dir,
+            context=context,
+        )
+        result = json_response(
+            True,
+            f"Autocomplete suggestions for: {partial_input}",
+            details=suggestions,
+        )
+        return audit_tool_call(
+            "autocomplete",
+            {"partial_input": partial_input, "context": context},
+            result,
+            started_at=started_at,
+        )
+
     return {
         "get_recent_tool_calls": get_recent_tool_calls,
         "session_insights": session_insights,
@@ -627,7 +951,11 @@ def register_meta_tools(
         "switch_project_root": switch_project_root,
         "prompt_shortcuts": prompt_shortcuts,
         "appeal_decision": appeal_decision,
+        "send_feedback": send_feedback,
         "anomaly_summary": anomaly_summary,
+        "generate_pr_description": generate_pr_description_tool,
+        "get_trust_score": get_trust_score,
+        "autocomplete": autocomplete,
     }
 
 
