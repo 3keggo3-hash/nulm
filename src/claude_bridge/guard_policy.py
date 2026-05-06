@@ -61,7 +61,9 @@ def _regex_map(value: Any) -> dict[str, str]:
         pattern = item.strip()
         if not name or not pattern:
             continue
-        if len(name) > _MAX_PATTERN_LENGTH or len(pattern) > _MAX_REGEX_PATTERN_LENGTH:  # FIX: enforce 256 char limit for regex values
+        if (
+            len(name) > _MAX_PATTERN_LENGTH or len(pattern) > _MAX_REGEX_PATTERN_LENGTH
+        ):  # FIX: enforce 256 char limit for regex values
             continue
         regex_error = validate_regex_pattern(pattern)
         if regex_error is not None:
@@ -114,10 +116,22 @@ def custom_sensitive_path_reason(target: Path) -> str | None:
 
 
 def custom_secret_pattern_matches(content: str) -> list[str]:
+    import concurrent.futures
+
     matches: list[str] = []
-    for name, pattern in load_guard_policy()["secret_patterns"].items():
-        if re.search(pattern, content):
-            matches.append(f"custom:{name}")
+    patterns = load_guard_policy()["secret_patterns"]
+    for name, pattern in patterns.items():
+        try:
+            compiled = re.compile(pattern)
+        except re.error:
+            continue
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(compiled.search, content)
+            try:
+                if future.result(timeout=2):
+                    matches.append(f"custom:{name}")
+            except concurrent.futures.TimeoutError:
+                continue
     return matches
 
 
@@ -688,11 +702,12 @@ def load_guard_policy() -> dict[str, Any]:
 
     primary_path = _policy_path()
     policy_files = _resolve_policy_files()
-    current_mtime = sum(_policy_mtime(path) for path, _ in policy_files)
+    current_mtime_key = tuple((str(path), _policy_mtime(path)) for path, _ in policy_files)
+    current_mtime_hash = hash(current_mtime_key)
 
     with _POLICY_CACHE_LOCK:
         # Use cache if none of the policy files have changed
-        if _POLICY_CACHE and current_mtime == _POLICY_CACHE_MTIME and current_mtime > 0:
+        if _POLICY_CACHE and current_mtime_hash == _POLICY_CACHE_MTIME and current_mtime_hash != 0:
             return dict(_POLICY_CACHE)
 
         merged = _load_policy_files()
@@ -717,7 +732,7 @@ def load_guard_policy() -> dict[str, Any]:
 
         _POLICY_CACHE.clear()
         _POLICY_CACHE.update(result)
-        _POLICY_CACHE_MTIME = current_mtime
+        _POLICY_CACHE_MTIME = current_mtime_hash
 
         return result
 
@@ -1005,7 +1020,9 @@ def evaluate_rules(
     if policy is not None:
         selected_policy = policy
     else:
-        policy_data = load_guard_policy()  # FIX: use cached load_guard_policy() instead of disk read
+        policy_data = (
+            load_guard_policy()
+        )  # FIX: use cached load_guard_policy() instead of disk read
         rules_raw = policy_data.get("rules", [])
         rules = RuleSet.from_dict({"rules": rules_raw}).rules if rules_raw else []
         validation_errors = policy_data.get("rules_validation", [])

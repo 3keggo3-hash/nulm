@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import ipaddress
+import re
 import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -17,6 +18,7 @@ _MAX_SIZE = 1024 * 1024  # 1 MB
 _MAX_REDIRECTS = 5
 _TIMEOUT_SECONDS = 10
 _RESPONSE_TRUNCATION = 100 * 1024  # 100 KB
+_IP_LIKE_RE = re.compile(r"^[0-9a-fA-FxX.:]+$")
 
 
 def _is_private_host(host: str) -> bool:
@@ -36,6 +38,8 @@ def _is_private_host(host: str) -> bool:
         try:
             ip = ipaddress.IPv4Address(host_lower)
         except ValueError:
+            if _IP_LIKE_RE.match(host_lower):
+                return True
             return False
 
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
@@ -124,11 +128,12 @@ class _SafeHTTPHandler:
     def http_open(self, req: Request) -> Any | None:
         return self._open(req, _DNSCheckingHTTPConnection)
 
-    def _open(self, req: Request, connection_class: type) -> Any | None:
+    @staticmethod
+    def _open(req: Request, connection_class: Any) -> Any | None:
         import urllib.request
 
         handler = urllib.request.AbstractHTTPHandler()
-        return handler.do_open(connection_class, req)
+        return handler.do_open(connection_class, req)  # type: ignore[arg-type]
 
 
 class _SafeHTTPSHandler:
@@ -137,11 +142,12 @@ class _SafeHTTPSHandler:
     def https_open(self, req: Request) -> Any | None:
         return self._open(req, _DNSCheckingHTTPSConnection)
 
-    def _open(self, req: Request, connection_class: type) -> Any | None:
+    @staticmethod
+    def _open(req: Request, connection_class: Any) -> Any | None:
         import urllib.request
 
         handler = urllib.request.AbstractHTTPHandler()
-        return handler.do_open(connection_class, req)
+        return handler.do_open(connection_class, req)  # type: ignore[arg-type]
 
 
 def _url_hash(url: str) -> str:
@@ -183,7 +189,7 @@ async def read_url(url: str) -> str:
             )
 
     redirect_handler = _LimitedRedirectHandler(max_redirects=_MAX_REDIRECTS)
-    opener = build_opener(_SafeHTTPHandler, _SafeHTTPSHandler, redirect_handler)
+    opener = build_opener(_SafeHTTPHandler, _SafeHTTPSHandler, redirect_handler)  # type: ignore[arg-type]
 
     try:
         req = Request(url, method="GET")

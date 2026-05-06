@@ -25,7 +25,6 @@ from claude_bridge.guard_policy import (
     custom_secret_pattern_matches,
     custom_sensitive_path_reason,
 )
-from claude_bridge.indexing import clear_index_cache
 
 _SENSITIVE_SUFFIXES = {".env", ".pem", ".key", ".p12", ".pfx"}
 _SENSITIVE_FILENAMES = {
@@ -129,7 +128,9 @@ def load_bridgeignore_patterns(project_root: Path) -> list[str]:
         mtime = bridgeignore.stat().st_mtime
     except OSError:
         with _LOAD_BRIDGEIGNORE_LOCK:
-            _bridgeignore_cache.pop((str(project_root),), None)
+            stale_keys = [k for k in _bridgeignore_cache if k[0] == str(project_root)]
+            for k in stale_keys:
+                _bridgeignore_cache.pop(k, None)
         return []
     cache_key = (str(project_root), mtime)
     with _LOAD_BRIDGEIGNORE_LOCK:
@@ -316,6 +317,8 @@ def set_active_project_dir(next_project_dir: Path) -> None:
         client_managed_approval=client_managed_approval,
         shell_timeout=shell_timeout(),
     )
+    from claude_bridge.indexing import clear_index_cache
+
     clear_index_cache()
 
 
@@ -362,7 +365,7 @@ def current_project_dir() -> Path:
     return project_dir()
 
 
-def current_allowed_roots() -> list[Path]:
+def current_allowed_roots() -> tuple[Path, ...]:
     return allowed_roots()
 
 

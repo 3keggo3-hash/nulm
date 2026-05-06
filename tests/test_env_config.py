@@ -6,7 +6,9 @@ from claude_bridge import server as mcp_server
 
 
 class TestEnvConfiguration:
-    def test_configure_from_env_defaults_client_managed_approval_to_disabled(self, monkeypatch, tmp_path: Path):
+    def test_configure_from_env_defaults_client_managed_approval_to_disabled(
+        self, monkeypatch, tmp_path: Path
+    ):
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
         monkeypatch.delenv("CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL", raising=False)
 

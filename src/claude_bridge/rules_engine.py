@@ -31,12 +31,17 @@ from claude_bridge.guard_policy import (
     ConditionType,
     DecisionAction,
     DecisionSource,
+    GuardPolicy,
     GuardRule,
     PolicyDecision,
     RiskLevel,
     RuleAction,
     RuleCondition,
+    RuleSet,
     ToolRequestContext,
+    default_allow_decision,
+    evaluate_rules,
+    load_guard_policy,
     make_policy_decision,
     validate_regex_pattern,
 )
@@ -467,8 +472,7 @@ def evaluate_policy_chain(
                 DecisionAction.ASK,
                 DecisionSource.APPROVAL,
                 RiskLevel.MEDIUM,
-                "CI auto-approve boundary: operation is outside CI "
-                "auto-approve boundaries",
+                "CI auto-approve boundary: operation is outside CI " "auto-approve boundaries",
                 ["role restriction: ci_auto_approve_bounded"],
                 {"role": role_name, "restriction": "ci_auto_approve_bounded"},
             )
@@ -488,6 +492,54 @@ def evaluate_policy_chain(
         DecisionSource.DEFAULT,
         RiskLevel.LOW,
         "No policy matched — allowed by default",
+    )
+
+
+def evaluate_runtime_policy_chain(
+    ctx: ToolRequestContext,
+    *,
+    default_decision: PolicyDecision | None = None,
+) -> PolicyDecision | None:
+    """Evaluate the runtime guard policy plus active role restrictions.
+
+    This keeps the runtime tool path aligned with replay/policy simulation:
+    role pre-restrictions run before user rules, role post-restrictions run
+    against the default decision, and invalid policy files fail closed.
+    """
+    if ctx.role is None:
+        return evaluate_rules(ctx)
+
+    policy_data = load_guard_policy()
+    rules_raw = policy_data.get("rules", [])
+    rules = RuleSet.from_dict({"rules": rules_raw}).rules if rules_raw else []
+    validation_errors = policy_data.get("rules_validation", [])
+    selected_policy = GuardPolicy(
+        path=Path(policy_data["path"]),
+        exists=policy_data["exists"],
+        rules=rules,
+        errors=[e["message"] for e in validation_errors],
+    )
+
+    if selected_policy.errors:
+        return make_policy_decision(
+            DecisionAction.DENY,
+            DecisionSource.RULE,
+            RiskLevel.HIGH,
+            "Policy file is invalid",
+            list(selected_policy.errors),
+            {
+                "policy_path": str(selected_policy.path),
+                "validation_errors": list(selected_policy.errors),
+            },
+        )
+
+    if default_decision is None:
+        default_decision = default_allow_decision("No policy matched — allowed by default")
+
+    return evaluate_policy_chain(
+        ctx,
+        user_rules=selected_policy.rules if selected_policy.exists else None,
+        default_decision=default_decision,
     )
 
 

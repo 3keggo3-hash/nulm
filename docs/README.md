@@ -1,85 +1,85 @@
 # Docs
 
-Bu klasor, proje icin kalici ve referans niteligindeki dokumantasyonu toplar.
+This directory houses persistent and reference documentation for the project.
 
-## Durum Siniflandirmasi
+## Status Classification
 
-### Aktif / Kanonik
+### Active / Canonical
 
-Bu belgeler mevcut urun yonu, teknik davranis veya operasyonel akis icin birincil
-referans kabul edilir.
+These documents are considered the primary reference for the current product direction, technical behavior, or operational flow.
 
-- `product-roadmap.md`
-  Yeni urun vizyonu: Claude Bridge'in AI destekli MCP guvenlik degerlendirme
-  katmanina pivotunu tanimlar.
+- `product-vision.md`
+  Current canonical product vision: local-first, security-controlled MCP agent runtime.
 - `roadmap.md`
-  Teknik implementasyon asamalari ve mevcut teknik durum. Yeni urun vizyonu icin
-  `product-roadmap.md` dosyasina baglanir.
+  Technical implementation phases and current technical status. Links to
+  `product-vision.md` for the updated product vision.
 - `merged-execution-plan.md`
-  Uygulanabilir teknik backlog, bagimlilik sirasi ve delegasyon paketleri.
+  Actionable technical backlog, dependency ordering, and delegation packages.
 - `known-issues-and-improvements.md`
-  Bilinen eksikler, riskler ve iyilestirme onerileri.
+  Known gaps, risks, and improvement suggestions.
 - `optional-dependencies.md`
-  Opsiyonel dependency pattern'i ve doctor kontrolleri icin kanonik rehber.
+  Canonical guide for the optional dependency pattern and doctor checks.
 - `publishing-checklist.md`
-  Yayinlama ve release oncesi kontrol listesi.
+  Pre-release and publishing checklist.
 - `competitive-development-plan.md`
-  Rakiplerden ogrenilenleri mimariye uygun is planina donusturen uzun vadeli
-  gelistirme plani.
+  Long-term development plan that translates competitive insights into an
+  architecture-aligned work plan.
 - `competitive-analysis-template.md`
-  Yeni rakip analizleri icin tekrar kullanilabilir sablon.
+  Reusable template for new competitive analyses.
 - `security-model.md`
-  Guvenlik modeli: trust boundary, approval modes, guard policy layer, audit logging.
+  Security model: trust boundary, approval modes, guard policy layer, audit logging.
 - `compliance-readiness.md`
-  Uyumluluk hazirlik: access control, audit trail, policy enforcement, data protection.
+  Compliance readiness: access control, audit trail, policy enforcement, data protection.
 - `policy-pr-workflow.md`
   CI-friendly policy-as-code PR workflow: policy diff, simulate, validate.
 
-### Tamamlanmis / Referans
+### Completed / Reference
 
-Bu belgeler ana plan degil; tamamlanmis analiz, audit veya tarihsel karar kaydi
-olarak saklanir.
+These documents are not the master plan; they are retained as completed analyses, audits, or historical decision records.
 
 - `competitive-analysis-desktopcommander.md`
-  DesktopCommanderMCP karsilastirmasi ve bulgulari.
+  DesktopCommanderMCP comparison and findings.
 - `performance-and-completion-audit.md`
-  Performans, completion ve UX audit raporu. Icerigindeki uygulanabilir maddeler
-  `merged-execution-plan.md` icinde is paketlerine donusturulmustur.
+  Performance, completion, and UX audit report. Actionable items from its content
+  have been converted into work packages within `merged-execution-plan.md`.
+- `product-roadmap.md`
+  Historical strategy and the earlier AI security layer pivot. The Phase 5 Web LLM
+  Extension idea was cancelled, so this should not be treated as canonical in new plans.
 
-### Devam Eden / Gorev Takibi
+### In Progress / Task Tracking
 
-Gorev yasam dongusu `docs/` altinda tutulmaz. Aktif isler ve tamamlanan kayitlar:
+The task lifecycle is not maintained under `docs/`. Active work and completed records:
 
 - `tasks/active/`
 - `tasks/done/`
 - `tasks/needs-review.md`
 
-### Inceleme veya Arsiv Adayi
+### Candidates for Review or Archival
 
-Bu belgeler dogrudan silinmemeli; yeni pivotla iliskileri netlestirilip gerekirse
-`archive/` altina tasinmalidir.
+These documents should not be deleted outright; their relevance to the new pivot
+should be clarified and, if necessary, they should be moved under `archive/`.
 
 - `strategic-roadmap.md`
-  Yeni `product-roadmap.md` tarafindan buyuk olcude yeniden konumlandirildi.
-  Icindeki fikirler degerli, ama kanonik urun plani olarak okunmamali.
+  Largely repositioned by the new `product-vision.md`.
+  The ideas within are valuable, but this should not be read as the canonical product plan.
 
-## Klasor Kurallari
+## Directory Rules
 
-Buraya su tip belgeler girer:
+The following types of documents belong here:
 
-- urun veya teknik dokumantasyon
-- audit ve performans raporlari
-- roadmap ve strateji dokumanlari
-- yayinlama, operasyon veya kullanim rehberleri
+- product or technical documentation
+- audit and performance reports
+- roadmap and strategy documents
+- publishing, operations, or usage guides
 
-Buraya gorev takibi veya gecici calisma notu koyma:
+Do not place task tracking or temporary work notes here:
 
-- aktif isler `tasks/active/`
-- tamamlanan gorev kayitlari `tasks/done/`
-- eski planlar ve artik kanonik olmayan notlar `archive/`
+- active work goes in `tasks/active/`
+- completed task records go in `tasks/done/`
+- old plans and notes that are no longer canonical go in `archive/`
 
-Not:
+Note:
 
-- `benchmarks/README.md` benchmark klasoruyle birlikte duran ozel bir kullanim
-  rehberidir; benchmark materyaline yakin kalmasi gerekip gerekmedigi
-  `tasks/needs-review.md` icinde izlenir.
+- `benchmarks/README.md` is a dedicated usage guide that lives alongside the benchmark
+  directory; whether it needs to stay close to benchmark material is tracked in
+  `tasks/needs-review.md`.

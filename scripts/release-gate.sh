@@ -85,7 +85,7 @@ cat > "$POLICY_EXAMPLE" <<'EOF'
   ]
 }
 EOF
-check "  policy validate (JSON)" "$CB_PYTHON" -m claude_bridge policy validate --path "$POLICY_EXAMPLE"
+check "  policy validate (JSON)" "$CB_PYTHON" -m claude_bridge.cli policy validate --path "$POLICY_EXAMPLE"
 
 POLICY_YAML_EXAMPLE=$(mktemp /tmp/cb-policy-XXXXXX.yaml)
 cat > "$POLICY_YAML_EXAMPLE" <<'EOF'
@@ -99,14 +99,14 @@ rules:
     action: deny
     message: "rm -rf is not allowed"
 EOF
-check_optional "  policy validate (YAML)" "$CB_PYTHON" -m claude_bridge policy validate --path "$POLICY_YAML_EXAMPLE"
+check_optional "  policy validate (YAML)" "$CB_PYTHON" -m claude_bridge.cli policy validate --path "$POLICY_YAML_EXAMPLE"
 rm -f "$POLICY_EXAMPLE" "$POLICY_YAML_EXAMPLE"
 
 # --- Audit replay smoke ---
 echo ""
 echo "[4/6] Audit & Replay Smoke"
-check "  audit summary" "$CB_PYTHON" -m claude_bridge audit summary
-check "  replay --help" "$CB_PYTHON" -m claude_bridge replay --help
+check "  audit summary" "$CB_PYTHON" -m claude_bridge.cli audit summary
+check "  replay --help" "$CB_PYTHON" -m claude_bridge.cli replay --help
 
 # --- Package metadata ---
 echo ""
@@ -123,6 +123,8 @@ with open('pyproject.toml', 'rb') as f:
     d = tomllib.load(f)
 assert d['project']['version']
 "
+check_optional "  build package" "$CB_PYTHON" -m build --no-isolation
+check_optional "  twine check dist/*" "$CB_PYTHON" -m twine check dist/*
 
 # --- Import smoke ---
 echo ""
@@ -130,6 +132,7 @@ echo "[6/6] Import Smoke"
 check "  import claude_bridge" "$CB_PYTHON" -c "import claude_bridge"
 check "  import cli" "$CB_PYTHON" -c "from claude_bridge.cli import main"
 check "  import server" "$CB_PYTHON" -c "from claude_bridge.server import mcp"
+check "  python -m claude_bridge --help" "$CB_PYTHON" -m claude_bridge --help
 
 echo ""
 echo "============================================"

@@ -309,3 +309,29 @@ class TestToolRequestContext:
         parsed = json.loads(raw)
         assert parsed["role"] == "junior"
         assert parsed["user"] == "dev-1"
+
+
+class TestLoadGuardPolicyCache:
+    def test_cache_invalidated_on_file_change(self, tmp_path, monkeypatch):
+        import time
+        from claude_bridge.guard_policy import (
+            _invalidate_policy_cache,
+            load_guard_policy,
+        )
+
+        policy_file = tmp_path / ".claude-bridge-guard.json"
+        policy_file.write_text('{"blocked_shell_patterns": ["old"]}')
+        monkeypatch.setenv("CLAUDE_BRIDGE_GUARD_POLICY", str(policy_file))
+        _invalidate_policy_cache()
+
+        first = load_guard_policy()
+        assert "old" in first["blocked_shell_patterns"]
+
+        # Wait briefly so mtime changes, then update file
+        time.sleep(0.05)
+        policy_file.write_text('{"blocked_shell_patterns": ["new"]}')
+        _invalidate_policy_cache()
+
+        second = load_guard_policy()
+        assert "new" in second["blocked_shell_patterns"]
+        assert "old" not in second["blocked_shell_patterns"]

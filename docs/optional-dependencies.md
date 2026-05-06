@@ -1,21 +1,20 @@
 # Optional Dependencies
 
-Claude Bridge core kurulumu opsiyonel paketler olmadan calisabilmelidir.
-Opsiyonel ozellikler runtime'da graceful fallback yapmali ve `mypy src`
-core ortamda import hatasi uretmemelidir.
+The Claude Bridge core installation should be able to run without optional packages.
+Optional features must perform graceful fallback at runtime, and `mypy src`
+must not produce import errors in the core environment.
 
 ## Pattern
 
-Opsiyonel importlarda tercih edilen desen:
+The preferred pattern for optional imports:
 
-1. Public olmayan typed degiskeni once `None` olarak tanimla.
-2. Import edilen sembolu farkli bir alias ile al.
-3. Basarili importtan sonra typed degiskene ata.
-4. `# type: ignore[import-not-found]` yorumunu yalniz opsiyonel import satirinda
-   kullan.
-5. Runtime kullanimindan once availability flag veya `None` kontrolu yap.
+1. Declare a non-public typed variable initialized to `None`.
+2. Import the desired symbol under a different alias.
+3. After a successful import, assign it to the typed variable.
+4. Use the `# type: ignore[import-not-found]` comment only on the optional import line.
+5. Before runtime usage, check the availability flag or perform a `None` check.
 
-Ornek:
+Example:
 
 ```python
 from typing import Any, Callable
@@ -33,13 +32,13 @@ except ImportError:
     pass
 ```
 
-## Doctor Kontrolleri
+## Doctor Checks
 
-`claude-bridge doctor` su opsiyonel alanlari gorunur kilar:
+`claude-bridge doctor` surfaces the following optional areas:
 
 - dev toolchain: `pytest`, `pytest-asyncio`, `ruff`, `black`, `mypy`
 - smart extra: `tiktoken`, `charset_normalizer`
 - indexing extra: `tree_sitter_language_pack`
 
-Eksik opsiyonel paketler core kullanim icin hata sayilmaz; doctor ciktisi ilgili
-extra kurulum komutunu gostermelidir.
+Missing optional packages are not treated as errors for core usage; the doctor output should
+display the relevant extra installation command.

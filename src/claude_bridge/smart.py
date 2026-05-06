@@ -26,37 +26,25 @@ _WORD_RE = re.compile(r"[A-Za-z0-9_./-]+", re.UNICODE)
 _STOPWORDS = {
     "a",
     "and",
-    "bir",
-    "bu",
-    "da",
-    "de",
-    "daha",
     "for",
-    "gibi",
     "i",
-    "ile",
-    "için",
     "in",
     "is",
     "it",
-    "mi",
-    "ne",
     "of",
     "or",
     "the",
     "to",
-    "ve",
-    "ya",
 }
 _MODE_HINTS = {
-    "review": {"review", "incele", "kritik", "shadow"},
-    "optimize": {"optimize", "optimization", "performans", "hiz", "speed"},
+    "review": {"review", "critical", "shadow"},
+    "optimize": {"optimize", "optimization", "performance", "speed"},
     "test": {"test", "pytest", "unit", "regression"},
-    "explain": {"explain", "acikla", "açıkla", "anlat"},
-    "compact": {"compact", "daralt", "özet", "ozet", "cheap", "ucuz"},
+    "explain": {"explain", "describe", "walkthrough"},
+    "compact": {"compact", "summary", "cheap", "budget"},
     "platform": {"platform", "linux", "windows", "vscode", "visual", "studio"},
     "benchmark": {"benchmark", "latency", "startup", "profiling"},
-    "fix": {"fix", "bug", "hata", "duzelt", "düzelt"},
+    "fix": {"fix", "bug", "patch", "resolve"},
 }
 try:
     from charset_normalizer import (  # type: ignore[import-not-found]
@@ -229,7 +217,7 @@ def compact_intent(
     constraints = [
         label
         for label, markers in (
-            ("low_cost", {"token", "ucuz", "cheap", "compact", "budget"}),
+            ("low_cost", {"token", "cheap", "compact", "budget"}),
             ("cross_platform", {"linux", "windows", "vscode", "platform"}),
             ("tests", {"test", "pytest", "regression"}),
         )

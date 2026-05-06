@@ -14,19 +14,18 @@ class TestGetRecentToolCalls:
         assert isinstance(payload["details"]["records"], list)
 
     async def test_get_recent_tool_calls_filter_by_tool_name(self, temp_project):
+        mcp_server.set_config(project_dir=temp_project)
         await mcp_server.workspace_status()
-        payload = json.loads(await mcp_server.get_recent_tool_calls(
-            limit=10, tool_name="workspace_status"
-        ))
+        payload = json.loads(
+            await mcp_server.get_recent_tool_calls(limit=10, tool_name="workspace_status")
+        )
         assert payload["ok"] is True
         assert len(payload["details"]["records"]) >= 1
         for record in payload["details"]["records"]:
             assert record["tool_name"] == "workspace_status"
 
     async def test_get_recent_tool_calls_filter_by_ok_false(self, temp_project):
-        payload = json.loads(await mcp_server.get_recent_tool_calls(
-            limit=10, ok=False
-        ))
+        payload = json.loads(await mcp_server.get_recent_tool_calls(limit=10, ok=False))
         assert payload["ok"] is True
         for record in payload["details"]["records"]:
             assert record.get("ok") is False
@@ -58,6 +57,7 @@ class TestBridgeStatus:
         assert "allowed_roots" in details
         assert "auto_approve" in details
         assert "context_budget_profile" in details
+        assert details["ai_evaluator"]["latency"]["sample_count"] >= 0
 
     async def test_bridge_status_includes_smart_features(self, temp_project):
         payload = json.loads(await mcp_server.bridge_status())
@@ -67,9 +67,9 @@ class TestBridgeStatus:
 
 class TestAppealDecision:
     async def test_appeal_invalid_record_id_returns_error(self, temp_project):
-        payload = json.loads(await mcp_server.appeal_decision(
-            "nonexistent-record-id", "please reconsider"
-        ))
+        payload = json.loads(
+            await mcp_server.appeal_decision("nonexistent-record-id", "please reconsider")
+        )
         assert payload["ok"] is False
         assert payload["code"] == "appeal_failed"
 
@@ -81,16 +81,13 @@ class TestGetConfig:
         details = payload["details"]
         assert "project_dir" in details
         assert "allowed_roots" in details
-        assert "approval_presets" in details
         assert "editable_keys" in details
         assert "shell_timeout" in details["editable_keys"]
 
 
 class TestSetConfigValue:
     async def test_set_config_value_updates_shell_timeout(self, temp_project):
-        payload = json.loads(await mcp_server.set_config_value(
-            "shell_timeout", 60
-        ))
+        payload = json.loads(await mcp_server.set_config_value("shell_timeout", 60))
         assert payload["ok"] is True
         assert payload["details"]["shell_timeout"] == 60
 

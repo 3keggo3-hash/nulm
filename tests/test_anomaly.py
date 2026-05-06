@@ -621,23 +621,28 @@ class TestComputeAnomalyScores:
 
 class TestBuildAnomalySummary:
     def test_empty_records(self):
-        summary = build_anomaly_summary(
-            records=[], session_id="test-session", limit=50
-        )
+        summary = build_anomaly_summary(records=[], session_id="test-session", limit=50)
         assert summary["session_id"] == "test-session"
         assert summary["total_records_scanned"] == 0
         assert summary["anomaly_scores"] == []
         assert summary["critical_count"] == 0
         assert summary["overall_level"] == "normal"
+        assert summary["recommended_action"] == "log"
+        assert summary["runtime_policy"]["mode"] == "warn_and_log"
+        assert summary["runtime_policy"]["enforced"] is False
+        assert summary["baseline"]["enabled"] is False
         assert summary["policy_decisions"] == []
 
     def test_summary_includes_mvp_limits(self):
-        summary = build_anomaly_summary(
-            records=[], session_id="test", limit=10
-        )
+        summary = build_anomaly_summary(records=[], session_id="test", limit=10)
         assert "mvp_limits" in summary
         assert summary["mvp_limits"]["scope"] == "rule-based, no ML model"
-        assert len(summary["mvp_limits"]["rules"]) == 5
+        assert len(summary["mvp_limits"]["rules"]) == 10
+        assert "exfiltration_pattern" in summary["mvp_limits"]["rules"]
+        assert "privilege_escalation_attempt" in summary["mvp_limits"]["rules"]
+        assert "command_pattern_anomaly" in summary["mvp_limits"]["rules"]
+        assert "path_anomaly" in summary["mvp_limits"]["rules"]
+        assert "volume_anomaly" in summary["mvp_limits"]["rules"]
 
     def test_critical_record_includes_policy_metadata(self):
         records = [
@@ -672,9 +677,7 @@ class TestBuildAnomalySummary:
                 "decision_reason": "system file access blocked",
             },
         ]
-        summary = build_anomaly_summary(
-            records=records, session_id="sess-1", limit=50
-        )
+        summary = build_anomaly_summary(records=records, session_id="sess-1", limit=50)
         assert summary["critical_count"] > 0
         assert len(summary["policy_decisions"]) > 0
         pd = summary["policy_decisions"][0]
@@ -694,9 +697,7 @@ class TestBuildAnomalySummary:
             }
             for i in range(100)
         ]
-        summary = build_anomaly_summary(
-            records=records, session_id="sess", limit=10
-        )
+        summary = build_anomaly_summary(records=records, session_id="sess", limit=10)
         assert summary["total_records_scanned"] == 10
 
     def test_normal_records_no_critical(self):
@@ -711,9 +712,7 @@ class TestBuildAnomalySummary:
             }
             for i in range(5)
         ]
-        summary = build_anomaly_summary(
-            records=records, session_id="sess", limit=50
-        )
+        summary = build_anomaly_summary(records=records, session_id="sess", limit=50)
         assert summary["critical_count"] == 0
         assert summary["policy_decisions"] == []
         assert summary["overall_level"] in ("normal", "low", "medium")

@@ -379,7 +379,11 @@ def explore_approaches(problem: str, count: int = 3) -> dict[str, Any]:
     """
     keywords = _detect_keywords(problem)
     if not keywords:
-        return {"ok": False, "message": "No relevant keywords found in problem description.", "approaches": []}
+        return {
+            "ok": False,
+            "message": "No relevant keywords found in problem description.",
+            "approaches": [],
+        }
 
     candidates: list[dict[str, Any]] = []
     seen_names: set[str] = set()
@@ -445,7 +449,12 @@ def compare_approaches(approach_ids: list[str]) -> dict[str, Any]:
             missing.append(aid)
 
     if not approaches:
-        return {"ok": False, "message": "None of the requested approaches were found.", "approaches": [], "missing": missing}
+        return {
+            "ok": False,
+            "message": "None of the requested approaches were found.",
+            "approaches": [],
+            "missing": missing,
+        }
 
     complexity_rank = {"low": 0, "medium": 1, "high": 2}
 
@@ -457,7 +466,9 @@ def compare_approaches(approach_ids: list[str]) -> dict[str, Any]:
 
     comparison: dict[str, Any] = {
         "compared_approaches": approaches,
-        "complexity_levels": {a.get("name", a.get("id", "?")): a.get("complexity") for a in approaches},
+        "complexity_levels": {
+            a.get("name", a.get("id", "?")): a.get("complexity") for a in approaches
+        },
         "best_recommendation": {
             "id": best.get("id"),
             "name": best.get("name"),

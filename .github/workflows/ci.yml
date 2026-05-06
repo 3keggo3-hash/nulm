@@ -45,4 +45,4 @@ jobs:
         run: mypy src
 
       - name: Test with pytest
-        run: pytest -q --tb=short
+        run: pytest -q --tb=short --cov=claude_bridge --cov-report=term-missing

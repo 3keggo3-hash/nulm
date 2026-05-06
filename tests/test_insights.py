@@ -20,9 +20,7 @@ class TestProjectInsights:
         assert payload["ok"] is True
         assert payload["details"]["total_files"] >= 2
         assert payload["details"]["total_code_lines"] >= 5
-        assert any(
-            lang["language"] == "Python" for lang in payload["details"]["languages"]
-        )
+        assert any(lang["language"] == "Python" for lang in payload["details"]["languages"])
 
     async def test_project_stats_counts_lines_and_files(self, temp_project):
         (temp_project / "module.py").write_text("x = 1\ny = 2\nz = 3\n")

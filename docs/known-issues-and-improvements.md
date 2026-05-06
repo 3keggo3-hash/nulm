@@ -1,129 +1,106 @@
-# Claude Bridge — Bilinen Eksiklikler ve İyileştirme Planı
+# Known Issues and Improvement Plan
 
-Bu doküman, kod incelemeleri ve test analizleri sonucunda tespit edilen eksiklikleri ve çözüm önerilerini içerir.
-
----
-
-## Yüksek Öncelik
-
-### 1. Shell kara liste bypass vektörleri
-
-**Mevcut durum:** `shlex.split` + token bazlı analiz var ama sadece isim bazlı kontrol yapılıyor.
-
-**Eksik vektörler:**
-- `env python3`, `env bash` gibi indirection
-- `fish`, `ksh`, `tcsh`, `elvish`, `nushell` interactive shell'leri listede yok
-- Tam path ile çağrı: `/usr/bin/bash`, `/usr/local/bin/fish`
-- `python3 -c 'import os; os.system("bash")'` inline komutlar
-
-**Çözüm önerisi:**
-- `_INTERACTIVE_COMMANDS` listesine `fish`, `ksh`, `tcsh`, `elvish`, `nushell` ekle
-- `analyze_shell_command`'a ilk token'ın basename'ini çıkaran normalizasyon ekle (tam path → basename)
-- `env` prefix'i için özel kontrol: `env <shell>` pattern'ini tespit et
-
-**Etkilenecek dosyalar:** `src/claude_bridge/shell_tools.py`, `tests/test_security.py`
-
-### 2. Output truncation semantik bütünlüğü
-
-**Mevcut durum:** `_MAX_SHELL_OUTPUT_CHARS = 12000` ile kesiliyor, `[truncated X chars]` mesajı var ama LLM'in buna dikkat etmesi garanti değil.
-
-**Risk:** Model kesik çıktıyı tam sanıp yanlış karar verebilir.
-
-**Çözüm önerisi:**
-- Truncation sonrası output'u her zaman `TRUNCATED` ile işaretle
-- Tool description'larından zaten "large output may be truncated" mesajı var ama Claude'a yönlendirici description'ı güçlendir
-- İsteğe bağlı: truncation sonrası tail/offset kullanımı öneren bir metadata alanı ekle
-
-**Etkilenecek dosyalar:** `src/claude_bridge/shell_tools.py`
+This document lists known gaps identified through code reviews and test analysis, along with proposed solutions.
 
 ---
 
-## Orta Öncelik
+## High Priority
 
-### 3. Global state lock tutarsızlığı
+### 1. Anomaly baseline runtime policy
 
-**Mevcut durum:** `file_tools.py`'de `_LAST_BRIDGE_CHANGE` `threading.Lock()`, `config.py`'de `_CONFIG` `threading.RLock()` kullanıyor. Koordinasyonsuz.
+**Current state:** Anomaly scoring and baseline-backed rules exist. Runtime behavior for v0.1 is
+intentionally `warn_and_log`: scores are visible in audit/summary, but do not modify guard decisions.
 
-**Risk:** Çok session kullanımında race condition potansiyeli.
+**Open decision:**
+- Should `ask` / `deny` enforcement thresholds be configurable in v0.2 or later?
+- If enforcement is enabled, what audit detail and appeal flow must be mandatory?
 
-**Çözüm önerisi:**
-- Tek bir merkezi lock modülü oluştur (`src/claude_bridge/state.py`)
-- Tüm global mutable state bu modülden yönetilsin
-- Ya da: şu an single-threaded MCP stdio akışında bu pratikte sorun yaratmıyor; belgele ve izle
-
-**Etkilenecek dosyalar:** `src/claude_bridge/tool_utils.py` veya yeni `state.py`
-
-### 4. server.py God Object eğilimi
-
-**Mevcut durum:** `server.py` ~1060 satır, tüm MCP tool registration tek dosyada.
-
-**Çözüm önerisi:**
-- Tool'ları kategoriye göre ayır: `file_server.py`, `shell_server.py`, `meta_server.py`, `workflow_server.py`
-- Her modül kendi tool'larını `mcp` instance'ına kaydetsin
-- `server.py` sadece `mcp = FastMCP(...)` ve `run_mcp_server()` içersin
-
-**Etkilenecek dosyalar:** `src/claude_bridge/server.py`, `src/claude_bridge/mcp_server.py`
-
-### 5. Disk cache boyut kotası
-
-**Mevcut durum:** `_prune_workflow_disk_cache` sadece dosya sayısını (64) sınırlandırıyor, boyut bilmiyor.
-
-**Çözüm önerisi:**
-- Cache dosyaları için toplam boyut limiti ekle (örn. 50MB)
-- En eski/eksik dosyaları temizle
-- Her cache yazımında kontrol
-
-**Etkilenecek dosyalar:** `src/claude_bridge/workflow_tools.py`
-
-### 6. client_managed_approval=True test eksikliği
-
-**Mevcut durum:** `auto_approve=False, client_managed_approval=False` test ediliyor ama gerçek `client_managed_approval=True` akışı mock ile test edilmemiş.
-
-**Çözüm önerisi:**
-- Mock approval handler ile `client_managed_approval=True` senaryosunu test et
-- CLI ve MCP seviyesinde doğrulama
-
-**Etkilenecek dosyalar:** `tests/test_security.py`, `tests/test_protocol.py`
+**Affected files:** `src/claude_bridge/anomaly.py`, policy/guard integration tests
 
 ---
 
-## Düşük Öncelik
+## Medium Priority
 
-### 7. Python 3.8 tree-sitter uyumluluğu
+### 2. Global state lock inconsistency
 
-**Mevcut durum:** `requires-python = ">=3.8"` ama `[treesitter]` extras'ı 3.8'de test edilmemiş.
+**Current state:** `file_tools.py` uses `_LAST_BRIDGE_CHANGE` with `threading.Lock()`, `config.py`
+uses `_CONFIG` with `threading.RLock()`. No coordination.
 
-**Çözüm önerisi:**
-- CI matrisine Python 3.8 ekle (treesitter optional)
-- Ya da: minimum Python sürümünü 3.9'a çıkar (zaten `from __future__ import annotations` kullanılıyor)
+**Risk:** Race condition potential under multi-session usage.
 
-### 8. test_protocol.py büyüklüğü
+**Proposed solution:**
+- Create a single central lock module (`src/claude_bridge/state.py`)
+- All global mutable state managed through this module
+- Or: document that single-threaded MCP stdio flow makes this a non-issue in practice
 
-**Mevcut durum:** 2118 satır, tek dosyada tüm MCP tool testleri.
+**Affected files:** `src/claude_bridge/tool_utils.py` or new `state.py`
 
-**Çözüm önerisi:**
-- Kategoriye göre böl: `test_file_tools.py`, `test_shell_tools.py`, `test_meta_tools.py`, `test_workflow_tools.py`
-- Shared fixtures `conftest.py`'de
+### 3. server.py God Object tendency
 
-### 9. Parallel test izolasyonu
+**Current state:** `server.py` ~1060 lines, all MCP tool registration in a single file.
 
-**Mevcut durum:** Global state (mcp_server.set_config) paralel testte (pytest-xdist) problem yaratır.
+**Proposed solution:**
+- Split tools by category: `file_server.py`, `shell_server.py`, `meta_server.py`, `workflow_server.py`
+- Each module registers its own tools on the `mcp` instance
+- `server.py` contains only `mcp = FastMCP(...)` and `run_mcp_server()`
 
-**Çözüm önerisi:**
-- Fixture'lar her testten sonra state'i reset etsin
-- Ya da: xdist kullanmama politikası belgelenmiş olsun
+**Affected files:** `src/claude_bridge/server.py`, `src/claude_bridge/mcp_server.py`
+
+### 4. Disk cache size quota
+
+**Current state:** `_prune_workflow_disk_cache` only limits file count (64), not total size.
+
+**Proposed solution:**
+- Add total size limit for cache files (e.g., 50MB)
+- Clean oldest files when quota exceeded
+- Check on every cache write
+
+**Affected files:** `src/claude_bridge/workflow_tools.py`
+
+### 5. client_managed_approval real client contract
+
+**Current state:** Server tool path is tested for `client_managed_approval=True` mode for write/shell.
+This mode assumes the MCP client actually implements an approval UI.
+
+**Remaining risk:** Not all MCP clients implement approval semantics identically.
+
+**Proposed solution:**
+- Keep README/security docs clear that this is a client contract
+- Add manual smoke guide for non-Claude Desktop clients
 
 ---
 
-## Çözüldü / Kısmen Çözüldü
+## Low Priority
 
-- **power-user auto_approve riski** → Audit logging (Paket 2) ile kısmen çözüldü
-- **Python 3.8 annotations** → `from __future__ import annotations` ile çözüldü
-- **Async test dekoratörü eksikliği** → `asyncio_mode = "auto"` pyproject.toml'da mevcut, sorun yok
+### 6. test_protocol.py size
+
+**Current state:** 2118 lines, all MCP tool tests in a single file.
+
+**Proposed solution:**
+- Split by category: `test_file_tools.py`, `test_shell_tools.py`, `test_meta_tools.py`, `test_workflow_tools.py`
+- Shared fixtures in `conftest.py`
+
+### 7. Parallel test isolation
+
+**Current state:** Global state (`mcp_server.set_config`) causes issues with parallel testing (pytest-xdist).
+
+**Proposed solution:**
+- Fixtures reset state after each test
+- Or: document no-xdist policy
 
 ---
 
-## Kaynaklar
+## Resolved / Partially Resolved
 
-- Claude Code kod incelemesi (2026-04-29)
-- DesktopCommanderMCP karşılaştırma analizi
+- **power-user auto_approve risk** → Partially resolved with audit logging
+- **Python 3.8 annotations** → Closed by moving minimum to Python 3.10+
+- **Missing async test decorator** → `asyncio_mode = "auto"` in pyproject.toml, no issue
+- **Shell blocklist bypass vectors** → basename/full-path/env normalization and extended shell list added
+- **Output truncation semantic integrity** → `TRUNCATED:` marker added when shell output is cut
+
+---
+
+## References
+
+- Claude Code review (2026-04-29)
+- DesktopCommanderMCP comparison analysis

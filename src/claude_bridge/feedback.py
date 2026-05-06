@@ -43,9 +43,7 @@ def send_feedback_impl(
     _feedback_dir().mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex[:8]}_{timestamp}.json"
     filepath = _feedback_dir() / filename
-    filepath.write_text(
-        json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    filepath.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     return {
         "ok": True,

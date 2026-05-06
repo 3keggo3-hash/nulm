@@ -12,9 +12,7 @@ from claude_bridge.benchmarking import compare_benchmark_to_baseline
 from claude_bridge.benchmarking import load_benchmark_profile
 from claude_bridge.benchmarking import run_index_and_relevance_benchmark
 
-
 runner = CliRunner()
-pytest_plugins = ("tests.helpers",)
 
 
 def _seed_benchmark_project(project: Path, *, files_per_group: int = 20) -> None:
@@ -30,18 +28,16 @@ def _seed_benchmark_project(project: Path, *, files_per_group: int = 20) -> None
             "class AuthService:\n"
             "    pass\n\n"
             "def login_user(email: str) -> bool:\n"
-            "    \"\"\"Create a session for a login.\"\"\"\n"
+            '    """Create a session for a login."""\n'
             "    return True\n",
             encoding="utf-8",
         )
         (session_dir / f"session_store_{index:02d}.py").write_text(
-            "def create_session(user_id: str) -> str:\n"
-            "    return user_id\n",
+            "def create_session(user_id: str) -> str:\n" "    return user_id\n",
             encoding="utf-8",
         )
         (billing_dir / f"payments_{index:02d}.py").write_text(
-            "def charge_card() -> bool:\n"
-            "    return True\n",
+            "def charge_card() -> bool:\n" "    return True\n",
             encoding="utf-8",
         )
 

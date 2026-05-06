@@ -1,28 +1,28 @@
 # Benchmarking
 
-Claude Bridge artık indeksleme ve relevans regresyonlarını ölçmek için tekrar çalıştırılabilir bir benchmark komutu içerir.
+Claude Bridge now includes a repeatable benchmark command to measure indexing and relevance regressions.
 
-## Hızlı kullanım
+## Quick Usage
 
 ```bash
 claude-bridge benchmark --project-dir . --path src --query "auth session login"
 ```
 
-Makine-okunur çıktı için:
+For machine-readable output:
 
 ```bash
 claude-bridge benchmark --project-dir . --path src --query "auth session login" --json
 ```
 
-Profil dosyasıyla çalıştırmak için:
+To run with a profile file:
 
 ```bash
 claude-bridge benchmark --project-dir /path/to/repo --profile-file benchmarks/profiles/django_auth.json
 ```
 
-## Baseline karşılaştırması
+## Baseline Comparison
 
-Bir baseline dosyası verirseniz komut süre, minimum dosya sayısı ve beklenen üst sıraları kontrol eder:
+If you provide a baseline file, the command checks duration, minimum file count, and expected top ranks:
 
 ```bash
 claude-bridge benchmark \
@@ -32,18 +32,18 @@ claude-bridge benchmark \
   --baseline-file benchmarks/example_baseline.json
 ```
 
-Profil kullanıyorsanız `baseline_file` profil içinden de otomatik alınabilir.
+When using a profile, `baseline_file` can also be automatically loaded from within the profile.
 
-## Ne ölçülüyor?
+## What Is Measured
 
-- ilk indeksleme süresi
-- tekrar edilen relevans sorgusu süreleri
-- kullanılan parser backend'leri
-- üst sıralı sonuçlar
+- Initial indexing duration
+- Repeated relevance query durations
+- Parser backends used
+- Top-ranked results
 
-## Pratik öneri
+## Practical Tips
 
-- Aynı benchmark'ı birkaç büyük repoda düzenli çalıştırın.
-- Tree-sitter kurulu ve kurulu değil varyantlarını ayrı izleyin.
-- Gerçek bug raporlarından gelen sorguları altın veri setine ekleyin.
-- `benchmarks/profiles/` altındaki açık kaynak repo profillerini yerel clone'larınızla doldurup baseline'ları gerçek ölçümlerle güncelleyin.
+- Run the same benchmark regularly across a few large repositories.
+- Track variants with and without Tree-sitter installed separately.
+- Add queries from real bug reports to your golden dataset.
+- Populate the open-source repository profiles under `benchmarks/profiles/` with your local clones and update baselines with real measurements.

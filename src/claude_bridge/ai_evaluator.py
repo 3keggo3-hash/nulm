@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import socket
+import time
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,6 +25,8 @@ from claude_bridge.guard_policy import (
     ToolRequestContext,
 )
 from claude_bridge.tool_utils import _mask_secrets
+
+_AI_LATENCY_SAMPLES_MS: deque[float] = deque(maxlen=100)
 
 
 class EvaluationAction(str, Enum):
@@ -150,6 +157,35 @@ class Provider(ABC):
 _VALID_ACTIONS: frozenset[str] = frozenset(e.value for e in EvaluationAction)
 
 
+def _record_ai_latency(duration_ms: float) -> None:
+    _AI_LATENCY_SAMPLES_MS.append(duration_ms)
+
+
+def reset_ai_latency_samples() -> None:
+    """Clear in-memory AI evaluator latency samples."""
+    _AI_LATENCY_SAMPLES_MS.clear()
+
+
+def ai_latency_summary() -> dict[str, Any]:
+    """Return a compact summary of recent AI evaluator latency samples."""
+    samples = list(_AI_LATENCY_SAMPLES_MS)
+    if not samples:
+        return {
+            "sample_count": 0,
+            "last_ms": None,
+            "avg_ms": None,
+            "p95_ms": None,
+        }
+    ordered = sorted(samples)
+    p95_index = min(len(ordered) - 1, int(0.95 * (len(ordered) - 1)))
+    return {
+        "sample_count": len(samples),
+        "last_ms": round(samples[-1], 3),
+        "avg_ms": round(sum(samples) / len(samples), 3),
+        "p95_ms": round(ordered[p95_index], 3),
+    }
+
+
 def parse_evaluation_response(raw: str) -> EvaluationResponse:
     """Parse a raw JSON string into an :class:`EvaluationResponse`.
 
@@ -174,9 +210,7 @@ def parse_evaluation_response(raw: str) -> EvaluationResponse:
 
     action_raw = data.get("action")
     if action_raw is None:
-        return EvaluationResponse.fail_closed(
-            reason="Evaluation response missing 'action' field"
-        )
+        return EvaluationResponse.fail_closed(reason="Evaluation response missing 'action' field")
 
     if not isinstance(action_raw, str):
         return EvaluationResponse.fail_closed(
@@ -218,6 +252,58 @@ def parse_evaluation_response(raw: str) -> EvaluationResponse:
 # ---------------------------------------------------------------------------
 
 
+_MASKED_CONTENT_FIELDS = {"content", "search", "replace", "command", "url", "path"}
+
+
+def _mask_evaluation_params(params: dict[str, Any]) -> dict[str, Any]:
+    masked: dict[str, Any] = {}
+    for k, v in params.items():
+        masked_v = _mask_secrets(v)
+        if isinstance(masked_v, str) and len(masked_v) > 200:
+            masked_v = masked_v[:200] + "..."
+        if k in _MASKED_CONTENT_FIELDS and isinstance(masked_v, str) and len(masked_v) > 80:
+            masked_v = masked_v[:80] + "...[masked]"
+        masked[k] = masked_v
+    return masked
+
+
+def create_provider(
+    provider_name: str,
+    *,
+    api_key: str = "",
+    model: str = "",
+    base_url: str = "",
+    timeout: int = 30,
+) -> Provider:
+    if provider_name == "local":
+        return LocalEvaluatorProvider()
+    if provider_name == "anthropic":
+        key = (api_key or os.environ.get("ANTHROPIC_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "Anthropic provider requires an API key (set ANTHROPIC_API_KEY or ai_evaluator_api_key)"
+            )
+        return AnthropicProvider(
+            api_key=key,
+            model=model or "claude-3-haiku-20240307",
+            timeout=timeout,
+        )
+    if provider_name == "openai":
+        key = (api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "OpenAI provider requires an API key (set OPENAI_API_KEY or ai_evaluator_api_key)"
+            )
+        return OpenAIProvider(api_key=key, model=model or "gpt-4o-mini", timeout=timeout)
+    if provider_name == "ollama":
+        return OllamaProvider(
+            base_url=(base_url or "http://localhost:11434").strip(),
+            model=model or "llama3",
+            timeout=timeout,
+        )
+    raise ValueError(f"Unknown provider: {provider_name!r}")
+
+
 class LocalEvaluatorProvider(Provider):
     """A deterministic local evaluator that requires no network.
 
@@ -234,12 +320,8 @@ class LocalEvaluatorProvider(Provider):
         # FIX: use word boundary regex to avoid false positive substring matches
         self._deny_raw = list(deny_patterns or [])
         self._ask_raw = list(ask_patterns or [])
-        self._deny = [
-            re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE) for p in self._deny_raw
-        ]
-        self._ask = [
-            re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE) for p in self._ask_raw
-        ]
+        self._deny = [re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE) for p in self._deny_raw]
+        self._ask = [re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE) for p in self._ask_raw]
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
         for i, pattern in enumerate(self._deny):
@@ -263,32 +345,53 @@ class LocalEvaluatorProvider(Provider):
         )
 
 
+def _provider_error_reason(provider_name: str, exc: Exception) -> str:
+    if isinstance(exc, socket.timeout):
+        return f"{provider_name} timeout"
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code == 429:
+            return f"{provider_name} rate limited (HTTP 429)"
+        return f"{provider_name} HTTP error {exc.code}"
+    if isinstance(exc, urllib.error.URLError):
+        return f"{provider_name} connection error: {exc.reason}"
+    return f"{provider_name} error: {exc}"
+
+
 class AnthropicProvider(Provider):
-    def __init__(self, api_key: str, model: str = "claude-3-haiku-20240307"):
-        self.api_key = api_key
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-haiku-20240307",
+        timeout: int = 30,
+    ):
+        self.api_key = api_key.strip()
         self.model = model
+        self.timeout = timeout
         self._endpoint = "https://api.anthropic.com/v1/messages"
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
-        body = json.dumps({
-            "model": self.model,
-            "max_tokens": 256,
-            "system": (
-                "You are a security evaluator for a CLI tool bridge. "
-                "Determine if the tool call is safe. "
-                'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
-                '"reason": "string"}'
-            ),
-            "messages": [{"role": "user", "content": request.prompt}],
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "model": self.model,
+                "max_tokens": 256,
+                "system": (
+                    "You are a security evaluator for a CLI tool bridge. "
+                    "Determine if the tool call is safe. "
+                    'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
+                    '"reason": "string"}'
+                ),
+                "messages": [{"role": "user", "content": request.prompt}],
+            }
+        ).encode("utf-8")
         try:
             return self._call_api(body)
         except Exception as exc:
-            return EvaluationResponse.fail_closed(reason=f"Anthropic error: {exc}")
+            return EvaluationResponse.fail_closed(reason=_provider_error_reason("Anthropic", exc))
 
     def _call_api(self, body: bytes) -> EvaluationResponse:
         req = urllib.request.Request(
-            self._endpoint, data=body,
+            self._endpoint,
+            data=body,
             headers={
                 "x-api-key": self.api_key,
                 "anthropic-version": "2023-06-01",
@@ -296,105 +399,110 @@ class AnthropicProvider(Provider):
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         content = data.get("content", [{}])[0].get("text", "{}")
         return _parse_json_response(content)
 
 
 class OpenAIProvider(Provider):
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
-        self.api_key = api_key
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        timeout: int = 30,
+    ):
+        self.api_key = api_key.strip()
         self.model = model
+        self.timeout = timeout
         self._endpoint = "https://api.openai.com/v1/chat/completions"
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
-        body = json.dumps({
-            "model": self.model,
-            "max_tokens": 256,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a security evaluator for a CLI tool bridge. "
-                        "Determine if the tool call is safe. "
-                        'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
-                        '"reason": "string"}'
-                    ),
-                },
-                {"role": "user", "content": request.prompt},
-            ],
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "model": self.model,
+                "max_tokens": 256,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a security evaluator for a CLI tool bridge. "
+                            "Determine if the tool call is safe. "
+                            'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
+                            '"reason": "string"}'
+                        ),
+                    },
+                    {"role": "user", "content": request.prompt},
+                ],
+            }
+        ).encode("utf-8")
         try:
             return self._call_api(body)
         except Exception as exc:
-            return EvaluationResponse.fail_closed(reason=f"OpenAI error: {exc}")
+            return EvaluationResponse.fail_closed(reason=_provider_error_reason("OpenAI", exc))
 
     def _call_api(self, body: bytes) -> EvaluationResponse:
         req = urllib.request.Request(
-            self._endpoint, data=body,
+            self._endpoint,
+            data=body,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
 
 
 class OllamaProvider(Provider):
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3"):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "llama3",
+        timeout: int = 30,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.timeout = timeout
         self._endpoint = f"{self.base_url}/api/generate"
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
-        body = json.dumps({
-            "model": self.model,
-            "prompt": (
-                "You are a security evaluator for a CLI tool bridge. "
-                "Determine if the tool call is safe. "
-                'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
-                '"reason": "string"}\n\n'
-                f"Tool request: {request.prompt}"
-            ),
-            "stream": False,
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "model": self.model,
+                "prompt": (
+                    "You are a security evaluator for a CLI tool bridge. "
+                    "Determine if the tool call is safe. "
+                    'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
+                    '"reason": "string"}\n\n'
+                    f"Tool request: {request.prompt}"
+                ),
+                "stream": False,
+            }
+        ).encode("utf-8")
         try:
             return self._call_api(body)
         except Exception as exc:
-            return EvaluationResponse.fail_closed(reason=f"Ollama error: {exc}")
+            return EvaluationResponse.fail_closed(reason=_provider_error_reason("Ollama", exc))
 
     def _call_api(self, body: bytes) -> EvaluationResponse:
         req = urllib.request.Request(
-            self._endpoint, data=body,
+            self._endpoint,
+            data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         content = data.get("response", "{}")
         return _parse_json_response(content)
 
 
 def _parse_json_response(text: str) -> EvaluationResponse:
-    text = text.strip()
-    for candidate in [text]:
-        candidate = candidate.strip()
-        if candidate.startswith("```"):
-            lines = candidate.split("\n")
-            inner = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-            candidate = inner.strip()
-        try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict) and "action" in parsed:
-                return EvaluationResponse.from_dict(parsed)
-        except json.JSONDecodeError:
-            continue
-    return EvaluationResponse.fail_closed(reason="Could not parse AI response as JSON")
+    return parse_evaluation_response(text.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -452,17 +560,18 @@ async def evaluate_with_timeout(
     :class:`EvaluationResponse` is returned.
     """
     loop = asyncio.get_running_loop()
+    started_at = time.perf_counter()
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = loop.run_in_executor(pool, provider.evaluate, request)
         try:
-            result: EvaluationResponse = await asyncio.wait_for(
-                future, timeout=timeout
-            )
+            result: EvaluationResponse = await asyncio.wait_for(future, timeout=timeout)
             return result
         except asyncio.TimeoutError:
             return EvaluationResponse.fail_closed(
                 reason=f"AI evaluator timed out after {timeout} seconds"
             )
+        finally:
+            _record_ai_latency((time.perf_counter() - started_at) * 1000)
 
 
 async def evaluate_tool_with_ai(
@@ -480,12 +589,7 @@ async def evaluate_tool_with_ai(
     """
     if not enabled or provider is None:
         return None
-    masked_params: dict[str, Any] = {}
-    for k, v in ctx.params.items():
-        masked = _mask_secrets(v)
-        if isinstance(masked, str) and len(masked) > 200:
-            masked = masked[:200] + "..."
-        masked_params[k] = masked
+    masked_params = _mask_evaluation_params(dict(ctx.params))
     request = EvaluationRequest(
         prompt=f"Tool: {ctx.tool_name}\nParams: {json.dumps(masked_params)}",
         tool_name=ctx.tool_name,
@@ -495,9 +599,7 @@ async def evaluate_tool_with_ai(
     try:
         resp = await evaluate_with_timeout(provider, request, timeout=timeout)
     except Exception:
-        resp = EvaluationResponse.fail_closed(
-            reason="AI evaluator failed unexpectedly"
-        )
+        resp = EvaluationResponse.fail_closed(reason="AI evaluator failed unexpectedly")
 
     is_fallback_trigger = resp.action == EvaluationAction.ASK and (
         resp.reason.startswith("AI evaluator timed out")
@@ -516,4 +618,8 @@ async def evaluate_tool_with_ai(
             )
         # else keep ASK (fail-closed)
 
-    return evaluation_response_to_policy_decision(resp, ctx=ctx)
+    decision = evaluation_response_to_policy_decision(resp, ctx=ctx)
+    latency = ai_latency_summary().get("last_ms")
+    if latency is not None:
+        decision.metadata["ai_evaluator_latency_ms"] = latency
+    return decision

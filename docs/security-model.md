@@ -21,6 +21,9 @@ client (Claude Desktop, VS Code, etc.) and are processed inside the bridge proce
 - **No cloud component** — all policy evaluation, audit logging, and decision logic runs locally.
 - **Client trust** — the MCP client is trusted with the ability to invoke any tool; the bridge
   enforces policy on each invocation.
+- **Not a sandbox** — shell commands and file operations run as the invoking local user. Claude
+  Bridge adds policy gates, path boundaries, approvals, and auditability; it does not provide an
+  OS/container isolation boundary.
 
 ---
 
@@ -35,6 +38,11 @@ client (Claude Desktop, VS Code, etc.) and are processed inside the bridge proce
 
 The mode is set via `--approval-preset` or individual `--auto-approve` / `--client-managed-approval`
 flags at startup or through environment variables.
+
+`client_managed_approval=true` means the MCP client is expected to show and enforce approval prompts
+before invoking destructive tools. Claude Bridge treats that client-side approval contract as
+satisfied; clients without equivalent approval handling should use read-only mode or fail-closed
+defaults instead.
 
 ---
 

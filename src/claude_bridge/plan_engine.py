@@ -115,9 +115,7 @@ def execute_step(plan_id: str, step_id: int) -> dict[str, Any]:
     step["status"] = "completed"
     step["completed_at"] = now
 
-    plan["completed_steps"] = sum(
-        1 for s in steps if s.get("status") == "completed"
-    )
+    plan["completed_steps"] = sum(1 for s in steps if s.get("status") == "completed")
     if plan["completed_steps"] >= plan["total_steps"]:
         plan["status"] = "completed"
 

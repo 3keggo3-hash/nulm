@@ -325,9 +325,7 @@ class TestWriteFile:
     async def test_overwrite_existing(self, temp_project):
         target = temp_project / "existing.txt"
         target.write_text("old")
-        result = parse_payload(
-            await ft.write_file("existing.txt", "new", overwrite=True)
-        )
+        result = parse_payload(await ft.write_file("existing.txt", "new", overwrite=True))
         assert result["ok"] is True
         assert target.read_text() == "new"
 
@@ -335,26 +333,20 @@ class TestWriteFile:
     async def test_refuses_existing_without_overwrite(self, temp_project):
         target = temp_project / "existing.txt"
         target.write_text("old")
-        result = parse_payload(
-            await ft.write_file("existing.txt", "new", overwrite=False)
-        )
+        result = parse_payload(await ft.write_file("existing.txt", "new", overwrite=False))
         assert result["ok"] is False
         assert result["code"] == "file_exists"
 
     @pytest.mark.asyncio
     async def test_creates_parents(self, temp_project):
-        result = parse_payload(
-            await ft.write_file("sub/dir/file.txt", "data", create_parents=True)
-        )
+        result = parse_payload(await ft.write_file("sub/dir/file.txt", "data", create_parents=True))
         assert result["ok"] is True
         assert (temp_project / "sub" / "dir" / "file.txt").read_text() == "data"
 
     @pytest.mark.asyncio
     async def test_directory_target(self, temp_project):
         (temp_project / "subdir").mkdir()
-        result = parse_payload(
-            await ft.write_file("subdir", "x", overwrite=True)
-        )
+        result = parse_payload(await ft.write_file("subdir", "x", overwrite=True))
         assert result["ok"] is False
         assert result["code"] == "not_a_file"
 
@@ -380,18 +372,14 @@ class TestMoveFile:
     async def test_basic_move(self, temp_project):
         src = temp_project / "src.txt"
         src.write_text("data")
-        result = parse_payload(
-            await ft.move_file("src.txt", "dst.txt")
-        )
+        result = parse_payload(await ft.move_file("src.txt", "dst.txt"))
         assert result["ok"] is True
         assert not src.exists()
         assert (temp_project / "dst.txt").read_text() == "data"
 
     @pytest.mark.asyncio
     async def test_source_not_found(self, temp_project):
-        result = parse_payload(
-            await ft.move_file("missing.txt", "dst.txt")
-        )
+        result = parse_payload(await ft.move_file("missing.txt", "dst.txt"))
         assert result["ok"] is False
         assert result["code"] == "source_not_found"
 
@@ -401,9 +389,7 @@ class TestMoveFile:
         dst = temp_project / "dst.txt"
         src.write_text("a")
         dst.write_text("b")
-        result = parse_payload(
-            await ft.move_file("src.txt", "dst.txt", overwrite=False)
-        )
+        result = parse_payload(await ft.move_file("src.txt", "dst.txt", overwrite=False))
         assert result["ok"] is False
         assert result["code"] == "destination_exists"
 
@@ -413,9 +399,7 @@ class TestMoveFile:
         dst = temp_project / "dst.txt"
         src.write_text("a")
         dst.write_text("b")
-        result = parse_payload(
-            await ft.move_file("src.txt", "dst.txt", overwrite=True)
-        )
+        result = parse_payload(await ft.move_file("src.txt", "dst.txt", overwrite=True))
         assert result["ok"] is True
         assert (temp_project / "dst.txt").read_text() == "a"
 
@@ -423,11 +407,38 @@ class TestMoveFile:
     async def test_create_parents_for_move(self, temp_project):
         src = temp_project / "src.txt"
         src.write_text("data")
-        result = parse_payload(
-            await ft.move_file("src.txt", "sub/dst.txt", create_parents=True)
-        )
+        result = parse_payload(await ft.move_file("src.txt", "sub/dst.txt", create_parents=True))
         assert result["ok"] is True
         assert (temp_project / "sub" / "dst.txt").read_text() == "data"
+
+    @pytest.mark.asyncio
+    async def test_move_between_allowed_roots_records_each_git_root(self, temp_project):
+        other_root = temp_project.parent / f"{temp_project.name}-other-root"
+        other_root.mkdir()
+        mcp_server.set_config(
+            project_dir=temp_project,
+            allowed_roots=[temp_project, other_root],
+            auto_approve=True,
+        )
+        src = temp_project / "src.txt"
+        dst = other_root / "dst.txt"
+        src.write_text("data")
+        git_calls = []
+
+        def fake_git_commit(path, *, project_dir, **_kwargs):
+            git_calls.append((path, project_dir))
+            return {"commit": True, "path": path, "project_dir": str(project_dir)}
+
+        result = parse_payload(
+            await ft.move_file("src.txt", str(dst), git_commit_fn=fake_git_commit)
+        )
+
+        assert result["ok"] is True
+        assert dst.read_text() == "data"
+        assert git_calls == [
+            ("src.txt", temp_project.resolve()),
+            ("dst.txt", other_root.resolve()),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -440,9 +451,7 @@ class TestCopyPath:
     async def test_copy_file(self, temp_project):
         src = temp_project / "src.txt"
         src.write_text("data")
-        result = parse_payload(
-            await ft.copy_path("src.txt", "dst.txt")
-        )
+        result = parse_payload(await ft.copy_path("src.txt", "dst.txt"))
         assert result["ok"] is True
         assert (temp_project / "dst.txt").read_text() == "data"
 
@@ -451,17 +460,13 @@ class TestCopyPath:
         src_dir = temp_project / "src_dir"
         src_dir.mkdir()
         (src_dir / "f.txt").write_text("hello")
-        result = parse_payload(
-            await ft.copy_path("src_dir", "dst_dir")
-        )
+        result = parse_payload(await ft.copy_path("src_dir", "dst_dir"))
         assert result["ok"] is True
         assert (temp_project / "dst_dir" / "f.txt").read_text() == "hello"
 
     @pytest.mark.asyncio
     async def test_source_not_found(self, temp_project):
-        result = parse_payload(
-            await ft.copy_path("missing.txt", "dst.txt")
-        )
+        result = parse_payload(await ft.copy_path("missing.txt", "dst.txt"))
         assert result["ok"] is False
         assert result["code"] == "source_not_found"
 
@@ -473,9 +478,7 @@ class TestCopyPath:
         dst_dir = temp_project / "dst_dir"
         dst_dir.mkdir()
         (dst_dir / "old.txt").write_text("old")
-        result = parse_payload(
-            await ft.copy_path("src_dir", "dst_dir", overwrite=True)
-        )
+        result = parse_payload(await ft.copy_path("src_dir", "dst_dir", overwrite=True))
         assert result["ok"] is True
         assert (temp_project / "dst_dir" / "f.txt").read_text() == "hello"
         assert not (temp_project / "dst_dir" / "old.txt").exists()
@@ -490,9 +493,7 @@ class TestCopyPath:
         # For speed, we verify the limit path exists in the code by checking
         # that a directory with no files passes. Large size rejection is tested
         # via code review; this test validates the happy path.
-        result = parse_payload(
-            await ft.copy_path("big_dir", "dst_dir")
-        )
+        result = parse_payload(await ft.copy_path("big_dir", "dst_dir"))
         assert result["ok"] is True
 
 
@@ -505,25 +506,19 @@ class TestSearchInFiles:
     @pytest.mark.asyncio
     async def test_basic_search(self, temp_project):
         (temp_project / "code.py").write_text("def foo():\n    return 42\n")
-        result = parse_payload(
-            await ft.search_in_files("foo", path=".")
-        )
+        result = parse_payload(await ft.search_in_files("foo", path="."))
         assert result["ok"] is True
         assert any("foo" in r["line"] for r in result["details"]["results"])
 
     @pytest.mark.asyncio
     async def test_empty_query(self, temp_project):
-        result = parse_payload(
-            await ft.search_in_files("", path=".")
-        )
+        result = parse_payload(await ft.search_in_files("", path="."))
         assert result["ok"] is False
         assert result["code"] == "empty_query"
 
     @pytest.mark.asyncio
     async def test_include_glob_too_long(self, temp_project):
-        result = parse_payload(
-            await ft.search_in_files("x", path=".", include_glob="*" * 300)
-        )
+        result = parse_payload(await ft.search_in_files("x", path=".", include_glob="*" * 300))
         assert result["ok"] is False
         assert result["code"] == "glob_too_long"
 
@@ -538,9 +533,7 @@ class TestPatchFile:
     async def test_basic_patch(self, temp_project):
         target = temp_project / "mod.py"
         target.write_text("x = 1\n")
-        result = parse_payload(
-            await ft.patch_file("mod.py", "x = 1", "x = 2")
-        )
+        result = parse_payload(await ft.patch_file("mod.py", "x = 1", "x = 2"))
         assert result["ok"] is True
         assert target.read_text() == "x = 2\n"
 
@@ -548,11 +541,17 @@ class TestPatchFile:
     async def test_patch_not_found(self, temp_project):
         target = temp_project / "mod.py"
         target.write_text("x = 1\n")
-        result = parse_payload(
-            await ft.patch_file("mod.py", "missing", "replace")
-        )
+        result = parse_payload(await ft.patch_file("mod.py", "missing", "replace"))
         assert result["ok"] is False
         assert result["code"] in ("search_not_found", "search_ambiguous")
+
+    @pytest.mark.asyncio
+    async def test_patch_empty_search_rejected(self, temp_project):
+        target = temp_project / "mod.py"
+        target.write_text("x = 1\n")
+        result = parse_payload(await ft.patch_file("mod.py", "", "y = 2"))
+        assert result["ok"] is False
+        assert result["code"] in ("empty_search", "search_ambiguous", "search_not_found")
 
 
 # ---------------------------------------------------------------------------

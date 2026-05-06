@@ -36,7 +36,9 @@ def run_index_and_relevance_benchmark(
         raise ValueError("limit must be at least 1")
 
     resolved_project_dir = project_dir.resolve()
-    benchmark_path = str((resolved_project_dir / path).resolve()) if path != "." else str(resolved_project_dir)
+    benchmark_path = (
+        str((resolved_project_dir / path).resolve()) if path != "." else str(resolved_project_dir)
+    )
 
     started = time.perf_counter()
     raw_index_payload = build_index(
@@ -110,10 +112,7 @@ def compare_benchmark_to_baseline(
         failures.append(
             f"source_files {current['index_summary']['source_files']} < expected minimum {min_source_files}"
         )
-    if (
-        max_index_duration_ms is not None
-        and current["index_duration_ms"] > max_index_duration_ms
-    ):
+    if max_index_duration_ms is not None and current["index_duration_ms"] > max_index_duration_ms:
         failures.append(
             f"index_duration_ms {current['index_duration_ms']} > baseline {max_index_duration_ms}"
         )
@@ -126,11 +125,11 @@ def compare_benchmark_to_baseline(
             f"{current['query_avg_duration_ms']} > baseline {max_query_avg_duration_ms}"
         )
     if expected_top_paths:
-        current_top_paths = [item["path"] for item in current["top_results"][: len(expected_top_paths)]]
+        current_top_paths = [
+            item["path"] for item in current["top_results"][: len(expected_top_paths)]
+        ]
         if current_top_paths != expected_top_paths:
-            failures.append(
-                f"top_results {current_top_paths} != expected {expected_top_paths}"
-            )
+            failures.append(f"top_results {current_top_paths} != expected {expected_top_paths}")
 
     return {
         "ok": not failures,

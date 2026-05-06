@@ -11,101 +11,15 @@ from typing import Any
 SYSTEM_PROMPT = """
 You are connected to Claude Bridge over MCP.
 
-Available file tools:
-- `read_file(path, offset, limit, budget_tokens)` to inspect files
-- `read_multiple_files(paths, offset, limit, budget_tokens)` to compare files
-- `list_directory(path)` to understand project structure
-- `search_in_files(query, path, regex, case_sensitive, include_glob, offset, limit, budget_tokens)` to find code
-- `write_file(path, content, overwrite, create_parents, max_lines)` for new files
-- `move_file(source, destination, overwrite, create_parents)` to move/rename
-- `copy_path(source, destination, overwrite, create_parents)` to copy
-- `patch_file(file, search, replace)` for targeted SEARCH/REPLACE edits
-- `preview_patch(file, search, replace)` to preview edits without changing
-- `undo_last_patch(confirm)` to revert the last Claude Bridge change
+Key rules:
+- Always inspect files before editing (read_file or list_directory).
+- Prefer patch_file over write_file for existing files.
+- If a path fails with path_outside_project, call workspace_status() then switch_project_root().
+- Cross-check related files before concluding behavior is explained.
+- Treat MCP tool results as source of truth.
+- Use precise SEARCH/REPLACE blocks.
 
-Available shell tools:
-- `run_shell(command)` for safe, non-interactive commands after user approval
-- `analyze_shell_command(command)` to check a command before executing
-- `start_process(command)` for long-running commands
-- `read_process_output(session_id, offset, limit)` to read process output
-- `list_process_sessions()` to list active process sessions
-- `kill_process(session_id)` to terminate a process
-- `interact_with_process(session_id, input, close_stdin)` to send input
-
-Available workspace tools:
-- `workspace_status()` to see the active project root and allowed roots
-- `switch_project_root(path)` to move into another allowed project folder
-
-Available workflow tools:
-- `run_workflow(mode, target, option, ...)` for structured inspect→read→act loops
-- `run_agent_loop_step(file, search, replace, validation_command, iteration, max_iterations)`
-- `build_context_pack(target, goal, max_files, ...)` to gather focused files
-- `narrow_context(goal, target, budget_tokens, ...)` for budget-aware planning
-
-Available MCP prompts (use the prompt UI or slash commands when available):
-- `/review` — Review code for bugs and missing tests
-- `/shadow` — Critical re-review challenging prior assumptions
-- `/optimize` — Optimize for performance and maintainability
-- `/orchestrate` — Split a large task into workstreams
-- `/agent_loop` — Design a bounded inspect-patch-validate loop
-- `/quality` — Evaluate shipping quality and regression safety
-- `/test` — Design or improve regression tests
-- `/todo` — Scan and prioritize TODO markers
-- `/explain` — Explain code for a chosen audience
-- `/commit` — Summarize changes and suggest a commit message
-- `/refactor` — Restructure code without changing behavior
-- `/debug` — Debug a known issue step by step
-- `/document` — Generate or improve documentation
-- `/security` — Audit for security vulnerabilities
-- `/compact` — Shrink context for lower token usage
-- `/benchmark` — Plan benchmark-first investigation
-- `/platform` — Audit cross-platform compatibility
-
-Rules:
-- Never write full files when a targeted patch is enough.
-- Always inspect the relevant file first with `read_file` or `list_directory`.
-- When a tool result includes the error code `path_outside_project` or reports
-  that the path is not inside any allowed root, do not claim access is
-  permanently unavailable. Instead, first call `workspace_status()` to check
-  the active root and allowed roots, then call `switch_project_root(path)` if
-  the target sits inside a different allowed root, and finally retry the
-  original operation.
-- Any subdirectory inside an allowed root is also switchable. If
-  `/Users/me/Desktop` is allowed, `/Users/me/Desktop/my-game` is valid for
-  `switch_project_root(...)`.
-- Prefer `patch_file` with precise SEARCH and REPLACE blocks.
-- Mention when a shell command or patch will require approval or confirmation.
-- Treat MCP tool results as the source of truth.
-- Do not stop after finding a single matching constant, comment, or
-  obvious-looking file. Cross-check related files before concluding the
-  behavior is fully explained.
-- When a project has framework-specific runtime files, inspect them too.
-  Example: in Godot projects, check scripts together with `project.godot`,
-  scene files, and `export_presets.cfg` when they may affect runtime behavior.
-- For larger changes, hold a quality bar: correctness first, then regression
-  safety, then readability, then tests, then user-visible impact.
-- For larger tasks, prefer decomposition: identify independent workstreams,
-  keep ownership boundaries clear, then merge only after an integration pass
-  and a final quality check.
-
-When editing code, think in small verified steps:
-1. Read the file or directory you need.
-2. Cross-check nearby config, entrypoint, scene, or export files when the
-   first file alone may be misleading.
-3. Explain the bug, risk, or gap briefly.
-4. Apply a focused SEARCH/REPLACE patch.
-5. Run validation commands when useful.
-6. Summarize what changed and any remaining risks.
-
-Response language:
-- By default, respond in Turkish unless the user explicitly requests another
-  language. Many MCP prompts accept an optional `language` parameter.
-
-SEARCH/REPLACE reminder:
-SEARCH:
-<exact existing text>
-REPLACE:
-<new text>
+Response language: Turkish unless user requests otherwise.
 """.strip()
 
 SUPPORTED_SETUP_TARGETS = ("claude-desktop", "generic-stdio", "vscode")
@@ -120,6 +34,8 @@ def build_stdio_server_entry(
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
 ) -> dict[str, Any]:
     """Build a portable stdio MCP server entry."""
     python_cmd = python_executable or sys.executable
@@ -132,6 +48,8 @@ def build_stdio_server_entry(
         ),
         "CLAUDE_BRIDGE_AUTO_APPROVE": "1" if auto_approve else "0",
         "CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL": "1" if client_managed_approval else "0",
+        "CLAUDE_BRIDGE_TOOL_PROFILE": tool_profile,
+        "CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE": context_budget_profile,
         "PYTHONUNBUFFERED": "1",
     }
     if approval_preset is not None:
@@ -158,6 +76,8 @@ def build_target_config(
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
 ) -> dict[str, Any]:
     """Build a target-specific MCP config snippet."""
     if target not in SUPPORTED_SETUP_TARGETS:
@@ -170,6 +90,8 @@ def build_target_config(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
+        tool_profile=tool_profile,
+        context_budget_profile=context_budget_profile,
     )
     if target == "claude-desktop":
         return {"mcpServers": {"claude-bridge": server_entry}}
@@ -187,6 +109,8 @@ def build_desktop_config(
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
 ) -> dict[str, object]:
     """Build a Claude Desktop MCP config snippet."""
     return build_target_config(
@@ -198,6 +122,8 @@ def build_desktop_config(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
+        tool_profile=tool_profile,
+        context_budget_profile=context_budget_profile,
     )
 
 
@@ -211,6 +137,8 @@ def generate_mcp_setup_guide(
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
 ) -> str:
     """Render a copy-paste setup guide for a supported MCP client target."""
     config = build_target_config(
@@ -222,6 +150,8 @@ def generate_mcp_setup_guide(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
+        tool_profile=tool_profile,
+        context_budget_profile=context_budget_profile,
     )
     config_json = json.dumps(config, indent=2, ensure_ascii=False)
     target_title = {
@@ -295,6 +225,10 @@ Why this format:
 - Passes the active project root through `CLAUDE_BRIDGE_PROJECT_DIR`.
 - Passes the broader allowed workspace list through
   `CLAUDE_BRIDGE_ALLOWED_ROOTS`.
+- Uses `CLAUDE_BRIDGE_TOOL_PROFILE=standard` by default so MCP clients receive
+  the common tool set instead of every niche tool schema.
+- Uses `CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE=balanced` by default to keep file
+  previews and context packs bounded.
 - Keeps stdout clean for the MCP protocol.
 - {wrapper_note}
 

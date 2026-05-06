@@ -779,9 +779,7 @@ def update(
 
 @app.command()
 def init(
-    project_dir: str = typer.Option(
-        ".", "--project-dir", "-d", help="Project directory path"
-    ),
+    project_dir: str = typer.Option(".", "--project-dir", "-d", help="Project directory path"),
     approval_mode: str | None = typer.Option(
         None, "--approval", "-a", help="Approval mode: read-only|dev-safe|ci-like|power-user"
     ),
@@ -805,9 +803,7 @@ def init(
     original = signal.signal(signal.SIGINT, _on_cancel)
 
     try:
-        console.print(
-            Panel.fit("Welcome to [bold cyan]Claude Bridge[/] setup!", title="Init")
-        )
+        console.print(Panel.fit("Welcome to [bold cyan]Claude Bridge[/] setup!", title="Init"))
 
         project_path = Path(project_dir).resolve()
         if not non_interactive:
@@ -858,13 +854,25 @@ def init(
 
         if mode == "read-only":
             guard_config["allowed_shell_commands"] = [
-                "ls", "cat", "git", "echo", "find", "wc", "head", "tail"
+                "ls",
+                "cat",
+                "git",
+                "echo",
+                "find",
+                "wc",
+                "head",
+                "tail",
             ]
             guard_config["blocked_shell_patterns"] = ["rm*", "mv*", "cp*", "chmod*", "mkfs*"]
         elif mode == "dev-safe":
             guard_config["blocked_shell_patterns"] = [
-                "sudo*", "mkfs*", "shutdown*", "reboot*",
-                "rm -rf /*", "dd if=*", "> /dev/*",
+                "sudo*",
+                "mkfs*",
+                "shutdown*",
+                "reboot*",
+                "rm -rf /*",
+                "dd if=*",
+                "> /dev/*",
             ]
         elif mode == "ci-like":
             guard_config["default_deny"] = False
@@ -1551,13 +1559,28 @@ def replay(
 def appeal(
     record_id: str = typer.Option(..., "--record-id", help="Audit record id to appeal"),
     justification: str = typer.Option(..., "--justification", "-j", help="Reason for the appeal"),
+    escalate: bool = typer.Option(
+        False,
+        "--escalate",
+        help="Create a pending local escalation event if the appeal remains denied",
+    ),
+    escalation_target: str = typer.Option(
+        "team_lead",
+        "--escalation-target",
+        help="Local escalation target label",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Appeal a policy decision by record id with a justification."""
     from claude_bridge.audit import process_appeal
 
     try:
-        result = process_appeal(record_id, justification)
+        result = process_appeal(
+            record_id,
+            justification,
+            escalate=escalate,
+            escalation_target=escalation_target,
+        )
     except ValueError as exc:
         console.print(f"[red]Appeal failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -1598,6 +1621,21 @@ def appeal(
             f"\n[yellow]Human review required:[/yellow] "
             f"{escape(str(meta.get('review_reason', '')))}"
         )
+
+    escalation = result.get("escalation")
+    if isinstance(escalation, dict) and escalation.get("requested"):
+        if escalation.get("created"):
+            event = escalation.get("event", {})
+            console.print(
+                "\n[yellow]Escalation created:[/yellow] "
+                f"{escape(str(event.get('escalation_id', '')))} "
+                f"target={escape(str(event.get('target', '')))}"
+            )
+        else:
+            console.print(
+                "\n[yellow]Escalation not created:[/yellow] "
+                f"{escape(str(escalation.get('reason', '')))}"
+            )
 
     console.print(f"\nTotal appeals for this record: {result.get('appeal_history_count', 0)}")
 
@@ -1701,6 +1739,13 @@ def anomaly_scan(
         f"{summary['overall_max_score']}[/] "
         f"({summary['overall_level']})"
     )
+    runtime_policy = summary.get("runtime_policy", {})
+    if isinstance(runtime_policy, dict):
+        console.print(
+            "Runtime policy: "
+            f"[cyan]{escape(str(runtime_policy.get('mode', 'unknown')))}[/cyan] "
+            f"(effective: {escape(str(runtime_policy.get('effective_action', 'unknown')))})"
+        )
 
     anomaly_counts = summary.get("anomaly_counts", {})
     if anomaly_counts:
@@ -1729,6 +1774,51 @@ def anomaly_scan(
     mvp = summary.get("mvp_limits", {})
     if mvp:
         console.print(f"\nMVP scope: {escape(str(mvp.get('scope', '')))}")
+
+
+@anomaly_app.command("baseline")
+def anomaly_baseline(
+    project_dir: Path = typer.Option(Path.cwd(), help="Project directory for baseline storage"),
+    limit: int = typer.Option(500, help="Maximum recent audit records to learn from"),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional baseline output path (default: <project>/.claude-bridge/baseline.json)",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Build or update an anomaly baseline from recent audit records."""
+    from claude_bridge.audit import get_recent_tool_calls
+    from claude_bridge.baseline import load_baseline, merge_baseline, save_baseline
+
+    safe_limit = max(1, min(limit, 10000))
+    baseline_path = output or (project_dir.resolve() / ".claude-bridge" / "baseline.json")
+    recent = get_recent_tool_calls(limit=safe_limit)
+    records = recent.get("records", [])
+    if not isinstance(records, list):
+        records = []
+
+    existing = load_baseline(baseline_path)
+    baseline = merge_baseline(existing, records)
+    save_baseline(baseline_path, baseline)
+
+    payload = {
+        "ok": True,
+        "baseline_path": str(baseline_path),
+        "records_used": len(records),
+        "session_id": recent.get("session_id", ""),
+        "baseline": baseline,
+    }
+
+    if json_output:
+        console.print_json(data=payload)
+        return
+
+    console.print("[green]Anomaly baseline updated[/green]")
+    console.print(f"Path: {escape(str(baseline_path))}")
+    console.print(f"Records used: [green]{len(records)}[/green]")
+    console.print(f"Sessions learned: [green]{baseline['session_count']}[/green]")
+    console.print(f"Average records/session: [green]{baseline['avg_records_per_session']}[/green]")
 
 
 @doctor_app.callback(invoke_without_command=True)

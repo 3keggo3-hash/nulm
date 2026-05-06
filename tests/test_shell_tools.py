@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from pathlib import Path
 
+import pytest
 
+from claude_bridge import _shell_constants as _sc
 from claude_bridge import shell_tools as st
+
+
+async def _approved() -> bool:
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +188,7 @@ class TestTruncateOutput:
         text, truncated = st._truncate_output(long_text)
         assert truncated is True
         assert len(text) < len(long_text)
+        assert "TRUNCATED:" in text
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +216,7 @@ class TestBlockedCommandReason:
         assert reason is not None
 
     def test_find_exec_blocked(self):
-        reason = st.blocked_command_reason(
-            "find . -exec rm {}", ["find", ".", "-exec", "rm", "{}"]
-        )
+        reason = st.blocked_command_reason("find . -exec rm {}", ["find", ".", "-exec", "rm", "{}"])
         assert reason is not None
 
     def test_git_reset_hard_blocked(self):
@@ -224,9 +230,7 @@ class TestBlockedCommandReason:
         assert reason is None
 
     def test_safe_pytest_allowed(self):
-        reason = st.blocked_command_reason(
-            "python -m pytest", ["python", "-m", "pytest"]
-        )
+        reason = st.blocked_command_reason("python -m pytest", ["python", "-m", "pytest"])
         assert reason is None
 
     def test_safe_ls_allowed(self):
@@ -238,9 +242,7 @@ class TestBlockedCommandReason:
         assert reason is None
 
     def test_fork_bomb_blocked(self):
-        reason = st.blocked_command_reason(
-            ":(){ :|:& };:", [":(){", ":|:&", "};:"]
-        )
+        reason = st.blocked_command_reason(":(){ :|:& };:", [":(){", ":|:&", "};:"])
         assert reason is not None
 
     def test_dd_blocked(self):
@@ -256,9 +258,7 @@ class TestBlockedCommandReason:
         assert reason is not None
 
     def test_ruby_e_blocked(self):
-        reason = st.blocked_command_reason(
-            "ruby -e 'puts 1'", ["ruby", "-e", "puts 1"]
-        )
+        reason = st.blocked_command_reason("ruby -e 'puts 1'", ["ruby", "-e", "puts 1"])
         assert reason is not None
 
 
@@ -398,3 +398,229 @@ class TestProcessSessionManagement:
     def test_reset_clears_all(self):
         st.reset_process_sessions()
         assert st._get_process_session("nonexistent") is None
+
+    def test_trim_does_not_kill_running_sessions(self, monkeypatch):
+        class FakeProcess:
+            pid = 123
+            terminate_calls = 0
+            kill_calls = 0
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                self.terminate_calls += 1
+
+            def kill(self):
+                self.kill_calls += 1
+
+            def wait(self, timeout=None):
+                return None
+
+        monkeypatch.setattr(_sc, "_MAX_PROCESS_SESSIONS", 1)
+        st.reset_process_sessions()
+        first_process = FakeProcess()
+        second_process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["one"] = st._ProcessSession(
+                session_id="one",
+                command="sleep 1",
+                argv=["sleep", "1"],
+                cwd=Path.cwd(),
+                process=first_process,
+                risk_level="low",
+                risk_reasons=[],
+            )
+            st._PROCESS_SESSIONS["two"] = st._ProcessSession(
+                session_id="two",
+                command="sleep 1",
+                argv=["sleep", "1"],
+                cwd=Path.cwd(),
+                process=second_process,
+                risk_level="low",
+                risk_reasons=[],
+            )
+
+        st._trim_process_sessions()
+
+        assert first_process.terminate_calls == 0
+        assert first_process.kill_calls == 0
+        assert second_process.terminate_calls == 0
+        assert second_process.kill_calls == 0
+        with st._PROCESS_SESSIONS_LOCK:
+            assert set(st._PROCESS_SESSIONS) == {"one", "two"}
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_start_process_rejects_when_session_limit_full(self, monkeypatch, tmp_path):
+        class FakeProcess:
+            pid = 123
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                pass
+
+            def kill(self):
+                pass
+
+            def wait(self, timeout=None):
+                return None
+
+        monkeypatch.setattr(_sc, "_MAX_PROCESS_SESSIONS", 1)
+        st.reset_process_sessions()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["full"] = st._ProcessSession(
+                session_id="full",
+                command="sleep 1",
+                argv=["sleep", "1"],
+                cwd=tmp_path,
+                process=FakeProcess(),
+                risk_level="low",
+                risk_reasons=[],
+            )
+
+        script = tmp_path / "ok.py"
+        script.write_text("print('ok')\n")
+        result = await st.start_process(
+            "python3 ok.py",
+            request_approval=lambda *_args, **_kwargs: _approved(),
+            project_dir=lambda: tmp_path,
+        )
+        payload = __import__("json").loads(result)
+
+        assert payload["ok"] is False
+        assert payload["code"] == "process_session_limit_exceeded"
+        assert payload["details"]["max_sessions"] == 1
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_kill_process_force_uses_kill(self):
+        class FakeProcess:
+            pid = 123
+            killed = False
+            terminated = False
+            returncode = None
+
+            def poll(self):
+                return None if self.returncode is None else self.returncode
+
+            def terminate(self):
+                self.terminated = True
+                self.returncode = -15
+
+            def kill(self):
+                self.killed = True
+                self.returncode = -9
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        st.reset_process_sessions()
+        process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["force"] = st._ProcessSession(
+                session_id="force",
+                command="sleep 1",
+                argv=["sleep", "1"],
+                cwd=Path.cwd(),
+                process=process,
+                risk_level="low",
+                risk_reasons=[],
+            )
+
+        result = await st.kill_process(
+            "force",
+            force=True,
+            request_approval=lambda *_args, **_kwargs: _approved(),
+        )
+        payload = __import__("json").loads(result)
+
+        assert payload["ok"] is True
+        assert process.killed is True
+        assert process.terminated is False
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_interact_with_process_records_input_without_deadlock(self):
+        class FakeStdin:
+            closed = False
+
+            def __init__(self):
+                self.writes = []
+
+            def write(self, text):
+                self.writes.append(text)
+
+            def flush(self):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        class FakeProcess:
+            pid = 123
+            returncode = None
+
+            def __init__(self):
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        st.reset_process_sessions()
+        process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["input"] = st._ProcessSession(
+                session_id="input",
+                command="python3 echo.py",
+                argv=["python3", "echo.py"],
+                cwd=Path.cwd(),
+                process=process,
+                risk_level="medium",
+                risk_reasons=[],
+            )
+
+        result = await asyncio.wait_for(
+            st.interact_with_process(
+                "input",
+                "hello",
+                request_approval=lambda *_args, **_kwargs: _approved(),
+            ),
+            timeout=1,
+        )
+        payload = __import__("json").loads(result)
+
+        assert payload["ok"] is True
+        assert process.stdin.writes == ["hello\n"]
+        assert payload["details"]["input_chars"] == 5
+        assert payload["details"]["input_events"] == 1
+        st.reset_process_sessions()
+
+
+class TestReadProcessOutput:
+    @pytest.mark.asyncio
+    async def test_invalid_limit_rejected(self):
+        import json
+
+        result = json.loads(await st.read_process_output("fake-id", offset=0, limit=0))
+        assert result["ok"] is False
+        assert result["code"] == "invalid_limit"
+
+    @pytest.mark.asyncio
+    async def test_negative_offset_rejected(self):
+        import json
+
+        result = json.loads(await st.read_process_output("fake-id", offset=-1, limit=10))
+        assert result["ok"] is False
+        assert result["code"] == "invalid_offset"

@@ -1,74 +1,73 @@
 # AGENTS.md
 
-## Proje Amaci
+## Project Purpose
 
-Bu repo, Claude Desktop ve diger MCP istemcileri icin yerel dosya sistemi, shell ve kontrollu patch akislarini sunan Python tabanli bir MCP sunucusu olan `claude-bridge` projesidir.
+This repo contains `claude-bridge`, a Python-based MCP server that provides local file system, shell,
+and controlled patch flows for Claude Desktop and other MCP clients.
 
-## Repo Yapisi
+## Repo Structure
 
-- `src/claude_bridge/`: uygulama kodu
-- `tests/`: pytest testleri
-- `docs/`: kalici urun, operasyon ve roadmap dokumantasyonu
-- `tasks/active/`: aktif gorev dosyalari
-- `tasks/done/`: tamamlanmis gorev kayitlari
-- `archive/`: eski planlar, notlar, fikirler ve artik kanonik olmayan belgeler
-- `benchmarks/`: benchmark profilleri, baseline dosyalari ve benchmark'a ozel materyaller
+- `src/claude_bridge/`: application code
+- `tests/`: pytest test suite
+- `docs/`: persistent product, operations, and roadmap documentation
+- `examples/`: example configurations and policy files
+- `benchmarks/`: benchmark profiles, baseline files, and benchmark-specific materials
 
-## Kodlama Kurallari
+## Coding Conventions
 
-- Python 3.8+ uyumlulugunu koru.
-- Mevcut mimariye uy: CLI, MCP surface, tool implementations, config/state, indexing/relevance ve workflow katmanlarini karistirma.
-- Naming stiline, moduler sinirlara ve mevcut kod duzenine uy.
-- 100 karakter satir limiti, Black formatlama ve Ruff uyumu korunmali.
-- Yeni veya degisen production kodu icin type hint kullan; `mypy` ayarlari siki.
-- Gereksiz dependency, abstraction veya buyuk refactor ekleme.
+- Maintain Python 3.10+ compatibility.
+- Follow the existing architecture: CLI, MCP surface, tool implementations, config/state,
+  indexing/relevance, and workflow layers must stay separate.
+- Adhere to naming style, module boundaries, and existing code organization.
+- 100-character line limit, Black formatting, and Ruff compliance required.
+- Use type hints for all new or changed production code; `mypy` strict settings apply.
+- Do not add unnecessary dependencies, abstractions, or large refactors.
 
-## Gorev Yapma Akisi
+## Task Workflow
 
-1. Once ilgili dosyalari bul ve kisa bir plan cikar.
-2. Sadece gorev icin gerekli dosyalari oku; gereksiz tarama yapma.
-3. Degisiklik yapmadan once mevcut mimariye hangi katmanda uydugunu netlestir.
-4. Sadece gerekli dosyalari degistir.
-5. Mumkunse ilgili testi ekle veya guncelle.
-6. Degisiklikten sonra uygun dogrulamayi calistir.
-7. En sonda degisen dosyalari ve nedenlerini kisaca ozetle.
+1. Find relevant files first and outline a brief plan.
+2. Read only the files needed for the task; avoid unnecessary scanning.
+3. Clarify which architectural layer the change belongs to before modifying code.
+4. Change only the necessary files.
+5. Add or update relevant tests when possible.
+6. Run appropriate validation after changes.
+7. Briefly summarize changed files and reasons at the end.
 
-Buyuk refactor, tasima veya yapisal degisiklikten once mutlaka plan cikar ve etkisini kontrol et.
+Always produce a plan before large refactors, moves, or structural changes, and verify impact.
 
-## Test / Lint / Build Komutlari
+## Test / Lint / Build Commands
 
-- Kurulum: `pip install -e .`
-- Gelistirme bagimliliklari: `pip install -e .[dev]`
-- Opsiyonel Tree-sitter: `pip install -e .[treesitter]`
+- Install: `pip install -e .`
+- Dev dependencies: `pip install -e .[dev]`
+- Optional Tree-sitter: `pip install -e .[treesitter]`
 - Test: `pytest`
 - Lint: `ruff check .`
 - Format: `black .`
-- Tip kontrol: `mypy src`
+- Type check: `mypy src`
 - Benchmark: `claude-bridge benchmark --project-dir . --path src --query "auth session login"`
 
-## Shell ve Guvenlik Kurallari
+## Shell and Security Rules
 
-- `shell_tools.py` icindeki guvenlik modeli korunmali.
-- `sudo`, destructive `git` komutlari, `rm -r`, `curl|bash`, `wget|bash` benzeri kaliplari ekleme veya gevsetme.
-- Shell komutlari acik, parcali ve `subprocess.run(..., shell=False)` modeline uygun olmali.
-- Path sinirlari, approval akisi ve auto-approve davranisi sessizce degistirilmemeli.
-- Gizli bilgi, yerel path ve kisisel config verilerini dokumantasyona ekleme.
+- The security model in `shell_tools.py` must be preserved.
+- Do not add or relax `sudo`, destructive `git` commands, `rm -r`, `curl|bash`, `wget|bash` patterns.
+- Shell commands must be explicit, decomposed, and follow the `subprocess.run(..., shell=False)` model.
+- Path boundaries, approval flows, and auto-approve behavior must not be silently changed.
+- Do not add secret information, local paths, or personal config data to documentation.
 
-## Gerekmedikce Okunmamasi Gereken Yerler
+## Areas to Avoid Reading Unless Necessary
 
-- `archive/`
-- `tasks/done/`
 - `venv/`
 - `.git/`
 - `__pycache__/`
 - `.pytest_cache/`
 - `.ruff_cache/`
-- `benchmarks/baselines/` ve `benchmarks/profiles/` sadece ilgili benchmark gorevlerinde
+- `.mypy_cache/`
+- `benchmarks/baselines/` and `benchmarks/profiles/` only for benchmark-related tasks
 
-## Dokumantasyon Kurallari
+## Documentation Rules
 
-- Kalici dokumanlari `docs/` altina koy.
-- Yeni gorevler `tasks/active/`, tamamlananlar `tasks/done/` altina gitmeli.
-- Eski ama silinmemesi gereken notlar `archive/` altina alinmali.
-- Klasor tasima veya dosya yeniden adlandirmada ic linkleri kontrol et.
-- `README.md` ve `AGENTS.md` root'ta kalmali.
+- Place persistent documents under `docs/`.
+- New tasks go in `tasks/active/`, completed ones in `tasks/done/`.
+- Old notes that should not be deleted go under `archive/`.
+- Check internal links when moving folders or renaming files.
+- `README.md` and `AGENTS.md` must remain at the repo root.

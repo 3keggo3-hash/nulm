@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from claude_bridge import server as mcp_server
 from claude_bridge import indexing as indexing_module
 
@@ -50,9 +48,10 @@ class TestExtractSymbols:
         assert symbols["imports"] == ["context"]
         assert symbols["language"] == "go"
 
-    def test_extract_unknown_extension_raises(self):
-        with pytest.raises(KeyError):
-            indexing_module.extract_symbols(Path("readme.md"), "# Hello")
+    def test_extract_unknown_extension_returns_empty(self):
+        result = indexing_module.extract_symbols(Path("readme.md"), "# Hello")
+        assert result["symbols"] == []
+        assert "No extractor available for suffix .md" in result["errors"][0]
 
 
 class TestIterSearchableFiles:
@@ -159,6 +158,33 @@ class TestBuildIndex:
         )
         assert second["cached"] is True
         assert second["source_files"] == first["source_files"]
+
+    async def test_disk_cache_excludes_full_content_fields(self, temp_project, monkeypatch):
+        cache_dir = temp_project / "cache"
+        monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(cache_dir))
+        mcp_server.clear_index_cache()
+        pkg = temp_project / "pkg"
+        pkg.mkdir()
+        (pkg / "mod.py").write_text("def login_user():\n    return 'auth session'\n")
+
+        result = indexing_module.build_index(
+            "pkg",
+            resolve_path=self._resolve(temp_project),
+            infer_project_root=self._infer_root(temp_project),
+            is_within_root=_always_within_root,
+        )
+
+        cache_files = list(cache_dir.glob("index-*.json"))
+        assert result["cached"] is False
+        assert len(cache_files) == 1
+        raw_cache = json.loads(cache_files[0].read_text())
+        payload = raw_cache["payload"]
+        assert "content_lower" not in payload["files"][0]
+        assert "content" not in payload["files"][0]
+        cached_file = payload["_file_cache"]["mod.py"]
+        assert "content_lower" not in cached_file
+        assert "content" not in cached_file
+        assert "auth" in cached_file["content_tokens"]
 
     async def test_source_files_and_python_count(self, temp_project):
         mcp_server.clear_index_cache()

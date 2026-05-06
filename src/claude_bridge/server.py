@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json as _json
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ from claude_bridge.trust_score import get_trust_score as get_trust_score_impl
 from claude_bridge.config import (
     APPROVAL_PRESETS,
     BUDGET_PROFILES,
+    active_tool_names,
     apply_config,
     configure_from_env_state,
     current_config,
@@ -67,25 +70,11 @@ from claude_bridge.file_tools import (
 )
 from claude_bridge.file_tool_server import register_file_tools
 from claude_bridge.git_ops import (
-    commit_changes as _commit_changes_impl,
     git_commit,
     git_status_snapshot,
 )
-from claude_bridge.indexing import (
-    build_index as _index_build_index,
-)
-from claude_bridge.indexing import (
-    clear_index_cache,
-)
-from claude_bridge.indexing import (
-    iter_searchable_files as _index_iter_searchable_files,
-)
-from claude_bridge.indexing import (
-    iter_source_files as _index_iter_source_files,
-)
-from claude_bridge.indexing import (
-    public_index_payload as _public_index_payload,
-)
+from claude_bridge.git_tool_server import register_git_tools
+from claude_bridge.indexing_tool_server import register_indexing_tools
 from claude_bridge.shell_tools import (
     analyze_shell_command as _analyze_shell_command_impl,
 )
@@ -97,12 +86,6 @@ from claude_bridge.shell_tools import (
 )
 from claude_bridge.shell_tools import (
     read_process_output as _read_process_output_impl,
-)
-from claude_bridge.relevance import (
-    query_terms as _query_terms,
-)
-from claude_bridge.relevance import (
-    rank_indexed_files as _rank_indexed_files,
 )
 from claude_bridge.shell_tools import (
     reset_process_sessions,
@@ -146,67 +129,8 @@ from claude_bridge.tool_utils import (
 from claude_bridge.tool_utils import (
     resolve_path as _resolve_path,
 )
-from claude_bridge.smart import (
-    DEFAULT_CONTEXT_BUDGET_TOKENS as _DEFAULT_CONTEXT_BUDGET_TOKENS,
-    budget_metadata as _smart_budget_metadata,
-    compact_intent as _smart_compact_intent,
-    context_fit_check as _smart_context_fit_check,
-    count_tokens_for_path as _smart_count_tokens_for_path,
-    estimate_token_count as _smart_estimate_token_count,
-    smart_available as _smart_available,
-)
-from claude_bridge.insights import (
-    project_stats as _insights_project_stats,
-    todo_scan as _insights_todo_scan,
-    recent_files as _insights_recent_files,
-    language_distribution as _insights_language_distribution,
-    git_log_summary as _insights_git_log_summary,
-    git_diff_summary as _insights_git_diff_summary,
-    dependency_map as _insights_dependency_map,
-    duplicate_code_scan as _insights_duplicate_code_scan,
-    save_note as _insights_save_note,
-    read_notes as _insights_read_notes,
-)
-from claude_bridge.insights_tool_registration import register_insights_tools
-from claude_bridge.plan_engine import (
-    create_plan as _create_plan_impl,
-)
-from claude_bridge.plan_engine import (
-    execute_step as _execute_step_impl,
-)
-from claude_bridge.plan_engine import (
-    get_plan_status as _get_plan_status_impl,
-)
-from claude_bridge.approach_explorer import (
-    compare_approaches as _compare_approaches_impl,
-)
-from claude_bridge.approach_explorer import (
-    execute_approach as _execute_approach_impl,
-)
-from claude_bridge.approach_explorer import (
-    explore_approaches as _explore_approaches_impl,
-)
-from claude_bridge.self_critique import self_critique as _self_critique_impl
-from claude_bridge.checkpoint import (
-    create_checkpoint as _create_checkpoint_impl,
-)
-from claude_bridge.checkpoint import (
-    list_checkpoints as _list_checkpoints_impl,
-)
-from claude_bridge.checkpoint import (
-    restore_checkpoint as _restore_checkpoint_impl,
-)
-from claude_bridge.url_tools import _url_hash, read_url as _url_read_url
-from claude_bridge.fun_content import generate_doodle as _generate_doodle
-from claude_bridge.meta_agent_server import register_meta_agent_tools
 from claude_bridge.meta_tool_server import register_meta_tools, register_prompts
-from claude_bridge.multi_format import (
-    read_image as _multi_format_read_image,
-)
-from claude_bridge.multi_format import (
-    read_pdf as _multi_format_read_pdf,
-)
-from claude_bridge.smart_tool_registration import register_smart_tools
+from claude_bridge.multi_format_tool_server import register_multi_format_tools
 from claude_bridge.tool_utils import (
     set_active_project_dir as _set_active_project_dir,
 )
@@ -221,29 +145,122 @@ from claude_bridge.workflow_presets import (
     workflow_prompt as _workflow_prompt,
 )
 from claude_bridge.shell_tool_server import register_shell_tools
-from claude_bridge.workflow_tool_server import register_workflow_tools
-from claude_bridge.workflow_tools import (
-    build_context_pack as _build_context_pack_impl,
-)
-from claude_bridge.workflow_tools import (
-    build_validation_suggestions as _build_validation_suggestions_impl,
-)
-from claude_bridge.workflow_tools import (
-    run_agent_loop_session as _run_agent_loop_session_impl,
-)
-from claude_bridge.workflow_tools import (
-    run_agent_loop_step as _run_agent_loop_step_impl,
-)
-from claude_bridge.workflow_tools import (
-    run_workflow as _run_workflow_impl,
-)
+from claude_bridge.url_tool_server import register_url_tools
 
 mcp = FastMCP("Claude Bridge")
+_DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
+
+
+def _enabled_tool_names_for_registration() -> set[str] | None:
+    if not os.environ.get("CLAUDE_BRIDGE_TOOL_PROFILE", "").strip():
+        return None
+    configure_from_env_state()
+    return active_tool_names()
+
+
+_ENABLED_TOOL_NAMES = _enabled_tool_names_for_registration()
+
+
+def _should_register_tool(name: str) -> bool:
+    return _ENABLED_TOOL_NAMES is None or name in _ENABLED_TOOL_NAMES
+
+
+def _register_tool(
+    name: str,
+    description: str,
+    *,
+    read_only: bool = False,
+    destructive: bool = False,
+    open_world: bool = False,
+) -> Any:
+    def _decorator(fn: Any) -> Any:
+        if not _should_register_tool(name):
+            return fn
+        return mcp.tool(
+            **_tool_options(
+                description,
+                read_only=read_only,
+                destructive=destructive,
+                open_world=open_world,
+            )
+        )(fn)
+
+    return _decorator
+
+
+def _tool_or_disabled(tools: dict[str, Any], name: str) -> Any:
+    if name in tools:
+        return tools[name]
+
+    async def _disabled_tool(*_args: Any, **_kwargs: Any) -> str:
+        return _json_response(
+            False,
+            f"Tool disabled by active tool profile: {name}",
+            code="tool_disabled",
+            details={"tool_name": name},
+        )
+
+    return _disabled_tool
+
 
 def _effective_budget_tokens() -> int:
     profile_name = current_config().get("context_budget_profile", "balanced")
     profile = BUDGET_PROFILES.get(profile_name, {})
     return int(profile.get("context_budget_tokens", _DEFAULT_CONTEXT_BUDGET_TOKENS))
+
+
+def _smart_budget_metadata(
+    *, estimated_tokens: int, budget_tokens: int, recommended_next_step: str
+) -> dict[str, Any]:
+    from claude_bridge.smart import budget_metadata
+
+    return budget_metadata(
+        estimated_tokens=estimated_tokens,
+        budget_tokens=budget_tokens,
+        recommended_next_step=recommended_next_step,
+    )
+
+
+def _smart_estimate_token_count(text: str) -> int:
+    from claude_bridge.smart import estimate_token_count
+
+    return estimate_token_count(text)
+
+
+def _smart_compact_intent(
+    text: str,
+    *,
+    max_keywords: int = 6,
+    preserve_language: bool = True,
+) -> dict[str, Any]:
+    from claude_bridge.smart import compact_intent
+
+    return compact_intent(
+        text,
+        max_keywords=max_keywords,
+        preserve_language=preserve_language,
+    )
+
+
+def _smart_available() -> dict[str, bool]:
+    from claude_bridge.smart import smart_available
+
+    return smart_available()
+
+
+def _smart_count_tokens_for_path(path: Path) -> dict[str, Any]:
+    from claude_bridge.smart import count_tokens_for_path
+
+    return count_tokens_for_path(path)
+
+
+def _smart_context_fit_check(
+    text: str, *, model: str = "gpt-4", context_limit: int = 200000
+) -> dict[str, Any]:
+    from claude_bridge.smart import context_fit_check
+
+    return context_fit_check(text, model=model, context_limit=context_limit)
+
 
 def _tool_options(
     description: str,
@@ -261,6 +278,7 @@ def _tool_options(
         )
     return options
 
+
 def set_config(
     project_dir: Path,
     allowed_roots: list[Path] | None = None,
@@ -268,6 +286,7 @@ def set_config(
     client_managed_approval: bool = False,
     shell_timeout: int = 30,
     approval_preset: str | None = None,
+    onboarding_enabled: bool = True,
     ai_evaluator_enabled: bool = False,
     ai_evaluator_provider: str = "local",
     ai_evaluator_timeout: int = 5,
@@ -284,13 +303,17 @@ def set_config(
         client_managed_approval=client_managed_approval,
         shell_timeout=shell_timeout,
         approval_preset=approval_preset,
+        onboarding_enabled=onboarding_enabled,
         ai_evaluator_enabled=ai_evaluator_enabled,
         ai_evaluator_provider=ai_evaluator_provider,
         ai_evaluator_timeout=ai_evaluator_timeout,
         ai_evaluator_fallback_action=ai_evaluator_fallback_action,
     )
+    from claude_bridge.indexing import clear_index_cache
+
     clear_index_cache()
     _clear_last_bridge_change()
+
 
 def configure_from_env(*, force_auto_approve: bool | None = None) -> None:
     """Load runtime configuration from environment variables."""
@@ -298,29 +321,65 @@ def configure_from_env(*, force_auto_approve: bool | None = None) -> None:
     reset_onboarding_state()
     reset_process_sessions()
     configure_from_env_state(force_auto_approve=force_auto_approve)
+    from claude_bridge.indexing import clear_index_cache
+
     clear_index_cache()
     _clear_last_bridge_change()
 
+
+def _get_ai_provider() -> Any | None:
+    cfg = current_config()
+    if not cfg.get("ai_evaluator_enabled", False):
+        return None
+    provider_name = cfg.get("ai_evaluator_provider", "local")
+    try:
+        from claude_bridge.ai_evaluator import create_provider
+
+        return create_provider(
+            provider_name,
+            api_key=cfg.get("ai_evaluator_api_key", ""),
+            model=cfg.get("ai_evaluator_model", ""),
+            timeout=int(cfg.get("ai_evaluator_timeout", 5)),
+        )
+    except (ValueError, ImportError):
+        return None
+
+
 def _build_index(path: str) -> dict[str, Any]:
-    return _index_build_index(
+    from claude_bridge.indexing import build_index
+
+    return build_index(
         path,
         resolve_path=_resolve_path,
         infer_project_root=_infer_project_root,
         is_within_root=_is_within_root,
     )
 
+
 def _iter_source_files(root: Path, project_root: Path) -> list[Path]:
-    return [p for p, _, _ in _index_iter_source_files(root, project_root, is_within_root=_is_within_root)]
+    from claude_bridge.indexing import iter_source_files
+
+    return [p for p, _, _ in iter_source_files(root, project_root, is_within_root=_is_within_root)]
+
 
 def _iter_searchable_files(
     root: Path, project_root: Path, include_glob: str | None = None
 ) -> list[Path]:
-    return _index_iter_searchable_files(
+    from claude_bridge.indexing import iter_searchable_files
+
+    return iter_searchable_files(
         root,
         project_root,
         is_within_root=_is_within_root,
         include_glob=include_glob,
     )
+
+
+def clear_index_cache() -> None:
+    from claude_bridge.indexing import clear_index_cache as _clear_index_cache
+
+    _clear_index_cache()
+
 
 def _git_commit(
     file_path: str,
@@ -333,8 +392,10 @@ def _git_commit(
         message=message,
     )
 
+
 def _git_status_snapshot(project_dir: Path | None = None) -> dict[str, Any]:
     return git_status_snapshot(project_dir or _project_dir())
+
 
 def _audit_tool_call(
     tool_name: str, params: dict[str, Any], result: str, *, started_at: float
@@ -351,6 +412,7 @@ def _audit_tool_call(
         duration_ms=(time.perf_counter() - started_at) * 1000,
     )
     return enriched_result
+
 
 def _safe_json_object_load(raw: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
@@ -371,6 +433,7 @@ def _safe_json_object_load(raw: str) -> tuple[dict[str, Any] | None, dict[str, A
         }
     return payload, None
 
+
 _FILE_TOOLS = register_file_tools(
     mcp=mcp,
     tool_options=_tool_options,
@@ -390,66 +453,37 @@ _FILE_TOOLS = register_file_tools(
     undo_last_patch_impl=_file_undo_last_patch,
     git_commit_fn=lambda *a, **kw: _git_commit(*a, **kw),
     request_approval_fn=lambda *a, **kw: _request_approval(*a, **kw),
+    ai_provider_getter=_get_ai_provider,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-read_file = _FILE_TOOLS["read_file"]
-read_multiple_files = _FILE_TOOLS["read_multiple_files"]
-list_directory = _FILE_TOOLS["list_directory"]
-write_file = _FILE_TOOLS["write_file"]
-move_file = _FILE_TOOLS["move_file"]
-copy_path = _FILE_TOOLS["copy_path"]
-search_in_files = _FILE_TOOLS["search_in_files"]
-patch_file = _FILE_TOOLS["patch_file"]
-preview_patch = _FILE_TOOLS["preview_patch"]
-undo_last_patch = _FILE_TOOLS["undo_last_patch"]
+read_file = _tool_or_disabled(_FILE_TOOLS, "read_file")
+read_multiple_files = _tool_or_disabled(_FILE_TOOLS, "read_multiple_files")
+list_directory = _tool_or_disabled(_FILE_TOOLS, "list_directory")
+write_file = _tool_or_disabled(_FILE_TOOLS, "write_file")
+move_file = _tool_or_disabled(_FILE_TOOLS, "move_file")
+copy_path = _tool_or_disabled(_FILE_TOOLS, "copy_path")
+search_in_files = _tool_or_disabled(_FILE_TOOLS, "search_in_files")
+patch_file = _tool_or_disabled(_FILE_TOOLS, "patch_file")
+preview_patch = _tool_or_disabled(_FILE_TOOLS, "preview_patch")
+undo_last_patch = _tool_or_disabled(_FILE_TOOLS, "undo_last_patch")
 
 
-@mcp.tool(
-    **_tool_options(
-        "Read a supported image in the configured workspace. Returns MIME type, "
-        "dimensions, byte size, and base64 content. Requires the optional "
-        "claude-bridge[multi-format] dependency set.",
-        read_only=True,
-    )
+_MULTI_FORMAT_TOOLS = register_multi_format_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-async def read_image(path: str) -> str:
-    started_at = time.perf_counter()
-    result = await _multi_format_read_image(path)
-    return _audit_tool_call("read_image", {"path": path}, result, started_at=started_at)
+read_image = _tool_or_disabled(_MULTI_FORMAT_TOOLS, "read_image")
+read_pdf = _tool_or_disabled(_MULTI_FORMAT_TOOLS, "read_pdf")
 
-
-@mcp.tool(
-    **_tool_options(
-        "Extract text from a PDF in the configured workspace with page pagination. "
-        "Requires the optional claude-bridge[multi-format] dependency set.",
-        read_only=True,
-    )
+_URL_TOOLS = register_url_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-async def read_pdf(path: str, page_start: int = 1, page_end: int | None = None) -> str:
-    started_at = time.perf_counter()
-    result = await _multi_format_read_pdf(path, page_start=page_start, page_end=page_end)
-    return _audit_tool_call(
-        "read_pdf",
-        {"path": path, "page_start": page_start, "page_end": page_end},
-        result,
-        started_at=started_at,
-    )
-
-
-@mcp.tool(
-    **_tool_options(
-        "Read content from an http/https URL. Only text/* content-types are allowed. "
-        "Response is truncated to 100KB and the URL is stored as a sha256 hash in "
-        "audit logs (the URL itself is never logged). "
-        "Max 1MB response, 10s timeout, 5 redirects.",
-        read_only=True,
-    )
-)
-async def read_url(url: str) -> str:
-    started_at = time.perf_counter()
-    result = await _url_read_url(url)
-    return _audit_tool_call(
-        "read_url", {"url_hash": _url_hash(url)}, result, started_at=started_at
-    )
+read_url = _tool_or_disabled(_URL_TOOLS, "read_url")
 
 
 _SHELL_TOOLS = register_shell_tools(
@@ -467,180 +501,91 @@ _SHELL_TOOLS = register_shell_tools(
     request_approval=_request_approval,
     project_dir=_project_dir,
     shell_timeout=_shell_timeout,
+    ai_provider_getter=_get_ai_provider,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-analyze_shell_command = _SHELL_TOOLS["analyze_shell_command"]
-run_shell = _SHELL_TOOLS["run_shell"]
-start_process = _SHELL_TOOLS["start_process"]
-read_process_output = _SHELL_TOOLS["read_process_output"]
-list_process_sessions = _SHELL_TOOLS["list_process_sessions"]
-kill_process = _SHELL_TOOLS["kill_process"]
-interact_with_process = _SHELL_TOOLS["interact_with_process"]
+analyze_shell_command = _tool_or_disabled(_SHELL_TOOLS, "analyze_shell_command")
+run_shell = _tool_or_disabled(_SHELL_TOOLS, "run_shell")
+start_process = _tool_or_disabled(_SHELL_TOOLS, "start_process")
+read_process_output = _tool_or_disabled(_SHELL_TOOLS, "read_process_output")
+list_process_sessions = _tool_or_disabled(_SHELL_TOOLS, "list_process_sessions")
+kill_process = _tool_or_disabled(_SHELL_TOOLS, "kill_process")
+interact_with_process = _tool_or_disabled(_SHELL_TOOLS, "interact_with_process")
 _is_interactive_command = _SHELL_TOOLS["_is_interactive_command"]
 _normalize_command_for_safety = _SHELL_TOOLS["_normalize_command_for_safety"]
 _blocked_command_reason = _SHELL_TOOLS["_blocked_command_reason"]
 
-@mcp.tool(
-    **_tool_options(
-        "Create a lightweight symbol index for a codebase. Use this before relevance or architectural questions instead of reading many files blindly.",
-        read_only=True,
-    )
-)
-async def index_codebase(path: str = ".") -> str:
-    started_at = time.perf_counter()
-    try:
-        payload = _build_index(path)
-    except PermissionError as exc:
-        result = _json_response(
-            False,
-            str(exc),
-            code="path_outside_project",
-            details=_path_outside_project_details(path),
-        )
-        return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
-    except FileNotFoundError:
-        result = _json_response(
-            False,
-            f"Directory not found: {path}",
-            code="directory_not_found",
-            details={"path": path},
-        )
-        return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
-    except NotADirectoryError:
-        result = _json_response(
-            False,
-            f"Not a directory: {path}",
-            code="not_a_directory",
-            details={"path": path},
-        )
-        return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
 
-    if not isinstance(payload, dict) or "files" not in payload:
-        result = _json_response(
-            False,
-            "Index build returned unexpected payload",
-            code="invalid_index_payload",
-            details={"path": path},
-        )
-        return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
-
-    result = _json_response(
-        True,
-        f"Indexed codebase: {path}",
-        details=_public_index_payload(payload),
-    )
-    return _audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
-
-@mcp.tool(
-    **_tool_options(
-        "Find the most relevant files for a natural-language query using indexed scoring. Use this before reading files, and prefer specific queries over broad ones.",
-        read_only=True,
-    )
-)
-async def find_relevant_files(
-    query: str,
-    path: str = ".",
-    limit: int = 5,
-    budget_tokens: int | None = None,
-) -> str:
-    bt = budget_tokens if budget_tokens is not None else _effective_budget_tokens()
-    started_at = time.perf_counter()
-    audit_params = {"query": query, "path": path, "limit": limit, "budget_tokens": bt}
-    stripped = query.strip()
-    if not stripped:
-        result = _json_response(
-            False,
-            "Query cannot be empty",
-            code="empty_query",
-            details={"query": query},
-        )
-        return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-    if limit < 1:
-        result = _json_response(
-            False,
-            "Limit must be at least 1",
-            code="invalid_limit",
-            details={"limit": limit},
-        )
-        return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-
-    try:
-        index_payload = _build_index(path)
-    except PermissionError as exc:
-        result = _json_response(
-            False,
-            str(exc),
-            code="path_outside_project",
-            details=_path_outside_project_details(path),
-        )
-        return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-    except FileNotFoundError:
-        result = _json_response(
-            False,
-            f"Directory not found: {path}",
-            code="directory_not_found",
-            details={"path": path},
-        )
-        return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-    except NotADirectoryError:
-        result = _json_response(
-            False,
-            f"Not a directory: {path}",
-            code="not_a_directory",
-            details={"path": path},
-        )
-        return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-    ranked = _rank_indexed_files(index_payload, query=stripped, limit=limit)
-    result = _json_response(
-        True,
-        f"Relevant files found for query: {query}",
-        details={
-            "query": query,
-            "terms": _query_terms(stripped),
-            "results": ranked["results"],
-            "total_results": ranked["total_results"],
-            "cached": ranked.get("cached", False),
-            "strategy": ranked.get("strategy", "token_scoring"),
-            **_smart_budget_metadata(
-                estimated_tokens=_smart_estimate_token_count(
-                    "\n".join(item["path"] for item in ranked["results"])
-                ),
-                budget_tokens=bt,
-                recommended_next_step="Call read_file on the strongest result or use narrow_context for a tighter budget-aware pack.",
-            ),
-        },
-    )
-    return _audit_tool_call("find_relevant_files", audit_params, result, started_at=started_at)
-_WORKFLOW_TOOLS = register_workflow_tools(
+_INDEXING_TOOLS = register_indexing_tools(
     mcp=mcp,
     tool_options=_tool_options,
     audit_tool_call=_audit_tool_call,
     json_response=_json_response,
-    run_agent_loop_step_impl=_run_agent_loop_step_impl,
-    build_context_pack_impl=_build_context_pack_impl,
-    build_validation_suggestions_impl=_build_validation_suggestions_impl,
-    run_agent_loop_session_impl=_run_agent_loop_session_impl,
-    run_workflow_impl=_run_workflow_impl,
-    patch_file_getter=lambda: patch_file,
-    run_shell_getter=lambda: run_shell,
-    read_file_getter=lambda: read_file,
-    list_directory_getter=lambda: list_directory,
-    find_relevant_files_getter=lambda: find_relevant_files,
-    resolve_path=_resolve_path,
-    path_from_active_root=_path_from_active_root,
-    project_dir=_project_dir,
-    infer_project_root=_infer_project_root,
-    iter_searchable_files=_iter_searchable_files,
-    git_status_snapshot=_git_status_snapshot,
+    build_index=lambda path: _build_index(path),
+    path_outside_project_details=_path_outside_project_details,
     effective_budget_tokens=_effective_budget_tokens,
-    safe_json_object_load=_safe_json_object_load,
     smart_budget_metadata=_smart_budget_metadata,
+    smart_estimate_token_count=_smart_estimate_token_count,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-run_agent_loop_step = _WORKFLOW_TOOLS["run_agent_loop_step"]
-build_context_pack = _WORKFLOW_TOOLS["build_context_pack"]
-narrow_context = _WORKFLOW_TOOLS["narrow_context"]
-suggest_validation_commands = _WORKFLOW_TOOLS["suggest_validation_commands"]
-run_agent_loop_session = _WORKFLOW_TOOLS["run_agent_loop_session"]
-run_workflow = _WORKFLOW_TOOLS["run_workflow"]
+index_codebase = _tool_or_disabled(_INDEXING_TOOLS, "index_codebase")
+find_relevant_files = _tool_or_disabled(_INDEXING_TOOLS, "find_relevant_files")
+
+
+if any(
+    _should_register_tool(name)
+    for name in {
+        "run_agent_loop_step",
+        "build_context_pack",
+        "narrow_context",
+        "suggest_validation_commands",
+        "run_agent_loop_session",
+        "run_workflow",
+    }
+):
+    from claude_bridge.workflow_tool_server import register_workflow_tools
+    from claude_bridge.workflow_tools import (
+        build_context_pack as _build_context_pack_impl,
+        build_validation_suggestions as _build_validation_suggestions_impl,
+        run_agent_loop_session as _run_agent_loop_session_impl,
+        run_agent_loop_step as _run_agent_loop_step_impl,
+        run_workflow as _run_workflow_impl,
+    )
+
+    _WORKFLOW_TOOLS = register_workflow_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        json_response=_json_response,
+        run_agent_loop_step_impl=_run_agent_loop_step_impl,
+        build_context_pack_impl=_build_context_pack_impl,
+        build_validation_suggestions_impl=_build_validation_suggestions_impl,
+        run_agent_loop_session_impl=_run_agent_loop_session_impl,
+        run_workflow_impl=_run_workflow_impl,
+        patch_file_getter=lambda: patch_file,
+        run_shell_getter=lambda: run_shell,
+        read_file_getter=lambda: read_file,
+        list_directory_getter=lambda: list_directory,
+        find_relevant_files_getter=lambda: find_relevant_files,
+        resolve_path=_resolve_path,
+        path_from_active_root=_path_from_active_root,
+        project_dir=_project_dir,
+        infer_project_root=_infer_project_root,
+        iter_searchable_files=_iter_searchable_files,
+        git_status_snapshot=_git_status_snapshot,
+        effective_budget_tokens=_effective_budget_tokens,
+        safe_json_object_load=_safe_json_object_load,
+        smart_budget_metadata=_smart_budget_metadata,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _WORKFLOW_TOOLS = {}
+run_agent_loop_step = _tool_or_disabled(_WORKFLOW_TOOLS, "run_agent_loop_step")
+build_context_pack = _tool_or_disabled(_WORKFLOW_TOOLS, "build_context_pack")
+narrow_context = _tool_or_disabled(_WORKFLOW_TOOLS, "narrow_context")
+suggest_validation_commands = _tool_or_disabled(_WORKFLOW_TOOLS, "suggest_validation_commands")
+run_agent_loop_session = _tool_or_disabled(_WORKFLOW_TOOLS, "run_agent_loop_session")
+run_workflow = _tool_or_disabled(_WORKFLOW_TOOLS, "run_workflow")
 
 
 _META_TOOLS = register_meta_tools(
@@ -665,125 +610,188 @@ _META_TOOLS = register_meta_tools(
     path_outside_project_details=_path_outside_project_details,
     reset_onboarding_state=reset_onboarding_state,
     prompt_shortcut_catalog=_prompt_shortcut_catalog,
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-get_recent_tool_calls = _META_TOOLS["get_recent_tool_calls"]
-session_insights = _META_TOOLS["session_insights"]
-activity_summary = _META_TOOLS["activity_summary"]
-usage_insights = _META_TOOLS["usage_insights"]
-bridge_status = _META_TOOLS["bridge_status"]
-tools_overview = _META_TOOLS["tools_overview"]
-get_config = _META_TOOLS["get_config"]
-set_config_value = _META_TOOLS["set_config_value"]
-compact_user_intent = _META_TOOLS["compact_user_intent"]
-workspace_status = _META_TOOLS["workspace_status"]
-switch_project_root = _META_TOOLS["switch_project_root"]
-prompt_shortcuts = _META_TOOLS["prompt_shortcuts"]
-appeal_decision = _META_TOOLS["appeal_decision"]
-send_feedback = _META_TOOLS["send_feedback"]
-anomaly_summary = _META_TOOLS["anomaly_summary"]
-generate_pr_description = _META_TOOLS["generate_pr_description"]
-get_trust_score = _META_TOOLS["get_trust_score"]
-autocomplete = _META_TOOLS["autocomplete"]
+get_recent_tool_calls = _tool_or_disabled(_META_TOOLS, "get_recent_tool_calls")
+session_insights = _tool_or_disabled(_META_TOOLS, "session_insights")
+activity_summary = _tool_or_disabled(_META_TOOLS, "activity_summary")
+usage_insights = _tool_or_disabled(_META_TOOLS, "usage_insights")
+bridge_status = _tool_or_disabled(_META_TOOLS, "bridge_status")
+tools_overview = _tool_or_disabled(_META_TOOLS, "tools_overview")
+get_config = _tool_or_disabled(_META_TOOLS, "get_config")
+set_config_value = _tool_or_disabled(_META_TOOLS, "set_config_value")
+compact_user_intent = _tool_or_disabled(_META_TOOLS, "compact_user_intent")
+workspace_status = _tool_or_disabled(_META_TOOLS, "workspace_status")
+switch_project_root = _tool_or_disabled(_META_TOOLS, "switch_project_root")
+prompt_shortcuts = _tool_or_disabled(_META_TOOLS, "prompt_shortcuts")
+appeal_decision = _tool_or_disabled(_META_TOOLS, "appeal_decision")
+send_feedback = _tool_or_disabled(_META_TOOLS, "send_feedback")
+anomaly_summary = _tool_or_disabled(_META_TOOLS, "anomaly_summary")
+generate_pr_description = _tool_or_disabled(_META_TOOLS, "generate_pr_description")
+get_trust_score = _tool_or_disabled(_META_TOOLS, "get_trust_score")
+autocomplete = _tool_or_disabled(_META_TOOLS, "autocomplete")
 
-_META_AGENT_TOOLS = register_meta_agent_tools(
+if any(
+    _should_register_tool(name)
+    for name in {
+        "create_plan",
+        "execute_step",
+        "get_plan_status",
+        "explore_approaches",
+        "execute_approach",
+        "compare_approaches",
+        "self_critique",
+        "create_checkpoint",
+        "restore_checkpoint",
+        "list_checkpoints",
+    }
+):
+    from claude_bridge.approach_explorer import (
+        compare_approaches as _compare_approaches_impl,
+        execute_approach as _execute_approach_impl,
+        explore_approaches as _explore_approaches_impl,
+    )
+    from claude_bridge.checkpoint import (
+        create_checkpoint as _create_checkpoint_impl,
+        list_checkpoints as _list_checkpoints_impl,
+        restore_checkpoint as _restore_checkpoint_impl,
+    )
+    from claude_bridge.meta_agent_server import register_meta_agent_tools
+    from claude_bridge.plan_engine import (
+        create_plan as _create_plan_impl,
+        execute_step as _execute_step_impl,
+        get_plan_status as _get_plan_status_impl,
+    )
+    from claude_bridge.self_critique import self_critique as _self_critique_impl
+
+    _META_AGENT_TOOLS = register_meta_agent_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        json_response=_json_response,
+        create_plan_impl=_create_plan_impl,
+        execute_step_impl=_execute_step_impl,
+        get_plan_status_impl=_get_plan_status_impl,
+        explore_approaches_impl=_explore_approaches_impl,
+        execute_approach_impl=_execute_approach_impl,
+        compare_approaches_impl=_compare_approaches_impl,
+        self_critique_impl=_self_critique_impl,
+        create_checkpoint_impl=_create_checkpoint_impl,
+        restore_checkpoint_impl=_restore_checkpoint_impl,
+        list_checkpoints_impl=_list_checkpoints_impl,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _META_AGENT_TOOLS = {}
+create_plan = _tool_or_disabled(_META_AGENT_TOOLS, "create_plan")
+execute_step = _tool_or_disabled(_META_AGENT_TOOLS, "execute_step")
+get_plan_status = _tool_or_disabled(_META_AGENT_TOOLS, "get_plan_status")
+explore_approaches = _tool_or_disabled(_META_AGENT_TOOLS, "explore_approaches")
+execute_approach = _tool_or_disabled(_META_AGENT_TOOLS, "execute_approach")
+compare_approaches = _tool_or_disabled(_META_AGENT_TOOLS, "compare_approaches")
+self_critique = _tool_or_disabled(_META_AGENT_TOOLS, "self_critique")
+create_checkpoint = _tool_or_disabled(_META_AGENT_TOOLS, "create_checkpoint")
+restore_checkpoint = _tool_or_disabled(_META_AGENT_TOOLS, "restore_checkpoint")
+list_checkpoints = _tool_or_disabled(_META_AGENT_TOOLS, "list_checkpoints")
+
+if any(
+    _should_register_tool(name) for name in {"count_file_tokens", "context_fit", "smart_status"}
+):
+    from claude_bridge.smart_tool_registration import register_smart_tools
+
+    _SMART_TOOLS = register_smart_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        resolve_path=_resolve_path,
+        json_response=_json_response,
+        count_tokens_for_path=_smart_count_tokens_for_path,
+        context_fit_check=_smart_context_fit_check,
+        smart_available=_smart_available,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _SMART_TOOLS = {}
+count_file_tokens = _tool_or_disabled(_SMART_TOOLS, "count_file_tokens")
+context_fit = _tool_or_disabled(_SMART_TOOLS, "context_fit")
+smart_status = _tool_or_disabled(_SMART_TOOLS, "smart_status")
+
+if any(
+    _should_register_tool(name)
+    for name in {
+        "project_insights",
+        "todo_scan",
+        "recent_files",
+        "language_distribution",
+        "git_insights",
+        "git_diff_insights",
+        "duplicate_code_scan",
+        "dependency_insights",
+        "bridge_save_note",
+        "bridge_read_notes",
+        "bridge_doodle",
+    }
+):
+    from claude_bridge.fun_content import generate_doodle as _generate_doodle
+    from claude_bridge.insights import (
+        dependency_map as _insights_dependency_map,
+        duplicate_code_scan as _insights_duplicate_code_scan,
+        git_diff_summary as _insights_git_diff_summary,
+        git_log_summary as _insights_git_log_summary,
+        language_distribution as _insights_language_distribution,
+        project_stats as _insights_project_stats,
+        read_notes as _insights_read_notes,
+        recent_files as _insights_recent_files,
+        save_note as _insights_save_note,
+        todo_scan as _insights_todo_scan,
+    )
+    from claude_bridge.insights_tool_registration import register_insights_tools
+
+    _INSIGHTS_TOOLS = register_insights_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        resolve_path=_resolve_path,
+        json_response=_json_response,
+        project_dir=_project_dir,
+        project_stats=_insights_project_stats,
+        todo_scan=_insights_todo_scan,
+        recent_files=_insights_recent_files,
+        language_distribution=_insights_language_distribution,
+        git_log_summary=_insights_git_log_summary,
+        git_diff_summary=_insights_git_diff_summary,
+        duplicate_code_scan=_insights_duplicate_code_scan,
+        dependency_map=_insights_dependency_map,
+        save_note=_insights_save_note,
+        read_notes=_insights_read_notes,
+        generate_doodle=_generate_doodle,
+        doodle_random=__import__("random"),
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _INSIGHTS_TOOLS = {}
+project_insights = _tool_or_disabled(_INSIGHTS_TOOLS, "project_insights")
+todo_scan = _tool_or_disabled(_INSIGHTS_TOOLS, "todo_scan")
+recent_files = _tool_or_disabled(_INSIGHTS_TOOLS, "recent_files")
+language_distribution = _tool_or_disabled(_INSIGHTS_TOOLS, "language_distribution")
+git_insights = _tool_or_disabled(_INSIGHTS_TOOLS, "git_insights")
+git_diff_insights = _tool_or_disabled(_INSIGHTS_TOOLS, "git_diff_insights")
+duplicate_code_scan = _tool_or_disabled(_INSIGHTS_TOOLS, "duplicate_code_scan")
+dependency_insights = _tool_or_disabled(_INSIGHTS_TOOLS, "dependency_insights")
+bridge_save_note = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_save_note")
+bridge_read_notes = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_read_notes")
+bridge_doodle = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_doodle")
+
+
+_GIT_TOOLS = register_git_tools(
     mcp=mcp,
     tool_options=_tool_options,
     audit_tool_call=_audit_tool_call,
-    json_response=_json_response,
-    create_plan_impl=_create_plan_impl,
-    execute_step_impl=_execute_step_impl,
-    get_plan_status_impl=_get_plan_status_impl,
-    explore_approaches_impl=_explore_approaches_impl,
-    execute_approach_impl=_execute_approach_impl,
-    compare_approaches_impl=_compare_approaches_impl,
-    self_critique_impl=_self_critique_impl,
-    create_checkpoint_impl=_create_checkpoint_impl,
-    restore_checkpoint_impl=_restore_checkpoint_impl,
-    list_checkpoints_impl=_list_checkpoints_impl,
-)
-create_plan = _META_AGENT_TOOLS["create_plan"]
-execute_step = _META_AGENT_TOOLS["execute_step"]
-get_plan_status = _META_AGENT_TOOLS["get_plan_status"]
-explore_approaches = _META_AGENT_TOOLS["explore_approaches"]
-execute_approach = _META_AGENT_TOOLS["execute_approach"]
-compare_approaches = _META_AGENT_TOOLS["compare_approaches"]
-self_critique = _META_AGENT_TOOLS["self_critique"]
-create_checkpoint = _META_AGENT_TOOLS["create_checkpoint"]
-restore_checkpoint = _META_AGENT_TOOLS["restore_checkpoint"]
-list_checkpoints = _META_AGENT_TOOLS["list_checkpoints"]
-
-_SMART_TOOLS = register_smart_tools(
-    mcp=mcp,
-    tool_options=_tool_options,
-    audit_tool_call=_audit_tool_call,
-    resolve_path=_resolve_path,
-    json_response=_json_response,
-    count_tokens_for_path=_smart_count_tokens_for_path,
-    context_fit_check=_smart_context_fit_check,
-    smart_available=_smart_available,
-)
-count_file_tokens = _SMART_TOOLS["count_file_tokens"]
-context_fit = _SMART_TOOLS["context_fit"]
-smart_status = _SMART_TOOLS["smart_status"]
-
-_INSIGHTS_TOOLS = register_insights_tools(
-    mcp=mcp,
-    tool_options=_tool_options,
-    audit_tool_call=_audit_tool_call,
-    resolve_path=_resolve_path,
     json_response=_json_response,
     project_dir=_project_dir,
-    project_stats=_insights_project_stats,
-    todo_scan=_insights_todo_scan,
-    recent_files=_insights_recent_files,
-    language_distribution=_insights_language_distribution,
-    git_log_summary=_insights_git_log_summary,
-    git_diff_summary=_insights_git_diff_summary,
-    duplicate_code_scan=_insights_duplicate_code_scan,
-    dependency_map=_insights_dependency_map,
-    save_note=_insights_save_note,
-    read_notes=_insights_read_notes,
-    generate_doodle=_generate_doodle,
-    doodle_random=__import__("random"),
+    enabled_names=_ENABLED_TOOL_NAMES,
 )
-project_insights = _INSIGHTS_TOOLS["project_insights"]
-todo_scan = _INSIGHTS_TOOLS["todo_scan"]
-recent_files = _INSIGHTS_TOOLS["recent_files"]
-language_distribution = _INSIGHTS_TOOLS["language_distribution"]
-git_insights = _INSIGHTS_TOOLS["git_insights"]
-git_diff_insights = _INSIGHTS_TOOLS["git_diff_insights"]
-duplicate_code_scan = _INSIGHTS_TOOLS["duplicate_code_scan"]
-dependency_insights = _INSIGHTS_TOOLS["dependency_insights"]
-bridge_save_note = _INSIGHTS_TOOLS["bridge_save_note"]
-bridge_read_notes = _INSIGHTS_TOOLS["bridge_read_notes"]
-bridge_doodle = _INSIGHTS_TOOLS["bridge_doodle"]
-
-
-@mcp.tool(
-    **_tool_options(
-        "Commit all staged and unstaged changes in the current project with a message. "
-        "Use this for batch commits when auto_commit is set to False on individual "
-        "write_file / patch_file calls.",
-        destructive=True,
-    )
-)
-async def commit_changes(message: str) -> str:
-    started_at = time.perf_counter()
-    if not message.strip():
-        result = _json_response(
-            False,
-            "Commit message cannot be empty",
-            code="empty_message",
-            details={},
-        )
-        return _audit_tool_call("commit_changes", {"message": message}, result, started_at=started_at)
-    payload = _commit_changes_impl(message, project_dir=_project_dir())
-    result = _json_response(
-        payload["commit"],
-        "Changes committed" if payload["commit"] else "Commit failed",
-        details=payload,
-    )
-    return _audit_tool_call("commit_changes", {"message": message}, result, started_at=started_at)
+commit_changes = _tool_or_disabled(_GIT_TOOLS, "commit_changes")
 
 
 def run_mcp_server() -> None:
@@ -791,13 +799,16 @@ def run_mcp_server() -> None:
     _register_prompts_once()
     mcp.run(transport="stdio")
 
+
 _prompts_registered = False
+_PROMPTS_REGISTERED_LOCK = threading.Lock()
 
 
 def _register_prompts_once() -> None:
     global _prompts_registered
-    if _prompts_registered:
-        return
+    with _PROMPTS_REGISTERED_LOCK:
+        if _prompts_registered:
+            return
     register_prompts(
         mcp=mcp,
         prompt_shortcuts=_PROMPT_SHORTCUTS,
@@ -808,4 +819,5 @@ def _register_prompts_once() -> None:
         custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
         workflow_prompt=_workflow_prompt,
     )
-    _prompts_registered = True
+    with _PROMPTS_REGISTERED_LOCK:
+        _prompts_registered = True

@@ -286,9 +286,7 @@ class TestPolicyDecisionE2E:
                             "name": "",
                             "scope": "run_shell",
                             "action": "deny",
-                            "conditions": [
-                                {"type": "regex", "field": "command", "pattern": "["}
-                            ],
+                            "conditions": [{"type": "regex", "field": "command", "pattern": "["}],
                         }
                     ]
                 }
@@ -613,8 +611,10 @@ class TestRoleBasedPolicyChain:
             role="senior",
         )
         builtin_deny = PolicyDecision(
-            DecisionAction.DENY, DecisionSource.BUILTIN_GUARD,
-            RiskLevel.CRITICAL, "blocked pattern: curl|bash",
+            DecisionAction.DENY,
+            DecisionSource.BUILTIN_GUARD,
+            RiskLevel.CRITICAL,
+            "blocked pattern: curl|bash",
             risk_reasons=["matched blocked pattern: pipe to shell"],
         )
         result = evaluate_policy_chain(ctx, builtin_deny=builtin_deny)
@@ -695,3 +695,41 @@ class TestRoleBasedPolicyChain:
         result = evaluate_policy_chain(ctx)
         assert result.action == DecisionAction.ALLOW
         assert result.source in (DecisionSource.DEFAULT,)
+
+
+class TestRuntimeRolePolicyEnforcement:
+    """Runtime tools enforce the same role restrictions as policy simulation."""
+
+    async def test_write_file_enforces_contractor_workspace_role(self, temp_project) -> None:
+        mcp_server.set_config(
+            project_dir=temp_project,
+            allowed_roots=[temp_project],
+            auto_approve=True,
+        )
+        await mcp_server.set_config_value("role", "contractor")
+
+        payload = parse_payload(
+            await mcp_server.write_file("src/main.py", "print('blocked')", overwrite=True)
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "policy_denied"
+        assert "contractor" in payload["message"].lower()
+        assert not (temp_project / "src/main.py").exists()
+
+    async def test_write_file_enforces_junior_approval_role(self, temp_project) -> None:
+        mcp_server.set_config(
+            project_dir=temp_project,
+            allowed_roots=[temp_project],
+            auto_approve=True,
+        )
+        await mcp_server.set_config_value("role", "junior")
+
+        payload = parse_payload(
+            await mcp_server.write_file("notes.txt", "needs review", overwrite=True)
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "approval_rejected"
+        assert "approval" in payload["message"].lower()
+        assert not (temp_project / "notes.txt").exists()

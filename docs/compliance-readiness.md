@@ -47,7 +47,7 @@ support compliance objectives for Claude Bridge deployments.
 |---------|---------------|
 | Session scoring | Multi-factor anomaly scoring per audit session. |
 | Policy deviation | Compares actual decisions against expected policy outcomes. |
-| CLI review | `anomaly scan` command with critical anomaly alerts. |
+| CLI review | `anomaly scan` command with critical anomaly alerts. Anomaly results are advisory in v0.1 and do not enforce guard decisions. |
 
 ---
 
@@ -71,4 +71,4 @@ support compliance objectives for Claude Bridge deployments.
 - [ ] Anomaly scans reviewed after each session.
 - [ ] Allowed roots scoped to the minimum required directories.
 - [ ] `CLAUDE_BRIDGE_GUARD_POLICY` environment variable set to the reviewed policy file.
-- [ ] `appea` and replay workflows tested for policy change validation.
+- [ ] Appeal and replay workflows tested for policy change validation.

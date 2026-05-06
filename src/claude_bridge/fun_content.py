@@ -16,7 +16,6 @@ ASCII_ARTS = [
         "     __\n    /  \\\\\n   |    |\n   |____|\n  .'    `.\n / .-==-.\n| |  ()  |\n \\\\ `-||-`/\n  `._||_.`",
     ),
     ("Skull", "    _____\n   /     \\\\\n  | () () |\n  \\\\   ^   /\n   |||||\n   |||||"),
-    
     ("Poop", "   ____\n  /    \\\\\n |      |\n |      |\n  \\\\____/\n   ||||\n   ||||"),
     (
         "Shark",
@@ -25,16 +24,16 @@ ASCII_ARTS = [
 ]
 
 ABSURD_STORIES = [
-    "Bir zamanlar stack overflow kapatıldı. O gün 4 milyar developer aynı anda 'ama benim kodum çalışıyordu' dedi. Kimse inanmadı.",
-    "GitHub'a push'ladığın kod aslında git'e gidiyor. Git de 'commit' diyor. Yani kodun bir tür manevi yolculuğa çıkıyor. Yayınlandığında artık o kod değil, ruh hali.",
-    "Bilgisayar mühendisi, evindeki lambayı değiştirmek ister. Socket programming ile başlar, 3 saat sonra Kubernetes cluster kurar. Lamba hala yanmıyor.",
-    "Junior developer: 'Bu kodda bug var.' Senior developer: 'Hayır, o bir feature.' Lead developer: 'Hayır, o kasten.' CTO: 'Hayır, o stratejik.' Sprint'in sonunda herkes haklı çıktı. Bug production'a gitti.",
-    "Pair programming yaparken yanındaki kişi 'return False' yazdı. Sen içinden 'hayatın özeti bu' dedin. Gülümsetin dedi. Git commit mesajı: 'hayatin_ozeti.py'",
-    "Product manager: 'Kullanıcılar bu butonu sevecek.' Developer butonu yazar. 2 hafta sonra PM: 'Ama her tıkladığında crash ediyor?' Developer: 'Evet, sevmek acıdır.'",
-    "pip install hayallerim && python manage.py runserver --noreality=True",
-    "Bug report: 'Uygulama karanlık modda çalışmıyor.' Developer: 'Ben de çalışmıyorum.' Issue closed: wontfix.",
-    "Tech interview'da interviewer sorar: 'Binary tree'yi ters çevir. Aday der: 'rm -rf /'. Interviewer: 'Hired.'",
-    "Bir developer gece 3'te koda bakar. Kod çalışıyor. Ama neden? Bilmiyor. Korkuyla yatağa döner. Ertesi sabah kod hala çalışıyor. Kimse sorarmış değil. Kimse sormaz.",
+    "Once upon a time Stack Overflow went down. That day, 4 billion developers simultaneously said 'but my code was working.' Nobody believed them.",
+    "The code you push to GitHub goes to git. Git says 'commit.' So your code goes on a spiritual journey. Once deployed, it's no longer code — it's a mood.",
+    "A software engineer wants to change a lightbulb. Starts with socket programming, 3 hours later has a Kubernetes cluster. Lightbulb still not working.",
+    "Junior dev: 'This code has a bug.' Senior dev: 'No, that's a feature.' Lead dev: 'No, that's intentional.' CTO: 'No, that's strategic.' By sprint end everyone was right. Bug went to production.",
+    "During pair programming your partner wrote 'return False.' You thought 'that's the summary of life.' Git commit message: 'summary_of_life.py'",
+    "Product manager: 'Users will love this button.' Developer writes the button. 2 weeks later PM: 'But it crashes every time?' Developer: 'Yes, love hurts.'",
+    "pip install my_dreams && python manage.py runserver --noreality=True",
+    "Bug report: 'App doesn't work in dark mode.' Developer: 'Neither do I.' Issue closed: wontfix.",
+    "Tech interview: 'Invert a binary tree.' Candidate: 'rm -rf /'. Interviewer: 'Hired.'",
+    "A developer looks at code at 3 AM. It works. But why? No idea. Goes back to bed terrified. Next morning it still works. Nobody asks why. Nobody ever asks.",
 ]
 
 FAKE_BUG_REPORTS = [
@@ -49,16 +48,16 @@ FAKE_BUG_REPORTS = [
 ]
 
 EXCUSES = [
-    "Bu kod benden değil, git blame'e bak.",
-    "Bilgisayarım bugün Türkçe konuşmak istemedi, İngilizce çıktı.",
-    "Bu bir bug değil, bu bir easter egg. Çok gizli.",
-    "Normalde çalışıyordu. Demek ki normal değildi.",
-    "Ben kod yazmıyorum, ben sanat yapıyorum. Sanat hata yapmaz. İzleyici hata yapar.",
-    "Bu debug değil, bu keşif. Columbus da Amerika'ya gitmek istememişti.",
-    "import antigravity dedim, bilgisayar uçtu. Yanlış anladım herhalde.",
-    "RegEx yazarken bir türlü bitiremedim. 3 gündür aynı pattern'deyim. Yardım edin.",
-    "merge conflict çıktı, her iki tarafı da kabul ettim. Sonuç: her iki taraf da bozuldu. Ama en azından adil.",
-    "try: yazmak zorundayım. except: anlamak zorunda değilim. finally: kahve.",
+    "That's not my code, check git blame.",
+    "My computer refused to compile today. It's on strike.",
+    "It's not a bug, it's an easter egg. Very exclusive.",
+    "It was working before. So I guess it wasn't normal.",
+    "I don't write code, I create art. Art doesn't make mistakes. The audience does.",
+    "This isn't debugging, it's exploration. Columbus didn't want to go to America either.",
+    "I said import antigravity and the computer flew away. Misunderstood the docs I guess.",
+    "Been writing this regex for 3 days. Still on the same pattern. Send help.",
+    "Got a merge conflict, accepted both sides. Result: both sides broke. But at least it was fair.",
+    "I have to write try:. I don't have to understand except:. finally: coffee.",
 ]
 
 CODE_REVIEW_COMMENTS = [
@@ -77,13 +76,13 @@ CODE_REVIEW_COMMENTS = [
 
 def _random_reasons(rand: Any) -> list[str]:
     return [
-        "Claude Bridge v0.1.0 yayınlandığında, bir test 417. kez çalıştı ve geçti. Sonunda insan gibi davranmaya başladı.",
-        f"Bu bilgisayarın uptime'ı {rand.randint(1, 999)} gün. Ama senin oda süren {rand.randint(1, 48)} saat gibi görünüyor.",
-        f"Bugün yazdığın kodun {rand.randint(2, 99)}%'ı stack overflow'dan geldi. Ama bunu kimse bilmeyecek.",
-        "Claude Bridge şu an senin tüm dosyalarını okuyabilir. Ama endişelenme, gizli klasörünüzde ne olduğunu bilmiyoruz... henüz.",
-        f"Dünya üzerinde yaklaşık {rand.randint(20, 30)} milyon developer var. Tam {rand.randint(1, 99)} tanesi şu an bu mesajı okuyor.",
-        "Claude Bridge bir MCP server'dır. MCP = Model Context Protocol. Ya da Must Coffee Please. Bilemiyoruz.",
-        "Bu tool'u çağırmak için harcadığın token'larla neler yapabilirdin? Mesela bir AI'a 'bana kahve getir' de. Aynı sonucu alırsın.",
+        "When Claude Bridge v0.1.0 launched, one test ran for the 417th time and passed. It finally started behaving like a human.",
+        f"This computer's uptime is {rand.randint(1, 999)} days. But your session looks like it's been running for {rand.randint(1, 48)} hours.",
+        f"About {rand.randint(2, 99)}% of the code you wrote today came from Stack Overflow. Nobody will ever know.",
+        "Claude Bridge can read all your files right now. Don't worry, we don't know what's in your secret folder... yet.",
+        f"There are approximately {rand.randint(20, 30)} million developers worldwide. Exactly {rand.randint(1, 99)} of them are reading this message right now.",
+        "Claude Bridge is an MCP server. MCP = Model Context Protocol. Or Maybe Coffee Please. We're not sure.",
+        "Think of all the things you could have done with the tokens you spent calling this tool. Like asking an AI to bring you coffee. Same result.",
     ]
 
 

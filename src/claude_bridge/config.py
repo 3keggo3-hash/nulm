@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 APPROVAL_PRESETS: dict[str, dict[str, Any]] = {
     "read-only": {
@@ -45,6 +45,145 @@ BUDGET_PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 
+TOOL_PROFILES: dict[str, dict[str, Any]] = {
+    "essential": {
+        "description": (
+            "Minimal tool set for lowest token overhead. ~18 tools. "
+            "Best for free-tier usage where every token counts."
+        ),
+        "groups": {
+            "file_core",
+            "shell_core",
+            "indexing",
+            "workspace",
+        },
+    },
+    "standard": {
+        "description": (
+            "Commonly used tools without niche features. ~30 tools. "
+            "Good balance of capability and token cost."
+        ),
+        "groups": {
+            "file_core",
+            "shell_core",
+            "indexing",
+            "workspace",
+            "workflow_core",
+            "meta_core",
+            "smart",
+            "insights_core",
+        },
+    },
+    "full": {
+        "description": (
+            "All available tools. ~51 tools. Maximum capability " "but highest per-turn token cost."
+        ),
+        "groups": {
+            "file_core",
+            "shell_core",
+            "indexing",
+            "workspace",
+            "workflow_core",
+            "meta_core",
+            "meta_agent",
+            "smart",
+            "insights_core",
+            "insights_extra",
+            "fun",
+            "multi_format",
+            "url",
+            "git_commit",
+        },
+    },
+}
+
+TOOL_GROUPS: dict[str, set[str]] = {
+    "file_core": {
+        "read_file",
+        "read_multiple_files",
+        "list_directory",
+        "write_file",
+        "move_file",
+        "copy_path",
+        "search_in_files",
+        "patch_file",
+        "preview_patch",
+        "undo_last_patch",
+    },
+    "shell_core": {
+        "run_shell",
+        "analyze_shell_command",
+        "start_process",
+        "read_process_output",
+        "kill_process",
+    },
+    "indexing": {
+        "index_codebase",
+        "find_relevant_files",
+    },
+    "workspace": {
+        "workspace_status",
+        "switch_project_root",
+    },
+    "workflow_core": {
+        "build_context_pack",
+        "narrow_context",
+        "suggest_validation_commands",
+        "run_workflow",
+    },
+    "meta_core": {
+        "bridge_status",
+        "get_config",
+        "set_config_value",
+        "compact_user_intent",
+        "tools_overview",
+    },
+    "meta_agent": {
+        "create_plan",
+        "execute_step",
+        "get_plan_status",
+        "explore_approaches",
+        "execute_approach",
+        "compare_approaches",
+        "self_critique",
+        "create_checkpoint",
+        "restore_checkpoint",
+        "list_checkpoints",
+    },
+    "smart": {
+        "count_file_tokens",
+        "context_fit",
+        "smart_status",
+    },
+    "insights_core": {
+        "project_insights",
+        "git_insights",
+        "git_diff_insights",
+    },
+    "insights_extra": {
+        "todo_scan",
+        "recent_files",
+        "language_distribution",
+        "duplicate_code_scan",
+        "dependency_insights",
+    },
+    "fun": {
+        "bridge_doodle",
+        "bridge_save_note",
+        "bridge_read_notes",
+    },
+    "multi_format": {
+        "read_image",
+        "read_pdf",
+    },
+    "url": {
+        "read_url",
+    },
+    "git_commit": {
+        "commit_changes",
+    },
+}
+
 _CONFIG: dict[str, Any] = {
     "project_dir": Path.cwd().resolve(),
     "allowed_roots": [Path.cwd().resolve()],
@@ -52,16 +191,20 @@ _CONFIG: dict[str, Any] = {
     "client_managed_approval": False,
     "shell_timeout": 30,
     "approval_preset": None,
-    "onboarding_enabled": True,
+    "onboarding_enabled": False,
     "context_budget_profile": "balanced",
+    "tool_profile": "full",
     "intent_compaction_enabled": False,
     "ai_evaluator_enabled": False,
     "ai_evaluator_provider": "local",
+    "ai_evaluator_api_key": "",
+    "ai_evaluator_model": "",
     "ai_evaluator_timeout": 5,
     "ai_evaluator_fallback_action": "ask",
     "role": None,
     "user": None,
 }
+_ALLOWED_ROOTS_SNAPSHOT: tuple[Path, ...] = tuple(_CONFIG["allowed_roots"])
 
 _CONFIG_LOCK = threading.RLock()
 
@@ -86,21 +229,25 @@ def resolve_approval_mode(
 
 def apply_config(
     project_dir: Path,
-    allowed_roots: list[Path] | None = None,
+    allowed_roots: Sequence[Path] | None = None,
     auto_approve: bool = False,
     client_managed_approval: bool = False,
     shell_timeout: int = 30,
     approval_preset: str | None = None,
-    onboarding_enabled: bool = True,
+    onboarding_enabled: bool = False,
     context_budget_profile: str = "balanced",
+    tool_profile: str = "standard",
     intent_compaction_enabled: bool = False,
     ai_evaluator_enabled: bool = False,
     ai_evaluator_provider: str = "local",
+    ai_evaluator_api_key: str = "",
+    ai_evaluator_model: str = "",
     ai_evaluator_timeout: int = 5,
     ai_evaluator_fallback_action: str = "ask",
     role: str | None = None,
     user: str | None = None,
 ) -> None:
+    global _ALLOWED_ROOTS_SNAPSHOT
     resolved_project_dir = project_dir.resolve()
     resolved_allowed_roots = [root.resolve() for root in (allowed_roots or [resolved_project_dir])]
     if resolved_project_dir not in resolved_allowed_roots:
@@ -112,11 +259,14 @@ def apply_config(
     )
     if context_budget_profile not in BUDGET_PROFILES:
         raise ValueError(f"Unknown context budget profile: {context_budget_profile}")
+    if tool_profile not in TOOL_PROFILES:
+        raise ValueError(f"Unknown tool profile: {tool_profile}")
     if not isinstance(shell_timeout, int) or shell_timeout <= 0:
         raise ValueError(f"shell_timeout must be a positive integer, got {shell_timeout!r}")
-    if ai_evaluator_provider not in {"local"}:
+    if ai_evaluator_provider not in {"local", "openai", "anthropic", "ollama"}:
         raise ValueError(
-            f"ai_evaluator_provider must be one of local, got {ai_evaluator_provider!r}"
+            f"ai_evaluator_provider must be one of local/openai/anthropic/ollama, "
+            f"got {ai_evaluator_provider!r}"
         )
     if not isinstance(ai_evaluator_timeout, int) or ai_evaluator_timeout <= 0:
         raise ValueError(
@@ -130,15 +280,19 @@ def apply_config(
     with _CONFIG_LOCK:
         _CONFIG["project_dir"] = resolved_project_dir
         _CONFIG["allowed_roots"] = resolved_allowed_roots
+        _ALLOWED_ROOTS_SNAPSHOT = tuple(resolved_allowed_roots)
         _CONFIG["auto_approve"] = resolved_auto_approve
         _CONFIG["client_managed_approval"] = resolved_client_managed
         _CONFIG["shell_timeout"] = shell_timeout
         _CONFIG["approval_preset"] = resolved_preset
         _CONFIG["onboarding_enabled"] = bool(onboarding_enabled)
         _CONFIG["context_budget_profile"] = context_budget_profile
+        _CONFIG["tool_profile"] = tool_profile
         _CONFIG["intent_compaction_enabled"] = bool(intent_compaction_enabled)
         _CONFIG["ai_evaluator_enabled"] = bool(ai_evaluator_enabled)
         _CONFIG["ai_evaluator_provider"] = ai_evaluator_provider
+        _CONFIG["ai_evaluator_api_key"] = ai_evaluator_api_key
+        _CONFIG["ai_evaluator_model"] = ai_evaluator_model
         _CONFIG["ai_evaluator_timeout"] = ai_evaluator_timeout
         _CONFIG["ai_evaluator_fallback_action"] = ai_evaluator_fallback_action
         if role is not None:
@@ -160,11 +314,14 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     )
     client_managed_approval = raw_client_managed in {"1", "true", "yes", "on"}
     raw_approval_preset = os.environ.get("CLAUDE_BRIDGE_APPROVAL_PRESET", "").strip() or None
-    raw_onboarding_enabled = os.environ.get("CLAUDE_BRIDGE_ONBOARDING_ENABLED", "1").strip().lower()
+    raw_onboarding_enabled = os.environ.get("CLAUDE_BRIDGE_ONBOARDING_ENABLED", "0").strip().lower()
     onboarding_enabled = raw_onboarding_enabled in {"1", "true", "yes", "on"}
     raw_shell_timeout = os.environ.get("CLAUDE_BRIDGE_SHELL_TIMEOUT", "30").strip()
     raw_context_budget_profile = (
         os.environ.get("CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE", "balanced").strip() or "balanced"
+    )
+    raw_tool_profile = (
+        os.environ.get("CLAUDE_BRIDGE_TOOL_PROFILE", "standard").strip() or "standard"
     )
     raw_intent_compaction_enabled = (
         os.environ.get("CLAUDE_BRIDGE_INTENT_COMPACTION_ENABLED", "0").strip().lower()
@@ -183,6 +340,8 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     raw_ai_provider = (
         os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_PROVIDER", "local").strip().lower() or "local"
     )
+    ai_evaluator_api_key = os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_API_KEY", "").strip()
+    ai_evaluator_model = os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_MODEL", "").strip()
     raw_ai_timeout = os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_TIMEOUT", "5").strip()
     try:
         ai_timeout_parsed = int(raw_ai_timeout)
@@ -193,8 +352,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     except ValueError:
         ai_evaluator_timeout = 5
     ai_evaluator_fallback_action = (
-        os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_FALLBACK_ACTION", "ask").strip().lower()
-        or "ask"
+        os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_FALLBACK_ACTION", "ask").strip().lower() or "ask"
     )
     raw_role = os.environ.get("CLAUDE_BRIDGE_ROLE", "").strip() or None
     raw_user = os.environ.get("CLAUDE_BRIDGE_USER", "").strip() or None
@@ -209,9 +367,12 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
         approval_preset=raw_approval_preset,
         onboarding_enabled=onboarding_enabled,
         context_budget_profile=raw_context_budget_profile,
+        tool_profile=raw_tool_profile,
         intent_compaction_enabled=intent_compaction_enabled,
         ai_evaluator_enabled=ai_evaluator_enabled,
         ai_evaluator_provider=raw_ai_provider,
+        ai_evaluator_api_key=ai_evaluator_api_key,
+        ai_evaluator_model=ai_evaluator_model,
         ai_evaluator_timeout=ai_evaluator_timeout,
         ai_evaluator_fallback_action=ai_evaluator_fallback_action,
         role=raw_role,
@@ -224,9 +385,8 @@ def project_dir() -> Path:
         return cast(Path, _CONFIG["project_dir"])
 
 
-def allowed_roots() -> list[Path]:
-    with _CONFIG_LOCK:
-        return list(_CONFIG["allowed_roots"])
+def allowed_roots() -> tuple[Path, ...]:
+    return _ALLOWED_ROOTS_SNAPSHOT
 
 
 def shell_timeout() -> int:
@@ -241,6 +401,7 @@ def approval_mode() -> tuple[bool, bool]:
 
 def current_config() -> dict[str, Any]:
     with _CONFIG_LOCK:
+        api_key = str(_CONFIG.get("ai_evaluator_api_key", ""))
         return {
             "project_dir": _CONFIG["project_dir"],
             "allowed_roots": list(_CONFIG["allowed_roots"]),
@@ -250,9 +411,12 @@ def current_config() -> dict[str, Any]:
             "approval_preset": _CONFIG["approval_preset"],
             "onboarding_enabled": bool(_CONFIG["onboarding_enabled"]),
             "context_budget_profile": str(_CONFIG["context_budget_profile"]),
+            "tool_profile": str(_CONFIG["tool_profile"]),
             "intent_compaction_enabled": bool(_CONFIG["intent_compaction_enabled"]),
             "ai_evaluator_enabled": bool(_CONFIG["ai_evaluator_enabled"]),
             "ai_evaluator_provider": str(_CONFIG["ai_evaluator_provider"]),
+            "ai_evaluator_api_key": "[REDACTED]" if api_key else "",
+            "ai_evaluator_model": str(_CONFIG.get("ai_evaluator_model", "")),
             "ai_evaluator_timeout": int(_CONFIG["ai_evaluator_timeout"]),
             "ai_evaluator_fallback_action": str(_CONFIG["ai_evaluator_fallback_action"]),
             "role": _CONFIG["role"],
@@ -270,6 +434,18 @@ def active_user() -> str | None:
     """Return the currently configured user identifier, or None if not set."""
     with _CONFIG_LOCK:
         return _CONFIG.get("user")
+
+
+def active_tool_names() -> set[str]:
+    """Return the set of tool names enabled by the current tool_profile."""
+    with _CONFIG_LOCK:
+        profile_name = str(_CONFIG.get("tool_profile", "standard"))
+    profile = TOOL_PROFILES.get(profile_name, TOOL_PROFILES["standard"])
+    groups = profile.get("groups", set())
+    names: set[str] = set()
+    for group in groups:
+        names.update(TOOL_GROUPS.get(group, set()))
+    return names
 
 
 def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
@@ -315,6 +491,15 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             _CONFIG["context_budget_profile"] = profile
             return current_config()
 
+        if key == "tool_profile":
+            profile = str(value)
+            if profile not in TOOL_PROFILES:
+                raise ValueError(
+                    f"Unknown tool profile: {profile}. Available: {', '.join(TOOL_PROFILES)}"
+                )
+            _CONFIG["tool_profile"] = profile
+            return current_config()
+
         if key == "intent_compaction_enabled":
             if not isinstance(value, bool):
                 raise ValueError("intent_compaction_enabled must be a boolean")
@@ -329,9 +514,19 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
 
         if key == "ai_evaluator_provider":
             provider = str(value).lower()
-            if provider not in {"local"}:
-                raise ValueError("ai_evaluator_provider must be one of local")
+            if provider not in {"local", "openai", "anthropic", "ollama"}:
+                raise ValueError(
+                    "ai_evaluator_provider must be one of local/openai/anthropic/ollama"
+                )
             _CONFIG[key] = provider
+            return current_config()
+
+        if key == "ai_evaluator_api_key":
+            _CONFIG[key] = str(value)
+            return current_config()
+
+        if key == "ai_evaluator_model":
+            _CONFIG[key] = str(value)
             return current_config()
 
         if key == "ai_evaluator_timeout":
@@ -347,9 +542,7 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
         if key == "ai_evaluator_fallback_action":
             action = str(value).lower()
             if action not in {"allow", "deny", "ask"}:
-                raise ValueError(
-                    "ai_evaluator_fallback_action must be one of allow/deny/ask"
-                )
+                raise ValueError("ai_evaluator_fallback_action must be one of allow/deny/ask")
             _CONFIG[key] = action
             return current_config()
 

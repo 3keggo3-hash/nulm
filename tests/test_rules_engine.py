@@ -168,8 +168,7 @@ class TestConditionRegex:
 
         assert evaluate_condition(ctx, cond) is False
         assert any(
-            getattr(record, "structured_warning", {}).get("code")
-            == "rule_regex_runtime_rejected"
+            getattr(record, "structured_warning", {}).get("code") == "rule_regex_runtime_rejected"
             for record in caplog.records
         )
 
@@ -643,7 +642,7 @@ class TestBuiltinHardDenyProtection:
 
     These are the four hard-deny scenarios:
       1. blocked shell pattern
-      2. workspace dışı path
+      2. path outside workspace
       3. sensitive path hard block
       4. secret pattern hard block
     """

@@ -33,6 +33,8 @@ class TestDesktopConfig:
         )
         assert server["env"]["CLAUDE_BRIDGE_AUTO_APPROVE"] == "1"
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "0"
+        assert server["env"]["CLAUDE_BRIDGE_TOOL_PROFILE"] == "standard"
+        assert server["env"]["CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE"] == "balanced"
         assert server["env"]["PYTHONUNBUFFERED"] == "1"
 
     def test_build_desktop_config_can_explicitly_enable_client_managed_approval(
@@ -47,6 +49,19 @@ class TestDesktopConfig:
 
         server = config["mcpServers"]["claude-bridge"]
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "1"
+
+    def test_build_desktop_config_can_use_low_token_profile(self, tmp_path: Path):
+        config = build_desktop_config(
+            tmp_path,
+            python_executable="/usr/bin/python3",
+            package_root=Path("/tmp/fake-project"),
+            tool_profile="essential",
+            context_budget_profile="low-cost",
+        )
+
+        server = config["mcpServers"]["claude-bridge"]
+        assert server["env"]["CLAUDE_BRIDGE_TOOL_PROFILE"] == "essential"
+        assert server["env"]["CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE"] == "low-cost"
 
     def test_build_desktop_config_includes_approval_preset_when_requested(self, tmp_path: Path):
         config = build_desktop_config(
@@ -640,6 +655,55 @@ class TestCLI:
         assert record_id in result.stdout
         assert "Status:" in result.stdout
 
+    def test_appeal_command_can_request_escalation(self, monkeypatch, tmp_path: Path):
+        import asyncio
+        import claude_bridge.replay as replay_module
+        from claude_bridge.audit import get_recent_tool_calls
+        from claude_bridge.guard_policy import (
+            DecisionAction,
+            DecisionSource,
+            PolicyDecision,
+            RiskLevel,
+        )
+        from claude_bridge.replay import ReplayResult
+
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+        asyncio.run(mcp_server.run_shell("sudo apt update"))
+        record_id = get_recent_tool_calls(limit=1)["records"][0]["record_id"]
+
+        def _deny_replay(record, *, justification, **kwargs):
+            decision = PolicyDecision(
+                action=DecisionAction.DENY,
+                source=DecisionSource.BUILTIN_GUARD,
+                risk_level=RiskLevel.CRITICAL,
+                reason="still denied after appeal",
+            )
+            return ReplayResult(
+                original_decision=decision,
+                replayed_decision=decision,
+                changed=False,
+                change_reason="unchanged",
+                metadata={"appeal_justification": justification},
+            )
+
+        monkeypatch.setattr(replay_module, "replay_with_justification", _deny_replay)
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "appeal",
+                "--record-id",
+                record_id,
+                "--justification",
+                "Need access for debugging",
+                "--escalate",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Escalation created:" in result.stdout
+
     def test_appeal_history_command_prints_history(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
         mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
@@ -680,6 +744,7 @@ class TestCLI:
         assert "Anomaly Scan" in result.stdout
         assert "Records scanned:" in result.stdout
         assert "Overall max score:" in result.stdout
+        assert "Runtime policy:" in result.stdout
 
     def test_anomaly_scan_command_json_output(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
@@ -696,6 +761,43 @@ class TestCLI:
         assert "total_records_scanned" in parsed
         assert "anomaly_scores" in parsed
         assert "mvp_limits" in parsed
+        assert parsed["runtime_policy"]["mode"] == "warn_and_log"
+        assert parsed["runtime_policy"]["enforced"] is False
+
+    def test_anomaly_baseline_command_writes_project_baseline(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "app.py").write_text("print('ok')", encoding="utf-8")
+        asyncio.run(mcp_server.read_file("src/app.py"))
+        asyncio.run(mcp_server.run_shell("git status"))
+
+        result = runner.invoke(
+            cli.app,
+            [
+                "anomaly",
+                "baseline",
+                "--project-dir",
+                str(tmp_path),
+                "--limit",
+                "10",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        parsed = json.loads(result.stdout)
+        baseline_path = tmp_path / ".claude-bridge" / "baseline.json"
+        assert parsed["ok"] is True
+        assert parsed["baseline_path"] == str(baseline_path)
+        assert parsed["records_used"] >= 2
+        written = json.loads(baseline_path.read_text(encoding="utf-8"))
+        assert "read_file" in written["tool_counts"]
+        assert "git status" in written["command_prefixes"]
+        assert "src" in written["path_roots"]
 
     def test_audit_export_jsonl_to_stdout(self, monkeypatch, tmp_path: Path):
         """Export audit records in JSONL format to stdout."""

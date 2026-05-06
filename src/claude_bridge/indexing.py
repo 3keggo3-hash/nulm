@@ -551,15 +551,6 @@ _TREE_SITTER_RULES_BY_LANGUAGE = {
         "class_fields": ("name", "type", "identifier"),
         "import_fields": ("path", "name"),
     },
-    "ruby": {
-        **_DEFAULT_TREE_SITTER_RULES,
-        "functions": {"method", "singleton_method"},
-        "classes": {"class", "module"},
-        "imports": {"call"},
-        "function_fields": ("name", "identifier"),
-        "class_fields": ("name", "constant"),
-        "import_fields": ("method", "arguments", "argument"),
-    },
     "php": {
         **_DEFAULT_TREE_SITTER_RULES,
         "functions": {"function_definition", "method_declaration"},
@@ -569,16 +560,29 @@ _TREE_SITTER_RULES_BY_LANGUAGE = {
         "class_fields": ("name", "identifier"),
         "import_fields": ("clause", "path", "argument"),
     },
+    "ruby": {
+        **_DEFAULT_TREE_SITTER_RULES,
+        "functions": {"method", "singleton_method"},
+        "classes": {"class", "module"},
+        "imports": {"call"},
+        "function_fields": ("name", "identifier"),
+        "class_fields": ("name", "constant"),
+        "import_fields": ("argument_list", "arguments", "argument"),
+    },
 }
 _TREE_SITTER_GET_PARSER_CANDIDATES = (
     ("tree_sitter_languages", "get_parser"),
     ("tree_sitter_language_pack", "get_parser"),
 )
+_TREE_SITTER_PARSER_CACHE: dict[str, Any | None] = {}
+_TREE_SITTER_PARSER_CACHE_LOCK = threading.Lock()
 
 
 def clear_index_cache() -> None:
     with _INDEX_CACHE_LOCK:
         _INDEX_CACHE.clear()
+    with _TREE_SITTER_PARSER_CACHE_LOCK:
+        _TREE_SITTER_PARSER_CACHE.clear()
 
 
 def get_cached_index(cache_key: str) -> dict[str, Any] | None:
@@ -648,10 +652,33 @@ def _write_disk_cache(target: Path, payload: dict[str, Any]) -> None:
     cache_path = _disk_cache_path(target)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
-        json.dumps({"version": _DISK_CACHE_VERSION, "payload": payload}, ensure_ascii=False),
+        json.dumps(
+            {"version": _DISK_CACHE_VERSION, "payload": _disk_cache_payload(payload)},
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     _prune_disk_cache(cache_path.parent)
+
+
+def _strip_disk_heavy_fields(item: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in item.items() if key not in {"content", "content_lower"}}
+
+
+def _disk_cache_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    disk_payload = dict(payload)
+    disk_payload["files"] = [
+        _strip_disk_heavy_fields(item) if isinstance(item, dict) else item
+        for item in payload.get("files", [])
+    ]
+
+    raw_file_cache = payload.get("_file_cache", {})
+    if isinstance(raw_file_cache, dict):
+        disk_payload["_file_cache"] = {
+            path: _strip_disk_heavy_fields(item) if isinstance(item, dict) else item
+            for path, item in raw_file_cache.items()
+        }
+    return disk_payload
 
 
 def _prune_disk_cache(cache_dir: Path) -> None:
@@ -883,10 +910,18 @@ def iter_searchable_files(
 
 
 def extract_symbols(file: Path, source: str) -> dict[str, Any]:
-    return _EXTRACTORS_BY_SUFFIX[file.suffix](file, source)
+    extractor = _EXTRACTORS_BY_SUFFIX.get(file.suffix)
+    if extractor is None:
+        return {"symbols": [], "errors": [f"No extractor available for suffix {file.suffix}"]}
+    return extractor(file, source)
 
 
 def _load_tree_sitter_parser(language_name: str) -> Any | None:
+    with _TREE_SITTER_PARSER_CACHE_LOCK:
+        if language_name in _TREE_SITTER_PARSER_CACHE:
+            return _TREE_SITTER_PARSER_CACHE[language_name]
+
+    parser: Any | None = None
     for module_name, attr_name in _TREE_SITTER_GET_PARSER_CANDIDATES:
         try:
             module = importlib.import_module(module_name)
@@ -896,17 +931,23 @@ def _load_tree_sitter_parser(language_name: str) -> Any | None:
         if get_parser is None:
             continue
         try:
-            return get_parser(language_name)
+            parser = get_parser(language_name)
+            break
         except Exception:
             continue
-    return None
+    with _TREE_SITTER_PARSER_CACHE_LOCK:
+        _TREE_SITTER_PARSER_CACHE[language_name] = parser
+    return parser
 
 
 def _iter_tree_sitter_nodes(node: Any) -> list[Any]:
-    nodes = [node]
-    children = getattr(node, "children", None) or []
-    for child in children:
-        nodes.extend(_iter_tree_sitter_nodes(child))
+    nodes: list[Any] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        nodes.append(current)
+        children = getattr(current, "children", None) or []
+        stack.extend(reversed(children))
     return nodes
 
 
@@ -937,7 +978,14 @@ def _tree_sitter_identifier_text(
                     return text
     for child in getattr(node, "children", None) or []:
         child_type = getattr(child, "type", "")
-        if child_type in {"identifier", "constant", "type_identifier", "name"}:
+        if child_type in {
+            "identifier",
+            "constant",
+            "type_identifier",
+            "name",
+            "scoped_identifier",
+            "simple_identifier",
+        }:
             text = _tree_sitter_node_text(source_bytes, child).strip()
             if text:
                 return text
@@ -983,7 +1031,8 @@ def _normalize_tree_sitter_import_for_language(language_name: str, text: str) ->
     if language_name == "c_sharp":
         return stripped.split(".")[0]
     if language_name == "php":
-        return stripped.split("\\")[0]
+        cleaned = stripped.lstrip().removeprefix("use ").removeprefix("use\t").rstrip(";").strip()
+        return cleaned.split("\\")[0]
     return _normalize_tree_sitter_import(stripped)
 
 

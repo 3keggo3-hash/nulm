@@ -68,3 +68,7 @@ claude_desktop_config.private.json
 
 # Research
 .research/
+
+# Internal planning (not for public distribution)
+archive/
+tasks/

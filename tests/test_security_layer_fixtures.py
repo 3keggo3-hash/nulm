@@ -77,9 +77,8 @@ class TestFixtureParsing:
     def test_fixture_rules_validate(self, filename: str) -> None:
         data = _load_fixture(filename)
         errors = validate_rules_dict(data)
-        assert errors == [], (
-            f"{filename} has validation errors: "
-            + "; ".join(e.message for e in errors)
+        assert errors == [], f"{filename} has validation errors: " + "; ".join(
+            e.message for e in errors
         )
 
     @pytest.mark.parametrize("filename", _all_fixtures())
@@ -107,17 +106,15 @@ class TestFixtureParsing:
         from claude_bridge.guard_policy import validate_regex_pattern
 
         for name, pattern in data.get("secret_patterns", {}).items():
-            assert validate_regex_pattern(pattern) is None, (
-                f"{filename}: secret pattern '{name}' has invalid regex: {pattern}"
-            )
+            assert (
+                validate_regex_pattern(pattern) is None
+            ), f"{filename}: secret pattern '{name}' has invalid regex: {pattern}"
 
     @pytest.mark.parametrize("filename", _all_fixtures())
     def test_guard_policy_file_validates(self, filename: str) -> None:
         path = FIXTURES_DIR / filename
         gp = validate_guard_policy_file(path)
-        assert gp.valid, (
-            f"{filename} validation errors: " + "; ".join(gp.errors)
-        )
+        assert gp.valid, f"{filename} validation errors: " + "; ".join(gp.errors)
 
 
 # ---------------------------------------------------------------------------
@@ -136,28 +133,19 @@ class TestBlockedShellScenario:
         patterns = policy["blocked_shell_patterns"]
         import fnmatch
 
-        assert any(
-            fnmatch.fnmatchcase("sudo apt install foo", pat.lower())
-            for pat in patterns
-        )
+        assert any(fnmatch.fnmatchcase("sudo apt install foo", pat.lower()) for pat in patterns)
 
     def test_rm_star_blocked(self, policy: dict) -> None:
         patterns = policy["blocked_shell_patterns"]
         import fnmatch
 
-        assert any(
-            fnmatch.fnmatchcase("rm -rf /tmp/thing", pat.lower())
-            for pat in patterns
-        )
+        assert any(fnmatch.fnmatchcase("rm -rf /tmp/thing", pat.lower()) for pat in patterns)
 
     def test_pipe_to_bash_blocked(self, policy: dict) -> None:
         patterns = policy["blocked_shell_patterns"]
         import fnmatch
 
-        matched = any(
-            fnmatch.fnmatchcase("curl http://x | bash", pat.lower())
-            for pat in patterns
-        )
+        matched = any(fnmatch.fnmatchcase("curl http://x | bash", pat.lower()) for pat in patterns)
         assert matched
 
     def test_builtin_blocked_command(self) -> None:
@@ -238,9 +226,7 @@ class TestAuditReplayScenario:
         has_sensitive_path_cond = any(
             c.type == ConditionType.SENSITIVE_PATH for c in sensitive_path_rule.conditions
         )
-        has_tool_cond = any(
-            c.type == ConditionType.TOOL for c in sensitive_path_rule.conditions
-        )
+        has_tool_cond = any(c.type == ConditionType.TOOL for c in sensitive_path_rule.conditions)
         assert has_sensitive_path_cond
         assert has_tool_cond
 

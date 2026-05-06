@@ -5,19 +5,24 @@ from __future__ import annotations
 import pytest
 
 from claude_bridge.ai_evaluator import (
+    AnthropicProvider,
     EvaluationAction,
     EvaluationRequest,
     EvaluationResponse,
     LocalEvaluatorProvider,
+    OllamaProvider,
+    OpenAIProvider,
     Provider,
     ProviderConfig,
+    ai_latency_summary,
+    create_provider,
     evaluate_tool_with_ai,
     evaluate_with_timeout,
     evaluation_response_to_policy_decision,
     parse_evaluation_response,
+    reset_ai_latency_samples,
 )
 from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, ToolRequestContext
-
 
 # ---------------------------------------------------------------------------
 # EvaluationAction
@@ -94,9 +99,7 @@ class TestEvaluationResponse:
         assert "sensitive_path" in d["risk_reasons"]
 
     def test_from_dict_valid(self) -> None:
-        r = EvaluationResponse.from_dict(
-            {"action": "deny", "reason": "bad", "risk_reasons": ["x"]}
-        )
+        r = EvaluationResponse.from_dict({"action": "deny", "reason": "bad", "risk_reasons": ["x"]})
         assert r.action == EvaluationAction.DENY
         assert r.reason == "bad"
         assert r.risk_reasons == ["x"]
@@ -136,13 +139,115 @@ class TestProviderConfig:
     def test_to_dict_excludes_api_key(self) -> None:
         c = ProviderConfig(model="claude-3", base_url="https://example.com", api_key="secret")
         d = c.to_dict()
-        assert d == {"model": "claude-3", "base_url": "https://example.com", "timeout": 30, "extra": {}}
+        assert d == {
+            "model": "claude-3",
+            "base_url": "https://example.com",
+            "timeout": 30,
+            "extra": {},
+        }
         assert "api_key" not in d
 
     def test_to_dict_with_extra(self) -> None:
         c = ProviderConfig(extra={"temperature": 0.5})
         d = c.to_dict()
         assert d["extra"] == {"temperature": 0.5}
+
+
+class _DummyHttpResponse:
+    def __init__(self, payload: str) -> None:
+        self._payload = payload.encode("utf-8")
+
+    def __enter__(self) -> "_DummyHttpResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+class TestNetworkProviders:
+    def test_create_provider_trims_api_key_and_preserves_timeout(self) -> None:
+        provider = create_provider(
+            "openai",
+            api_key="  sk-test  ",
+            model="gpt-test",
+            timeout=7,
+        )
+
+        assert isinstance(provider, OpenAIProvider)
+        assert provider.api_key == "sk-test"
+        assert provider.timeout == 7
+
+    def test_anthropic_provider_uses_configured_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: dict[str, object] = {}
+
+        def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
+            seen["timeout"] = timeout
+            seen["request"] = req
+            return _DummyHttpResponse(
+                '{"content": [{"text": "{\\"action\\": \\"allow\\", \\"reason\\": \\"ok\\"}"}]}'
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        provider = AnthropicProvider(api_key="sk-test", timeout=9)
+
+        response = provider.evaluate(EvaluationRequest(prompt="run git status"))
+
+        assert response.action == EvaluationAction.ALLOW
+        assert seen["timeout"] == 9
+
+    def test_openai_provider_uses_configured_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen: dict[str, object] = {}
+
+        def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
+            seen["timeout"] = timeout
+            seen["request"] = req
+            return _DummyHttpResponse(
+                '{"choices": [{"message": {"content": "{\\"action\\": \\"deny\\"}"}}]}'
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        provider = OpenAIProvider(api_key="sk-test", timeout=11)
+
+        response = provider.evaluate(EvaluationRequest(prompt="run rm"))
+
+        assert response.action == EvaluationAction.DENY
+        assert seen["timeout"] == 11
+
+    def test_ollama_provider_uses_configured_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen: dict[str, object] = {}
+
+        def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
+            seen["timeout"] = timeout
+            seen["request"] = req
+            return _DummyHttpResponse('{"response": "{\\"action\\": \\"ask\\"}"}')
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        provider = OllamaProvider(timeout=13)
+
+        response = provider.evaluate(EvaluationRequest(prompt="run curl"))
+
+        assert response.action == EvaluationAction.ASK
+        assert seen["timeout"] == 13
+
+    def test_provider_rejects_fenced_json_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
+            return _DummyHttpResponse(
+                '{"choices": [{"message": {"content": "```json\\n'
+                '{\\"action\\": \\"allow\\"}\\n```"}}]}'
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        provider = OpenAIProvider(api_key="sk-test")
+
+        response = provider.evaluate(EvaluationRequest(prompt="run git status"))
+
+        assert response.action == EvaluationAction.ASK
+        assert "invalid json" in response.reason.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -244,9 +349,7 @@ class TestParseEvaluationResponse:
         assert resp.action == EvaluationAction.ASK
 
     def test_risk_reasons_non_list_ignored(self) -> None:
-        resp = parse_evaluation_response(
-            '{"action": "deny", "risk_reasons": "not_a_list"}'
-        )
+        resp = parse_evaluation_response('{"action": "deny", "risk_reasons": "not_a_list"}')
         assert resp.risk_reasons == []
 
     def test_risk_reasons_mixed_types(self) -> None:
@@ -355,15 +458,22 @@ class TestEvaluationResponseToPolicyDecision:
 class TestEvaluateWithTimeout:
     @pytest.mark.asyncio
     async def test_returns_result_when_fast(self) -> None:
+        reset_ai_latency_samples()
+
         class FastProvider(Provider):
             def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
                 return EvaluationResponse(action=EvaluationAction.ALLOW)
 
         resp = await evaluate_with_timeout(FastProvider(), EvaluationRequest(prompt="x"), timeout=5)
         assert resp.action == EvaluationAction.ALLOW
+        summary = ai_latency_summary()
+        assert summary["sample_count"] == 1
+        assert summary["last_ms"] is not None
 
     @pytest.mark.asyncio
     async def test_timeout_returns_fail_closed(self) -> None:
+        reset_ai_latency_samples()
+
         class SlowProvider(Provider):
             def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
                 import time
@@ -371,9 +481,12 @@ class TestEvaluateWithTimeout:
                 time.sleep(10)
                 return EvaluationResponse(action=EvaluationAction.ALLOW)
 
-        resp = await evaluate_with_timeout(SlowProvider(), EvaluationRequest(prompt="x"), timeout=0.1)
+        resp = await evaluate_with_timeout(
+            SlowProvider(), EvaluationRequest(prompt="x"), timeout=0.1
+        )
         assert resp.action == EvaluationAction.ASK
         assert "timed out" in resp.reason.lower()
+        assert ai_latency_summary()["sample_count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +508,8 @@ class TestEvaluateToolWithAi:
 
     @pytest.mark.asyncio
     async def test_allow(self) -> None:
+        reset_ai_latency_samples()
+
         result = await evaluate_tool_with_ai(
             ToolRequestContext(tool_name="run_shell", params={"command": "ls"}),
             provider=LocalEvaluatorProvider(),
@@ -405,6 +520,7 @@ class TestEvaluateToolWithAi:
         assert result is not None
         assert result.action == DecisionAction.ALLOW
         assert result.source == DecisionSource.AI
+        assert result.metadata["ai_evaluator_latency_ms"] is not None
 
     @pytest.mark.asyncio
     async def test_deny(self) -> None:

@@ -71,9 +71,12 @@ except ImportError:
 
 class TestLoadBundleFromFile:
     def test_loads_valid_json(self, tmp_path: Path) -> None:
-        bundle = PolicyBundle(name="demo", roles={
-            "junior": RolePolicy(name="junior", extends="base"),
-        })
+        bundle = PolicyBundle(
+            name="demo",
+            roles={
+                "junior": RolePolicy(name="junior", extends="base"),
+            },
+        )
         path = _write_policy_file(tmp_path, "policy.json", bundle)
         result = load_bundle_from_file(path)
         assert result is not None
@@ -83,9 +86,12 @@ class TestLoadBundleFromFile:
     def test_loads_valid_yaml(self, tmp_path: Path) -> None:
         if not _YAML_AVAILABLE:
             pytest.skip("PyYAML is not installed")
-        bundle = PolicyBundle(name="demo", roles={
-            "senior": RolePolicy(name="senior"),
-        })
+        bundle = PolicyBundle(
+            name="demo",
+            roles={
+                "senior": RolePolicy(name="senior"),
+            },
+        )
         path = _write_policy_file_yaml(tmp_path, "policy.yaml", bundle)
         result = load_bundle_from_file(path)
         assert result is not None
@@ -260,7 +266,9 @@ class TestDiffPolicies:
         head = _make_bundle("demo", **{"a": a, "b": b})
         base = _make_bundle("demo")
         result = diff_policies(base, head)
-        circular_errors = [e for e in result.head_inheritance_errors if e["code"] == "circular_inheritance"]
+        circular_errors = [
+            e for e in result.head_inheritance_errors if e["code"] == "circular_inheritance"
+        ]
         assert len(circular_errors) >= 1
 
     def test_self_referencing_inheritance(self) -> None:
@@ -414,17 +422,13 @@ class TestPolicyDiffResult:
 
     def test_has_issues_with_validation_errors(self) -> None:
         r = PolicyDiffResult(
-            base_name="a",
-            head_name="a",
-            head_validation_errors=[{"code": "test"}]
+            base_name="a", head_name="a", head_validation_errors=[{"code": "test"}]
         )
         assert r.has_issues
 
     def test_has_issues_with_inheritance_errors(self) -> None:
         r = PolicyDiffResult(
-            base_name="a",
-            head_name="a",
-            head_inheritance_errors=[{"code": "circular"}]
+            base_name="a", head_name="a", head_inheritance_errors=[{"code": "circular"}]
         )
         assert r.has_issues
 
@@ -558,7 +562,9 @@ class TestCLIPolicyDiff:
 
     def test_diff_json_output(self, tmp_path: Path) -> None:
         base = _make_bundle("demo", existing=RolePolicy(name="existing"))
-        head = _make_bundle("demo", existing=RolePolicy(name="existing"), added=RolePolicy(name="added"))
+        head = _make_bundle(
+            "demo", existing=RolePolicy(name="existing"), added=RolePolicy(name="added")
+        )
         base_path = _write_policy_file(tmp_path, "base.json", base)
         head_path = _write_policy_file(tmp_path, "head.json", head)
 
@@ -588,7 +594,14 @@ class TestCLIPolicyDiff:
     def test_diff_missing_base_file(self, tmp_path: Path) -> None:
         result = runner.invoke(
             cli.app,
-            ["policy", "diff", "--base", "/nonexistent/policy.json", "--head", str(tmp_path / "x.json")],
+            [
+                "policy",
+                "diff",
+                "--base",
+                "/nonexistent/policy.json",
+                "--head",
+                str(tmp_path / "x.json"),
+            ],
         )
         assert result.exit_code == 1
         assert "could not load" in result.stdout.lower()
@@ -628,11 +641,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "write_file",
-                "--param", "path=src/main.py",
-                "--role", "junior",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "write_file",
+                "--param",
+                "path=src/main.py",
+                "--role",
+                "junior",
             ],
         )
         assert result.exit_code == 0
@@ -646,11 +664,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "read_file",
-                "--param", "path=main.py",
-                "--role", "junior",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "read_file",
+                "--param",
+                "path=main.py",
+                "--role",
+                "junior",
                 "--json",
             ],
         )
@@ -667,11 +690,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "write_file",
-                "--param", "path=/prod/config.yaml",
-                "--role", "junior",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "write_file",
+                "--param",
+                "path=/prod/config.yaml",
+                "--role",
+                "junior",
             ],
         )
         # May be denied due to production_env restriction
@@ -684,11 +712,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(path),
-                "--tool", "read_file",
-                "--param", "path=x.txt",
-                "--role", "junior",
+                "policy",
+                "simulate",
+                "--path",
+                str(path),
+                "--tool",
+                "read_file",
+                "--param",
+                "path=x.txt",
+                "--role",
+                "junior",
             ],
         )
         assert result.exit_code == 1
@@ -696,23 +729,30 @@ class TestCLIPolicySimulate:
     def test_simulate_no_role_uses_guard_rules(self, tmp_path: Path) -> None:
         policy_path = tmp_path / "policy.json"
         policy_path.write_text(
-            json.dumps({
-                "rules": [{
-                    "name": "allow-read",
-                    "scope": "read_file",
-                    "action": "allow",
-                    "conditions": [{"type": "tool", "field": "read_file"}],
-                }]
-            }),
+            json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "allow-read",
+                            "scope": "read_file",
+                            "action": "allow",
+                            "conditions": [{"type": "tool", "field": "read_file"}],
+                        }
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
 
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "read_file",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "read_file",
             ],
         )
         assert result.exit_code == 0
@@ -721,23 +761,30 @@ class TestCLIPolicySimulate:
     def test_simulate_no_role_json_output(self, tmp_path: Path) -> None:
         policy_path = tmp_path / "policy.json"
         policy_path.write_text(
-            json.dumps({
-                "rules": [{
-                    "name": "allow-read",
-                    "scope": "read_file",
-                    "action": "allow",
-                    "conditions": [{"type": "tool", "field": "read_file"}],
-                }]
-            }),
+            json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "allow-read",
+                            "scope": "read_file",
+                            "action": "allow",
+                            "conditions": [{"type": "tool", "field": "read_file"}],
+                        }
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
 
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "read_file",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "read_file",
                 "--json",
             ],
         )
@@ -753,11 +800,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "write_file",
-                "--param", "path=src/main.py",
-                "--role", "contractor",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "write_file",
+                "--param",
+                "path=src/main.py",
+                "--role",
+                "contractor",
             ],
         )
         assert result.exit_code == 0
@@ -769,11 +821,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "write_file",
-                "--param", "path=notes.txt",
-                "--role", "senior",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "write_file",
+                "--param",
+                "path=notes.txt",
+                "--role",
+                "senior",
             ],
         )
         assert result.exit_code == 0
@@ -785,11 +842,16 @@ class TestCLIPolicySimulate:
         result = runner.invoke(
             cli.app,
             [
-                "policy", "simulate",
-                "--path", str(policy_path),
-                "--tool", "run_shell",
-                "--param", "command=pytest tests/",
-                "--role", "ci",
+                "policy",
+                "simulate",
+                "--path",
+                str(policy_path),
+                "--tool",
+                "run_shell",
+                "--param",
+                "command=pytest tests/",
+                "--role",
+                "ci",
             ],
         )
         assert result.exit_code == 0

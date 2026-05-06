@@ -1,22 +1,25 @@
 # Release Notes — claude-bridge v0.1.0
 
 **Date:** 2026-05-03
-**Status:** Pre-release / Alpha
-**Python:** 3.8+
+**Status:** Public alpha candidate
+**Python:** 3.10+
 
 ---
 
 ## Overview
 
-Claude Bridge is a local MCP (Model Context Protocol) server that provides file system, shell, and controlled patch flows for Claude Desktop and other MCP clients. This release establishes the core security evaluation layer with AI-driven allow/deny/ask decision making.
+Claude Bridge is a local MCP (Model Context Protocol) server that provides file system, shell,
+controlled patch flows, audit, replay, policy, indexing, and bounded workflow tools for Claude
+Desktop and other MCP clients. This release establishes the first public-alpha local bridge surface
+with explicit approval and audit controls.
 
 ---
 
 ## Features
 
 ### Core MCP Tools
-- **File operations:** read, write, copy, move, delete, patch, search
-- **Shell execution:** sandboxed command execution with approval flow and dangerous command blocking
+- **File operations:** read, write, copy, move, patch, search
+- **Shell execution:** guarded non-interactive command execution with approval flow and dangerous command blocking
 - **Codebase indexing:** symbolic index with Tree-sitter support (optional)
 - **Relevance ranking:** token-aware, field-aware file relevance scoring
 - **Workflow orchestration:** guided workflows for review, optimize, test, explain, commit, todo
@@ -24,7 +27,7 @@ Claude Bridge is a local MCP (Model Context Protocol) server that provides file 
 ### Security Layer
 - **Fail-closed security model:** all tool calls pass through guard policy evaluation
 - **Rule engine:** JSON/YAML-based custom rules with regex, glob, extension, and file_exists conditions
-- **AI evaluator:** configurable AI-driven security evaluation (allow/deny/ask)
+- **AI evaluator:** optional advisory provider path with fail-closed parsing and built-in hard-deny precedence
 - **Policy-as-code:** version-controlled guard policies with validate, diff, and simulate commands
 - **Approval flow:** interactive approval for sensitive operations
 
@@ -68,6 +71,8 @@ Checks performed:
 - Tree-sitter integration is optional; behavior may differ with/without it
 - Index cache is in-memory; very large mono-repos may need disk cache in future
 - PyYAML is optional; YAML policy files require manual installation
+- Anomaly scoring is advisory in v0.1; high scores warn/log but do not enforce guard decisions
+- Claude Bridge is a policy-gated local runner, not an OS/container sandbox
 
 ---
 
@@ -121,7 +126,7 @@ pip install -e ".[dev]"
 | Name | claude-bridge |
 | Version | 0.1.0 |
 | License | MIT |
-| Python | >=3.8 |
+| Python | >=3.10 |
 | Entry point | `claude_bridge.cli:main` |
 | Core deps | mcp, pathspec, typer, rich, pydantic |
 | Optional deps | tree-sitter, tiktoken, Pillow, PyPDF2 |

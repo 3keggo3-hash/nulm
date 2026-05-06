@@ -177,7 +177,9 @@ def rank_indexed_files(
                 }
             )
 
-    shortlist_size = max(_MIN_SHORTLIST_SIZE, (limit or len(candidates) or 1) * _SHORTLIST_MULTIPLIER)
+    shortlist_size = max(
+        _MIN_SHORTLIST_SIZE, (limit or len(candidates) or 1) * _SHORTLIST_MULTIPLIER
+    )
     candidates.sort(
         key=lambda entry: (
             -int(entry["phase_one_score"]),
@@ -206,9 +208,7 @@ def rank_indexed_files(
             if len(matched_fields) > 1:
                 selection_reason = "combined"
             else:
-                selection_reason = _FIELD_REASON_MAP.get(
-                    next(iter(matched_fields), ""), "combined"
-                )
+                selection_reason = _FIELD_REASON_MAP.get(next(iter(matched_fields), ""), "combined")
             results.append(
                 {
                     "path": candidate["path"],

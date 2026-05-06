@@ -266,9 +266,7 @@ class TestReadPdf:
         assert payload["ok"] is False
         assert payload["code"] == "pdf_encrypted"
 
-    async def test_read_pdf_real_fixture_when_pypdf2_is_available(
-        self, temp_project: Path
-    ) -> None:
+    async def test_read_pdf_real_fixture_when_pypdf2_is_available(self, temp_project: Path) -> None:
         pytest.importorskip("PyPDF2")
         write_b64_fixture(temp_project, "sample.pdf.b64", "sample.pdf")
 

@@ -387,6 +387,26 @@ _SENSITIVE_PATH_SUBSTRINGS: list[str] = [
     "known_hosts",
 ]
 
+_SENSITIVE_CONTENT_MARKERS: tuple[str, ...] = (
+    "api_key",
+    "apikey",
+    "access_token",
+    "auth_token",
+    "secret",
+    "password",
+    "private key",
+    "begin rsa private key",
+    "begin openssh private key",
+)
+
+_PRIVILEGE_CONFIG_KEYS: set[str] = {
+    "role",
+    "user",
+    "auto_approve",
+    "client_managed_approval",
+    "approval_preset",
+}
+
 # Time window for burst detection (5 minutes)
 _BURST_WINDOW_MINUTES: int = 5
 
@@ -394,6 +414,7 @@ _BURST_WINDOW_MINUTES: int = 5
 _HIGH_VOLUME_THRESHOLD: int = 10
 _SENSITIVE_PATH_BURST_THRESHOLD: int = 3
 _HIGH_RISK_SPIKE_THRESHOLD: int = 3
+_EXFILTRATION_PATTERN_THRESHOLD: int = 3
 
 # Base scores for each anomaly type
 _BASE_SCORES: dict[str, int] = {
@@ -402,6 +423,11 @@ _BASE_SCORES: dict[str, int] = {
     "sensitive_path_burst": 60,
     "unusual_hour": 15,
     "high_risk_spike": 40,
+    "exfiltration_pattern": 70,
+    "privilege_escalation_attempt": 65,
+    "command_pattern_anomaly": 35,
+    "path_anomaly": 35,
+    "volume_anomaly": 35,
 }
 
 # Unusual hours range (start, end) — 1am to 5am
@@ -410,6 +436,7 @@ _UNUSUAL_HOUR_END: int = 5
 
 # Maximum possible score
 _MAX_SCORE: int = 100
+_RUNTIME_POLICY_MODE = "warn_and_log"
 
 
 @dataclass
@@ -434,6 +461,7 @@ class AnomalyResult:
             "score": self.score,
             "anomaly_types": self.anomaly_types,
             "explanation": self.explanation,
+            "recommended_action": get_anomaly_action(self.score),
         }
 
 
@@ -479,6 +507,100 @@ def _collect_sensitive_paths(record: dict[str, Any]) -> list[str]:
     """Return all sensitive paths referenced in a record."""
     all_paths = _collect_record_paths(record)
     return [p for p in all_paths if _is_sensitive_path(p)]
+
+
+def _record_has_sensitive_content_marker(record: dict[str, Any]) -> bool:
+    """Return True when params/details suggest secret material content."""
+    candidates: list[str] = []
+    params = record.get("params", {})
+    if isinstance(params, dict) and not _is_masked_value(params):
+        for key in ("content", "search", "replace", "text", "value"):
+            value = params.get(key)
+            if isinstance(value, str):
+                candidates.append(value)
+
+    result = record.get("result", {})
+    if isinstance(result, dict):
+        details = result.get("details", {})
+        if isinstance(details, dict) and not _is_masked_value(details):
+            for key in ("content_preview", "preview", "stdout", "stderr"):
+                value = details.get(key)
+                if isinstance(value, str):
+                    candidates.append(value)
+
+    return any(
+        marker in candidate.lower()
+        for candidate in candidates
+        for marker in _SENSITIVE_CONTENT_MARKERS
+    )
+
+
+def _is_exfiltration_candidate(record: dict[str, Any]) -> bool:
+    """Detect records that expose secret-like content, not just sensitive paths."""
+    return _record_has_sensitive_content_marker(record)
+
+
+def _is_privilege_escalation_attempt(record: dict[str, Any]) -> bool:
+    """Detect role/config changes that could elevate execution privileges."""
+    tool_name = _extract_tool_name_raw(record)
+    params = record.get("params", {})
+    if not isinstance(params, dict) or _is_masked_value(params):
+        return False
+
+    if tool_name == "set_config_value":
+        key = params.get("key")
+        if isinstance(key, str) and key in _PRIVILEGE_CONFIG_KEYS:
+            return True
+
+    command = params.get("command")
+    if isinstance(command, str):
+        lowered = command.lower()
+        return any(
+            token in lowered
+            for token in (
+                "sudo ",
+                "su ",
+                "chmod 777",
+                "chown ",
+                "set_config_value role",
+            )
+        )
+    return False
+
+
+def _command_prefix(command: str) -> str:
+    parts = command.strip().split()
+    if not parts:
+        return ""
+    if len(parts) >= 2 and parts[0] in {"python", "python3"} and parts[1] == "-m":
+        return " ".join(parts[:3])
+    if len(parts) >= 2 and parts[0] in {"npm", "pnpm", "yarn", "git"}:
+        return " ".join(parts[:2])
+    return parts[0]
+
+
+def _record_command_prefix(record: dict[str, Any]) -> str:
+    if _extract_tool_name_raw(record) not in {"run_shell", "start_process"}:
+        return ""
+    params = record.get("params", {})
+    if not isinstance(params, dict) or _is_masked_value(params):
+        return ""
+    command = params.get("command")
+    return _command_prefix(command) if isinstance(command, str) else ""
+
+
+def _path_root(path: str) -> str:
+    normalized = path.replace("\\", "/").strip()
+    if not normalized:
+        return ""
+    if normalized.startswith("/"):
+        parts = [part for part in normalized.split("/") if part]
+        return f"/{parts[0]}" if parts else "/"
+    return normalized.split("/", 1)[0]
+
+
+def _record_path_roots(record: dict[str, Any]) -> set[str]:
+    return {root for root in (_path_root(path) for path in _collect_record_paths(record)) if root}
 
 
 def _is_file_access_tool(tool_name: str) -> bool:
@@ -542,6 +664,8 @@ def _records_in_window(
 
 def compute_anomaly_scores(
     records: list[dict[str, Any]],
+    *,
+    baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compute rule-based anomaly scores for a list of audit records.
 
@@ -573,12 +697,30 @@ def compute_anomaly_scores(
             "scores": [],
             "anomaly_counts": {},
             "overall_max_score": 0,
+            "recommended_action": get_anomaly_action(0),
+            "runtime_policy": get_anomaly_runtime_policy(0),
         }
 
     window = timedelta(minutes=_BURST_WINDOW_MINUTES)
     seen_tools: set[str] = set()
     anomaly_counts: CounterType[str] = CounterType()
     all_results: list[AnomalyResult] = []
+    baseline_command_prefixes = (
+        {str(item) for item in baseline.get("command_prefixes", [])}
+        if isinstance(baseline, dict)
+        else set()
+    )
+    baseline_path_roots = (
+        {str(item) for item in baseline.get("path_roots", [])}
+        if isinstance(baseline, dict)
+        else set()
+    )
+    baseline_avg_records = (
+        float(baseline.get("avg_records_per_session", 0) or 0)
+        if isinstance(baseline, dict)
+        else 0.0
+    )
+    volume_anomaly = baseline_avg_records > 0 and len(records) >= baseline_avg_records * 10
 
     for idx, record in enumerate(records):
         anomaly_types: list[str] = []
@@ -647,6 +789,48 @@ def compute_anomaly_scores(
                 f"{_BURST_WINDOW_MINUTES} min window"
             )
 
+        # ---- Rule 6: exfiltration_pattern ----
+        nearby_exfiltration_count = 1 if _is_exfiltration_candidate(record) else 0
+        for i in nearby_indices:
+            if _is_exfiltration_candidate(records[i]):
+                nearby_exfiltration_count += 1
+        if nearby_exfiltration_count >= _EXFILTRATION_PATTERN_THRESHOLD:
+            anomaly_types.append("exfiltration_pattern")
+            explanations.append(
+                f"{nearby_exfiltration_count} records touching sensitive "
+                f"content within {_BURST_WINDOW_MINUTES} min window"
+            )
+
+        # ---- Rule 7: privilege_escalation_attempt ----
+        if _is_privilege_escalation_attempt(record):
+            anomaly_types.append("privilege_escalation_attempt")
+            explanations.append("Record attempts to alter role, approval, or privilege settings")
+
+        # ---- Rule 8: command_pattern_anomaly (baseline-backed) ----
+        command_prefix = _record_command_prefix(record)
+        if (
+            command_prefix
+            and baseline_command_prefixes
+            and command_prefix not in baseline_command_prefixes
+        ):
+            anomaly_types.append("command_pattern_anomaly")
+            explanations.append(f"Command prefix '{command_prefix}' is outside baseline")
+
+        # ---- Rule 9: path_anomaly (baseline-backed) ----
+        record_roots = _record_path_roots(record)
+        new_roots = sorted(root for root in record_roots if root not in baseline_path_roots)
+        if record_roots and baseline_path_roots and new_roots:
+            anomaly_types.append("path_anomaly")
+            explanations.append(f"Path roots outside baseline: {', '.join(new_roots[:3])}")
+
+        # ---- Rule 10: volume_anomaly (baseline-backed) ----
+        if volume_anomaly:
+            anomaly_types.append("volume_anomaly")
+            explanations.append(
+                f"Session volume {len(records)} records is >=10x baseline average "
+                f"{baseline_avg_records:g}"
+            )
+
         # Compute score
         score = 0
         for atype in anomaly_types:
@@ -673,6 +857,8 @@ def compute_anomaly_scores(
         "scores": [r.to_dict() for r in all_results],
         "anomaly_counts": dict(anomaly_counts),
         "overall_max_score": overall_max,
+        "recommended_action": get_anomaly_action(overall_max),
+        "runtime_policy": get_anomaly_runtime_policy(overall_max),
     }
 
 
@@ -694,11 +880,42 @@ def classify_anomaly_level(score: int) -> str:
     return "critical"
 
 
+def get_anomaly_action(score: int) -> str:
+    """Map an anomaly score to the recommended runtime action."""
+    if score <= 30:
+        return "log"
+    if score <= 55:
+        return "status"
+    if score <= 80:
+        return "ask"
+    return "deny"
+
+
+def get_anomaly_runtime_policy(score: int) -> dict[str, Any]:
+    """Return the explicit runtime policy for anomaly results.
+
+    v0.1 keeps anomaly detection advisory: high scores are surfaced as warning
+    metadata and audit detail, but they do not deny or approve tool calls.
+    """
+    recommended_action = get_anomaly_action(score)
+    return {
+        "mode": _RUNTIME_POLICY_MODE,
+        "enforced": False,
+        "recommended_action": recommended_action,
+        "effective_action": "warn" if recommended_action in {"ask", "deny"} else "log",
+        "note": (
+            "Anomaly scoring is advisory in this release. High scores should be "
+            "reviewed, but they do not change guard-policy decisions."
+        ),
+    }
+
+
 def build_anomaly_summary(
     *,
     records: list[dict[str, Any]],
     session_id: str = "",
     limit: int = 50,
+    baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a high-level anomaly summary from audit records.
 
@@ -725,7 +942,7 @@ def build_anomaly_summary(
     """
     safe_limit = max(1, min(limit, 500))
     batch = records[:safe_limit]
-    scored = compute_anomaly_scores(batch)
+    scored = compute_anomaly_scores(batch, baseline=baseline)
     overall_level = classify_anomaly_level(scored["overall_max_score"])
 
     critical_records: list[dict[str, Any]] = []
@@ -740,18 +957,10 @@ def build_anomaly_summary(
             decision_reason = ""
             for record in batch:
                 if record.get("record_id") == item["record_id"]:
-                    decision_action = str(
-                        record.get("decision_action") or "unknown"
-                    )
-                    decision_source = str(
-                        record.get("decision_source") or "unknown"
-                    )
-                    decision_risk_level = str(
-                        record.get("decision_risk_level") or "unknown"
-                    )
-                    decision_reason = str(
-                        record.get("decision_reason") or ""
-                    )
+                    decision_action = str(record.get("decision_action") or "unknown")
+                    decision_source = str(record.get("decision_source") or "unknown")
+                    decision_risk_level = str(record.get("decision_risk_level") or "unknown")
+                    decision_reason = str(record.get("decision_reason") or "")
                     break
             policy_decisions.append(
                 {
@@ -764,11 +973,7 @@ def build_anomaly_summary(
                     "decision_source": decision_source,
                     "decision_risk_level": decision_risk_level,
                     "decision_reason": decision_reason,
-                    "recommended_action": (
-                        "escalate"
-                        if decision_action == "deny"
-                        else "review"
-                    ),
+                    "recommended_action": ("escalate" if decision_action == "deny" else "review"),
                 }
             )
 
@@ -779,6 +984,14 @@ def build_anomaly_summary(
         "anomaly_counts": scored["anomaly_counts"],
         "overall_max_score": scored["overall_max_score"],
         "overall_level": overall_level,
+        "recommended_action": scored["recommended_action"],
+        "runtime_policy": scored["runtime_policy"],
+        "baseline": {
+            "enabled": isinstance(baseline, dict),
+            "session_count": baseline.get("session_count") if isinstance(baseline, dict) else None,
+            "record_count": baseline.get("record_count") if isinstance(baseline, dict) else None,
+            "updated_at": baseline.get("updated_at") if isinstance(baseline, dict) else None,
+        },
         "critical_count": len(critical_records),
         "critical_records": critical_records,
         "policy_decisions": policy_decisions,
@@ -790,8 +1003,13 @@ def build_anomaly_summary(
                 "sensitive_path_burst",
                 "unusual_hour",
                 "high_risk_spike",
+                "exfiltration_pattern",
+                "privilege_escalation_attempt",
+                "command_pattern_anomaly",
+                "path_anomaly",
+                "volume_anomaly",
             ],
             "note": "This MVP uses deterministic heuristics only. "
-            "Scores are additive and capped at 100.",
+            "Scores are additive, capped at 100, and advisory by default.",
         },
     }

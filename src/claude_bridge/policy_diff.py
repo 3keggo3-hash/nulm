@@ -358,12 +358,20 @@ def diff_policies(base: PolicyBundle, head: PolicyBundle) -> PolicyDiffResult:
         role_diffs.append(rd)
 
     # Sort: changes first, then alphabetical
-    status_order = {DiffStatus.ADDED: 0, DiffStatus.REMOVED: 1, DiffStatus.MODIFIED: 2, DiffStatus.UNCHANGED: 3}
+    status_order = {
+        DiffStatus.ADDED: 0,
+        DiffStatus.REMOVED: 1,
+        DiffStatus.MODIFIED: 2,
+        DiffStatus.UNCHANGED: 3,
+    }
     role_diffs.sort(key=lambda rd: (status_order.get(rd.status, 9), rd.role_name))
     result.role_diffs = role_diffs
 
-    if result.roles_added or result.roles_removed or result.name_changed or any(
-        rd.status != DiffStatus.UNCHANGED for rd in role_diffs
+    if (
+        result.roles_added
+        or result.roles_removed
+        or result.name_changed
+        or any(rd.status != DiffStatus.UNCHANGED for rd in role_diffs)
     ):
         result.status = DiffStatus.MODIFIED
 
@@ -457,7 +465,10 @@ def simulate_tool_with_role(
     metadata = dict(decision.metadata)
     if role_name is not None:
         metadata["role"] = role_name
-        from claude_bridge.team_policy import validate_role_inheritance as _vi, validate_policy_bundle as _vb
+        from claude_bridge.team_policy import (
+            validate_role_inheritance as _vi,
+            validate_policy_bundle as _vb,
+        )
 
         resolved_bundle = bundle or _get_any_bundle()
         if resolved_bundle is not None:

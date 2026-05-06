@@ -24,9 +24,7 @@ class TestExploreApproaches:
         assert result["keywords_matched"] == ["search"]
 
     def test_generates_multiple_keyword_approaches(self, temp_project):
-        result = ae.explore_approaches(
-            "sort and search a database with cache", count=5
-        )
+        result = ae.explore_approaches("sort and search a database with cache", count=5)
         assert result["ok"] is True
         assert len(result["approaches"]) == 5
         assert "sort" in result["keywords_matched"]

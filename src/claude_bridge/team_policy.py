@@ -114,9 +114,7 @@ class RolePolicy:
         perms_raw = data.get("permissions", [])
         if not isinstance(perms_raw, list):
             perms_raw = []
-        permissions = [
-            RolePermission.from_dict(p) for p in perms_raw if isinstance(p, dict)
-        ]
+        permissions = [RolePermission.from_dict(p) for p in perms_raw if isinstance(p, dict)]
         restrictions_raw = data.get("restrictions", [])
         if not isinstance(restrictions_raw, list):
             restrictions_raw = []
@@ -359,10 +357,7 @@ def validate_policy_bundle(bundle: PolicyBundle) -> list[ValidationError]:
             errors.append(
                 ValidationError(
                     path=f"roles.{role_name}",
-                    message=(
-                        f"Role key '{role_name}' does not match role name "
-                        f"'{role.name}'"
-                    ),
+                    message=(f"Role key '{role_name}' does not match role name " f"'{role.name}'"),
                     code="role_key_mismatch",
                 )
             )
@@ -399,7 +394,12 @@ BUILTIN_ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
             {"tool": "write_file", "action": "ask"},
             {"tool": "run_shell", "action": "ask", "scope": {"safe_commands_only": True}},
         ],
-        "restrictions": ["destructive_shell", "sensitive_paths", "unapproved_write", "production_env"],
+        "restrictions": [
+            "destructive_shell",
+            "sensitive_paths",
+            "unapproved_write",
+            "production_env",
+        ],
         "metadata": {"risk_level": "medium"},
         "enabled": True,
     },
@@ -498,22 +498,28 @@ def resolve_role(
 # ---------------------------------------------------------------------------
 
 # Set of restriction names that are evaluated before user rules.
-_PRE_RULE_RESTRICTIONS: frozenset[str] = frozenset({
-    "production_env",
-    "infrastructure_changes",
-})
+_PRE_RULE_RESTRICTIONS: frozenset[str] = frozenset(
+    {
+        "production_env",
+        "infrastructure_changes",
+    }
+)
 
 # Set of restriction names that are evaluated after user rules.
-_POST_RULE_RESTRICTIONS: frozenset[str] = frozenset({
-    "unapproved_write",
-    "manual_approval_required",
-})
+_POST_RULE_RESTRICTIONS: frozenset[str] = frozenset(
+    {
+        "unapproved_write",
+        "manual_approval_required",
+    }
+)
 
 # Set of restriction names unique to contractor role.
-_CONTRACTOR_RESTRICTIONS: frozenset[str] = frozenset({
-    "contractor_workspace",
-    "contractor_time",
-})
+_CONTRACTOR_RESTRICTIONS: frozenset[str] = frozenset(
+    {
+        "contractor_workspace",
+        "contractor_time",
+    }
+)
 
 
 def _is_production_path(ctx: ToolRequestContext) -> bool:
@@ -524,8 +530,12 @@ def _is_production_path(ctx: ToolRequestContext) -> bool:
             continue
         path_lower = path_val.lower()
         production_indicators = [
-            "/prod/", "/production/", "/live/", "/deploy/",
-            "/release/", "/staging/",
+            "/prod/",
+            "/production/",
+            "/live/",
+            "/deploy/",
+            "/release/",
+            "/staging/",
         ]
         if any(indicator in path_lower for indicator in production_indicators):
             return True
@@ -540,8 +550,14 @@ def _is_infrastructure_change(ctx: ToolRequestContext) -> bool:
             return False
         cmd_lower = command.strip().lower()
         infra_keywords = [
-            "kubectl", "helm", "terraform", "ansible", "pulumi",
-            "docker compose", "docker stack", "docker swarm",
+            "kubectl",
+            "helm",
+            "terraform",
+            "ansible",
+            "pulumi",
+            "docker compose",
+            "docker stack",
+            "docker swarm",
         ]
         return any(kw in cmd_lower for kw in infra_keywords)
     if ctx.tool_name == "write_file":
@@ -549,8 +565,13 @@ def _is_infrastructure_change(ctx: ToolRequestContext) -> bool:
         if not isinstance(path_val, str):
             return False
         infra_files = [
-            "docker-compose", "docker-compose", "kubernetes", "k8s",
-            "terraform", ".tf", "helmfile",
+            "docker-compose",
+            "docker-compose",
+            "kubernetes",
+            "k8s",
+            "terraform",
+            ".tf",
+            "helmfile",
         ]
         return any(kw in path_val.lower() for kw in infra_files)
     return False
@@ -654,8 +675,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.CRITICAL,
-                f"Role restriction ({role_name}): infrastructure changes "
-                "are not allowed",
+                f"Role restriction ({role_name}): infrastructure changes " "are not allowed",
                 [f"role restriction: {restriction}"],
                 {"role": role_name, "restriction": restriction},
             )
@@ -667,8 +687,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.HIGH,
-                "Contractor workspace restriction: path is outside the "
-                "contractor/ subdirectory",
+                "Contractor workspace restriction: path is outside the " "contractor/ subdirectory",
                 ["role restriction: contractor_workspace"],
                 {"role": role_name, "restriction": "contractor_workspace"},
             )
@@ -722,8 +741,7 @@ def evaluate_role_post_restrictions(
                     DecisionAction.ASK,
                     DecisionSource.APPROVAL,
                     RiskLevel.MEDIUM,
-                    f"Role restriction ({role_name}): write operations "
-                    "require approval",
+                    f"Role restriction ({role_name}): write operations " "require approval",
                     [f"role restriction: {restriction}"],
                     {"role": role_name, "restriction": restriction},
                 )
@@ -736,8 +754,11 @@ def evaluate_role_post_restrictions(
                     f"Role restriction ({role_name}): manual approval is "
                     "required for this operation",
                     [f"role restriction: {restriction}"],
-                    {"role": role_name, "restriction": restriction,
-                     "manual_approval_required": True},
+                    {
+                        "role": role_name,
+                        "restriction": restriction,
+                        "manual_approval_required": True,
+                    },
                 )
 
     return None
@@ -773,12 +794,27 @@ def is_ci_auto_approve_allowed(
         if any(c in command for c in ";|&"):  # FIX: reject shell metacharacters
             return False
         ci_command_prefixes = (
-            "npm run", "npm test", "npm build", "npm ci",
-            "pytest", "ruff", "black", "mypy",
-            "make build", "make test", "make lint",
-            "python -m pytest", "python3 -m pytest",
-            "coverage", "flake8", "eslint", "prettier",
-            "go test", "go build", "cargo test", "cargo build",
+            "npm run",
+            "npm test",
+            "npm build",
+            "npm ci",
+            "pytest",
+            "ruff",
+            "black",
+            "mypy",
+            "make build",
+            "make test",
+            "make lint",
+            "python -m pytest",
+            "python3 -m pytest",
+            "coverage",
+            "flake8",
+            "eslint",
+            "prettier",
+            "go test",
+            "go build",
+            "cargo test",
+            "cargo build",
         )
         cmd_stripped = command.strip().lower()
         return any(cmd_stripped.startswith(prefix) for prefix in ci_command_prefixes)

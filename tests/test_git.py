@@ -21,11 +21,15 @@ def git_project():
         subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
-            cwd=project, capture_output=True, check=True
+            cwd=project,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
-            cwd=project, capture_output=True, check=True
+            cwd=project,
+            capture_output=True,
+            check=True,
         )
         mcp_server.set_config(project_dir=project, auto_approve=True)
         yield project
@@ -47,7 +51,9 @@ class TestGitIntegration:
         test_file.write_text("def foo():\n    pass")
 
         subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "initial"], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"], cwd=git_project, capture_output=True, check=True
+        )
 
         result = await mcp_server.patch_file(
             file="test.py",
@@ -59,8 +65,7 @@ class TestGitIntegration:
         assert payload["ok"] is True
         assert "Patched" in payload["message"]
         log_result = subprocess.run(
-            ["git", "log", "--oneline"],
-            cwd=git_project, capture_output=True, text=True
+            ["git", "log", "--oneline"], cwd=git_project, capture_output=True, text=True
         )
         assert "bridge: update" in log_result.stdout
         assert "return 42" in test_file.read_text()
@@ -88,7 +93,9 @@ class TestGitIntegration:
 
         log_result = subprocess.run(
             ["git", "log", "-1", "--pretty=format:%s"],
-            cwd=git_project, capture_output=True, text=True
+            cwd=git_project,
+            capture_output=True,
+            text=True,
         )
         assert "my_module.py" in log_result.stdout
 

@@ -59,7 +59,9 @@ def test_collect_files_relative(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert len(files) == 1
 
 
-def test_collect_files_unsupported_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_files_unsupported_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from claude_bridge import server as mcp_server
 
     mcp_server.set_config(project_dir=tmp_path)
@@ -89,13 +91,13 @@ def test_collect_files_skips_ignored_dirs(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_complexity_flags_long_function(tmp_path: Path) -> None:
-        lines = ["def long_func():"] + ["    x = i" for _ in range(51)]
-        content = "\n".join(lines)
-        issues = _check_complexity(tmp_path / "a.py", content, lines)
-        assert len(issues) == 1
-        assert issues[0]["severity"] == "warning"
-        assert "long_func" in issues[0]["description"]
-        assert "lines" in issues[0]["description"]
+    lines = ["def long_func():"] + ["    x = i" for _ in range(51)]
+    content = "\n".join(lines)
+    issues = _check_complexity(tmp_path / "a.py", content, lines)
+    assert len(issues) == 1
+    assert issues[0]["severity"] == "warning"
+    assert "long_func" in issues[0]["description"]
+    assert "lines" in issues[0]["description"]
 
 
 def test_complexity_ignores_short_function(tmp_path: Path) -> None:

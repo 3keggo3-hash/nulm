@@ -1,10 +1,11 @@
 """Tests for rule-based anomaly scorer."""
 
-
 from claude_bridge.anomaly import (
     AnomalyResult,
     classify_anomaly_level,
     compute_anomaly_scores,
+    get_anomaly_action,
+    get_anomaly_runtime_policy,
 )
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,36 @@ class TestAnomalyResultDataclass:
         assert d["record_id"] == "rec-1"
         assert d["score"] == 20
         assert d["anomaly_types"] == ["new_tool_use"]
+
+
+class TestAnomalyRuntimePolicy:
+    """Tests for explicit advisory runtime policy."""
+
+    def test_high_score_warns_without_enforcement(self):
+        policy = get_anomaly_runtime_policy(100)
+
+        assert policy["mode"] == "warn_and_log"
+        assert policy["enforced"] is False
+        assert policy["recommended_action"] == "deny"
+        assert policy["effective_action"] == "warn"
+
+    def test_compute_scores_includes_runtime_policy(self):
+        records = [
+            _make_record(
+                "r1",
+                "read_file",
+                "2024-06-15T03:00:00Z",
+                risk_level="critical",
+                paths=["/etc/passwd"],
+            )
+            for _ in range(4)
+        ]
+
+        result = compute_anomaly_scores(records)
+
+        assert result["recommended_action"] in {"ask", "deny"}
+        assert result["runtime_policy"]["mode"] == "warn_and_log"
+        assert result["runtime_policy"]["enforced"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +328,78 @@ class TestComputeAnomalyScoresCritical:
         for s in result["scores"]:
             assert s["score"] <= 100
 
+    def test_exfiltration_pattern_from_secret_content(self):
+        base_time = "2024-06-15T10:00:00Z"
+        records = [
+            {
+                **_make_record("r0", "write_file", base_time),
+                "params": {"file": "notes.txt", "content": "api_key=sk-test"},
+            },
+            {
+                **_make_record("r1", "patch_file", _offset_time(base_time, 30)),
+                "params": {"file": "config.py", "replace": "password = 'secret'"},
+            },
+            {
+                **_make_record("r2", "read_file", _offset_time(base_time, 60)),
+                "result": {"details": {"stdout": "BEGIN OPENSSH PRIVATE KEY"}},
+            },
+        ]
+
+        result = compute_anomaly_scores(records)
+
+        assert result["anomaly_counts"].get("exfiltration_pattern") == 3
+        assert "exfiltration_pattern" in result["scores"][0]["anomaly_types"]
+        assert result["scores"][0]["recommended_action"] in {"ask", "deny"}
+
+    def test_privilege_escalation_attempt_from_role_change(self):
+        record = {
+            **_make_record("r0", "set_config_value", "2024-06-15T10:00:00Z"),
+            "params": {"key": "role", "value": "senior"},
+        }
+
+        result = compute_anomaly_scores([record])
+
+        assert result["anomaly_counts"].get("privilege_escalation_attempt") == 1
+        assert result["scores"][0]["score"] == 85
+        assert result["scores"][0]["recommended_action"] == "deny"
+
+    def test_command_pattern_anomaly_with_baseline(self):
+        records = [
+            _make_record("r0", "run_shell", "2024-06-15T10:00:00Z"),
+        ]
+        records[0]["params"] = {"command": "curl https://example.com"}
+        baseline = {"command_prefixes": ["git status", "python3 -m pytest"]}
+
+        result = compute_anomaly_scores(records, baseline=baseline)
+
+        assert "command_pattern_anomaly" in result["scores"][0]["anomaly_types"]
+        assert result["anomaly_counts"].get("command_pattern_anomaly") == 1
+
+    def test_path_anomaly_with_baseline(self):
+        records = [
+            _make_record(
+                "r0",
+                "read_file",
+                "2024-06-15T10:00:00Z",
+                paths=["secrets/token.txt"],
+            ),
+        ]
+        baseline = {"path_roots": ["src", "docs"]}
+
+        result = compute_anomaly_scores(records, baseline=baseline)
+
+        assert "path_anomaly" in result["scores"][0]["anomaly_types"]
+        assert result["anomaly_counts"].get("path_anomaly") == 1
+
+    def test_volume_anomaly_with_baseline(self):
+        records = [_make_record(f"r{i}", "read_file", "2024-06-15T10:00:00Z") for i in range(20)]
+        baseline = {"avg_records_per_session": 2}
+
+        result = compute_anomaly_scores(records, baseline=baseline)
+
+        assert "volume_anomaly" in result["scores"][0]["anomaly_types"]
+        assert result["anomaly_counts"].get("volume_anomaly") == 20
+
 
 # ---------------------------------------------------------------------------
 # Anomaly counts
@@ -351,6 +454,24 @@ class TestClassifyAnomalyLevel:
     def test_critical(self):
         assert classify_anomaly_level(56) == "critical"
         assert classify_anomaly_level(100) == "critical"
+
+
+class TestGetAnomalyAction:
+    def test_log_action(self):
+        assert get_anomaly_action(0) == "log"
+        assert get_anomaly_action(30) == "log"
+
+    def test_status_action(self):
+        assert get_anomaly_action(31) == "status"
+        assert get_anomaly_action(55) == "status"
+
+    def test_ask_action(self):
+        assert get_anomaly_action(56) == "ask"
+        assert get_anomaly_action(80) == "ask"
+
+    def test_deny_action(self):
+        assert get_anomaly_action(81) == "deny"
+        assert get_anomaly_action(100) == "deny"
 
 
 # ---------------------------------------------------------------------------

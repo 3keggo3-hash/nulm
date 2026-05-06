@@ -13,6 +13,7 @@ from claude_bridge import tool_utils as tu
 
 try:
     from claude_bridge.guard_policy import DecisionAction
+
     _HAS_POLICY = True
 except ImportError:
     _HAS_POLICY = False
@@ -57,8 +58,12 @@ class TestJsonResponse:
         if not _HAS_POLICY:
             pytest.skip("guard_policy not available")
         from claude_bridge.guard_policy import (
-            DecisionAction, DecisionSource, PolicyDecision, RiskLevel
+            DecisionAction,
+            DecisionSource,
+            PolicyDecision,
+            RiskLevel,
         )
+
         decision = PolicyDecision(
             action=DecisionAction.DENY,
             source=DecisionSource.BUILTIN_GUARD,
@@ -66,9 +71,7 @@ class TestJsonResponse:
             reason="blocked",
             risk_reasons=["pattern: sudo"],
         )
-        result = tu.json_response(
-            False, "blocked", decision=decision, decision_in_details=True
-        )
+        result = tu.json_response(False, "blocked", decision=decision, decision_in_details=True)
         parsed = json.loads(result)
         assert parsed["details"]["decision"]["action"] == "deny"
         assert parsed["details"]["decision"]["source"] == "builtin_guard"
@@ -247,9 +250,7 @@ class TestPathGuardDecision:
     def test_sensitive_path_denies(self):
         if not _HAS_POLICY:
             pytest.skip("guard_policy not available")
-        decision = tu.path_guard_decision(
-            ".env", "write", sensitive_reason=".env pattern"
-        )
+        decision = tu.path_guard_decision(".env", "write", sensitive_reason=".env pattern")
         assert decision.action == DecisionAction.DENY
 
     def test_normal_path_allows(self):
@@ -261,7 +262,5 @@ class TestPathGuardDecision:
     def test_outside_workspace_denies(self):
         if not _HAS_POLICY:
             pytest.skip("guard_policy not available")
-        decision = tu.path_guard_decision(
-            "secret", "read", outside_workspace=True
-        )
+        decision = tu.path_guard_decision("secret", "read", outside_workspace=True)
         assert decision.action == DecisionAction.DENY

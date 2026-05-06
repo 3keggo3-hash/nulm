@@ -1,0 +1,12 @@
+archive/
+benchmarks/
+tasks/done/
+.research/
+*.egg-info/
+.aider*
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+venv/
+.git/

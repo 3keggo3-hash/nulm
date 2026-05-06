@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "claude-bridge"
 version = "0.1.0"
 description = "Local-first MCP bridge with AI-powered security layer, policy engine, and audit logging"
-readme = "README.md"
-license = {text = "MIT"}
+readme = {file = "README.md", content-type = "text/markdown"}
+license = "MIT"
 requires-python = ">=3.10"
 authors = [
     {name = "Claude Bridge Contributors"}
@@ -22,8 +22,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
     "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
+    "Typing :: Typed",
 ]
 dependencies = [
     "mcp>=1.6.1",
@@ -37,6 +41,8 @@ dependencies = [
 Homepage = "https://github.com/3keggo3-hash/claude-bridge"
 Repository = "https://github.com/3keggo3-hash/claude-bridge"
 Documentation = "https://github.com/3keggo3-hash/claude-bridge#readme"
+"Bug Tracker" = "https://github.com/3keggo3-hash/claude-bridge/issues"
+Changelog = "https://github.com/3keggo3-hash/claude-bridge/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 legacy = [
@@ -46,6 +52,7 @@ legacy = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
@@ -83,7 +90,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

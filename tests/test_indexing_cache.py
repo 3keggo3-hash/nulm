@@ -10,8 +10,6 @@ from claude_bridge import server as mcp_server
 
 from tests.helpers import parse_payload
 
-pytest_plugins = ("tests.helpers",)
-
 
 class TestIndexingCache:
     async def test_index_codebase_can_restore_from_disk_cache(self, temp_project, monkeypatch):

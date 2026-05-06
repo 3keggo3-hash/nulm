@@ -27,9 +27,7 @@ def _plans_dir() -> Path | None:
 
 
 def _run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args, capture_output=True, text=True, cwd=project_dir(), timeout=30
-    )
+    return subprocess.run(args, capture_output=True, text=True, cwd=project_dir(), timeout=30)
 
 
 def _safe_filename(name: str) -> str:
@@ -154,10 +152,7 @@ def restore_checkpoint(name: str) -> dict[str, Any]:
     if status_result.stdout.strip():
         return {
             "ok": False,
-            "error": (
-                "Uncommitted changes exist. "
-                "Commit or stash before restoring checkpoint."
-            ),
+            "error": ("Uncommitted changes exist. " "Commit or stash before restoring checkpoint."),
             "name": name,
         }
 

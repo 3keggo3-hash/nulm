@@ -30,7 +30,10 @@ class TestAppealRequest:
         )
         assert request.appeal_id
         assert request.original_record_id == "record-123"
-        assert request.justification == "This decision was incorrect because the file is not sensitive."
+        assert (
+            request.justification
+            == "This decision was incorrect because the file is not sensitive."
+        )
         assert request.metadata == {}
 
     def test_create_appeal_request_with_metadata(self):
@@ -301,9 +304,7 @@ class TestGetAppealHistory:
         history = get_appeal_history("nonexistent-record-id")
         assert history == []
 
-    def test_get_appeal_history_returns_appeals_for_record(
-        self, temp_audit_project, monkeypatch
-    ):
+    def test_get_appeal_history_returns_appeals_for_record(self, temp_audit_project, monkeypatch):
         project, audit_dir = temp_audit_project
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
 
@@ -324,9 +325,7 @@ class TestGetAppealHistory:
         assert all(a.get("original_record_id") == record_id for a in history)
         assert all(a.get("tool_name") == "appeal_event" for a in history)
 
-    def test_get_appeal_history_filters_by_record_id(
-        self, temp_audit_project, monkeypatch
-    ):
+    def test_get_appeal_history_filters_by_record_id(self, temp_audit_project, monkeypatch):
         project, audit_dir = temp_audit_project
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
 
@@ -381,20 +380,20 @@ class TestProcessAppeal:
         with pytest.raises(ValueError, match="original record not found"):
             process_appeal("nonexistent-record-id", "Valid justification")
 
-    async def test_process_appeal_succeeds_with_valid_record(
-        self, temp_audit_project, monkeypatch
-    ):
+    async def test_process_appeal_succeeds_with_valid_record(self, temp_audit_project, monkeypatch):
         project, audit_dir = temp_audit_project
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
 
         log_tool_call(
             tool_name="run_shell",
             params={"command": "echo hello"},
-            result=json.dumps({
-                "ok": True,
-                "message": "done",
-                "details": {},
-            }),
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "message": "done",
+                    "details": {},
+                }
+            ),
             duration_ms=5.0,
         )
 
@@ -413,20 +412,20 @@ class TestProcessAppeal:
         assert result["appeal_history_count"] >= 1
         assert result["original_record"]["record_id"] == record_id
 
-    async def test_process_appeal_chained_to_audit_log(
-        self, temp_audit_project, monkeypatch
-    ):
+    async def test_process_appeal_chained_to_audit_log(self, temp_audit_project, monkeypatch):
         project, audit_dir = temp_audit_project
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
 
         log_tool_call(
             tool_name="read_file",
             params={"path": "test.txt"},
-            result=json.dumps({
-                "ok": True,
-                "message": "read ok",
-                "details": {},
-            }),
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "message": "read ok",
+                    "details": {},
+                }
+            ),
             duration_ms=3.0,
         )
 
@@ -453,11 +452,13 @@ class TestProcessAppeal:
         log_tool_call(
             tool_name="write_file",
             params={"path": "config.json", "content": "{}"},
-            result=json.dumps({
-                "ok": True,
-                "message": "written",
-                "details": {},
-            }),
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "message": "written",
+                    "details": {},
+                }
+            ),
             duration_ms=10.0,
         )
 
@@ -473,9 +474,7 @@ class TestProcessAppeal:
         result = process_appeal(record_id, "Third justification")
         assert result["appeal_history_count"] >= 3
 
-    async def test_process_appeal_e2e_deny_to_audit_chain(
-        self, temp_audit_project, monkeypatch
-    ):
+    async def test_process_appeal_e2e_deny_to_audit_chain(self, temp_audit_project, monkeypatch):
         project, audit_dir = temp_audit_project
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
 
@@ -483,19 +482,21 @@ class TestProcessAppeal:
         log_tool_call(
             tool_name="run_shell",
             params={"command": "sudo rm -rf /"},
-            result=json.dumps({
-                "ok": False,
-                "message": "Command blocked for safety",
-                "code": "blocked_command",
-                "details": {
-                    "decision": {
-                        "action": "deny",
-                        "source": "builtin_guard",
-                        "risk_level": "critical",
-                        "reason": "Blocked dangerous command",
-                    }
-                },
-            }),
+            result=json.dumps(
+                {
+                    "ok": False,
+                    "message": "Command blocked for safety",
+                    "code": "blocked_command",
+                    "details": {
+                        "decision": {
+                            "action": "deny",
+                            "source": "builtin_guard",
+                            "risk_level": "critical",
+                            "reason": "Blocked dangerous command",
+                        }
+                    },
+                }
+            ),
             duration_ms=2.0,
         )
 

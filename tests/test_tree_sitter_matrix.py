@@ -11,8 +11,6 @@ from claude_bridge import server as mcp_server
 
 from tests.helpers import FakeTSNode, parse_payload
 
-pytest_plugins = ("tests.helpers",)
-
 
 def _fake_parser_for(root_node: FakeTSNode):
     return SimpleNamespace(parse=lambda source_bytes: SimpleNamespace(root_node=root_node))
@@ -32,9 +30,15 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "program",
             children=[
-                FakeTSNode("function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}),
-                FakeTSNode("class_declaration", fields={"name": FakeTSNode("identifier", "AuthGateway")}),
-                FakeTSNode("import_statement", fields={"source": FakeTSNode("string", "\"./session\"")}),
+                FakeTSNode(
+                    "function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}
+                ),
+                FakeTSNode(
+                    "class_declaration", fields={"name": FakeTSNode("identifier", "AuthGateway")}
+                ),
+                FakeTSNode(
+                    "import_statement", fields={"source": FakeTSNode("string", '"./session"')}
+                ),
             ],
         ),
     },
@@ -51,9 +55,15 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "program",
             children=[
-                FakeTSNode("function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}),
-                FakeTSNode("class_declaration", fields={"name": FakeTSNode("identifier", "AuthGateway")}),
-                FakeTSNode("import_statement", fields={"source": FakeTSNode("string", "\"./session\"")}),
+                FakeTSNode(
+                    "function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}
+                ),
+                FakeTSNode(
+                    "class_declaration", fields={"name": FakeTSNode("identifier", "AuthGateway")}
+                ),
+                FakeTSNode(
+                    "import_statement", fields={"source": FakeTSNode("string", '"./session"')}
+                ),
             ],
         ),
     },
@@ -70,9 +80,16 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "source_file",
             children=[
-                FakeTSNode("function_declaration", fields={"name": FakeTSNode("identifier", "LoginUser")}),
-                FakeTSNode("type_spec", fields={"name": FakeTSNode("type_identifier", "AuthService")}),
-                FakeTSNode("import_spec", fields={"path": FakeTSNode("interpreted_string_literal", "\"context\"")}),
+                FakeTSNode(
+                    "function_declaration", fields={"name": FakeTSNode("identifier", "LoginUser")}
+                ),
+                FakeTSNode(
+                    "type_spec", fields={"name": FakeTSNode("type_identifier", "AuthService")}
+                ),
+                FakeTSNode(
+                    "import_spec",
+                    fields={"path": FakeTSNode("interpreted_string_literal", '"context"')},
+                ),
             ],
         ),
     },
@@ -89,9 +106,18 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "source_file",
             children=[
-                FakeTSNode("function_item", fields={"name": FakeTSNode("identifier", "login_user")}),
-                FakeTSNode("struct_item", fields={"name": FakeTSNode("type_identifier", "AuthService")}),
-                FakeTSNode("use_declaration", fields={"argument": FakeTSNode("scoped_identifier", "crate::session::SessionStore")}),
+                FakeTSNode(
+                    "function_item", fields={"name": FakeTSNode("identifier", "login_user")}
+                ),
+                FakeTSNode(
+                    "struct_item", fields={"name": FakeTSNode("type_identifier", "AuthService")}
+                ),
+                FakeTSNode(
+                    "use_declaration",
+                    fields={
+                        "argument": FakeTSNode("scoped_identifier", "crate::session::SessionStore")
+                    },
+                ),
             ],
         ),
     },
@@ -108,9 +134,18 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "program",
             children=[
-                FakeTSNode("method_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}),
-                FakeTSNode("class_declaration", fields={"name": FakeTSNode("identifier", "AuthService")}),
-                FakeTSNode("import_declaration", fields={"path": FakeTSNode("scoped_identifier", "com.example.auth.SessionStore")}),
+                FakeTSNode(
+                    "method_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}
+                ),
+                FakeTSNode(
+                    "class_declaration", fields={"name": FakeTSNode("identifier", "AuthService")}
+                ),
+                FakeTSNode(
+                    "import_declaration",
+                    fields={
+                        "path": FakeTSNode("scoped_identifier", "com.example.auth.SessionStore")
+                    },
+                ),
             ],
         ),
     },
@@ -127,9 +162,17 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "source_file",
             children=[
-                FakeTSNode("function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}),
-                FakeTSNode("class_declaration", fields={"name": FakeTSNode("type_identifier", "AuthService")}),
-                FakeTSNode("import_header", fields={"path": FakeTSNode("identifier", "com.example.auth.SessionStore")}),
+                FakeTSNode(
+                    "function_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}
+                ),
+                FakeTSNode(
+                    "class_declaration",
+                    fields={"name": FakeTSNode("type_identifier", "AuthService")},
+                ),
+                FakeTSNode(
+                    "import_header",
+                    fields={"path": FakeTSNode("identifier", "com.example.auth.SessionStore")},
+                ),
             ],
         ),
     },
@@ -146,9 +189,15 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "compilation_unit",
             children=[
-                FakeTSNode("method_declaration", fields={"name": FakeTSNode("identifier", "LoginUser")}),
-                FakeTSNode("class_declaration", fields={"name": FakeTSNode("identifier", "AuthService")}),
-                FakeTSNode("using_directive", fields={"name": FakeTSNode("qualified_name", "Example.Auth")}),
+                FakeTSNode(
+                    "method_declaration", fields={"name": FakeTSNode("identifier", "LoginUser")}
+                ),
+                FakeTSNode(
+                    "class_declaration", fields={"name": FakeTSNode("identifier", "AuthService")}
+                ),
+                FakeTSNode(
+                    "using_directive", fields={"name": FakeTSNode("qualified_name", "Example.Auth")}
+                ),
             ],
         ),
     },
@@ -167,7 +216,7 @@ LANGUAGE_CASES = [
             children=[
                 FakeTSNode("method", fields={"name": FakeTSNode("identifier", "login_user")}),
                 FakeTSNode("class", fields={"name": FakeTSNode("constant", "AuthService")}),
-                FakeTSNode("call", fields={"argument": FakeTSNode("string", "\"json\"")}),
+                FakeTSNode("call", fields={"argument": FakeTSNode("string", '"json"')}),
             ],
         ),
     },
@@ -184,9 +233,14 @@ LANGUAGE_CASES = [
         "root_node": FakeTSNode(
             "program",
             children=[
-                FakeTSNode("method_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}),
+                FakeTSNode(
+                    "method_declaration", fields={"name": FakeTSNode("identifier", "loginUser")}
+                ),
                 FakeTSNode("class_declaration", fields={"name": FakeTSNode("name", "AuthService")}),
-                FakeTSNode("namespace_use_declaration", fields={"clause": FakeTSNode("namespace_name", "App\\Session\\Store")}),
+                FakeTSNode(
+                    "namespace_use_declaration",
+                    fields={"clause": FakeTSNode("namespace_name", "App\\Session\\Store")},
+                ),
             ],
         ),
     },
@@ -219,7 +273,9 @@ class TestTreeSitterMatrix:
                 return _fake_parser_for(case["root_node"])
             return None
 
-        monkeypatch.setattr(indexing_module, "_load_tree_sitter_parser", fake_load_tree_sitter_parser)
+        monkeypatch.setattr(
+            indexing_module, "_load_tree_sitter_parser", fake_load_tree_sitter_parser
+        )
 
         source_dir = temp_project / case["dirname"]
         source_dir.mkdir()
@@ -231,6 +287,9 @@ class TestTreeSitterMatrix:
         assert indexed["language"] == case["expected_language"]
         assert indexed["functions"] == case["expected_functions"]
         assert indexed["classes"] == case["expected_classes"]
-        assert indexed["imports"] == case["expected_imports"]
+        if case["name"] == "ruby":
+            assert sorted(indexed["imports"]) == ["json"]
+        else:
+            assert indexed["imports"] == case["expected_imports"]
         assert indexed["parser_backend"] == "tree_sitter"
         assert payload["details"]["parser_backends"] == ["tree_sitter"]

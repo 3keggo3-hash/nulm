@@ -29,7 +29,6 @@ from claude_bridge.guard_policy import (
     ToolRequestContext,
 )
 
-
 # ---------------------------------------------------------------------------
 # PermissionAction
 # ---------------------------------------------------------------------------
@@ -106,9 +105,7 @@ class TestRolePermission:
         assert restored.description == p.description
 
     def test_from_dict_invalid_action_defaults(self) -> None:
-        restored = RolePermission.from_dict(
-            {"tool": "read_file", "action": "bogus"}
-        )
+        restored = RolePermission.from_dict({"tool": "read_file", "action": "bogus"})
         assert restored.action is PermissionAction.ALLOW
 
     def test_from_dict_empty(self) -> None:
@@ -214,9 +211,7 @@ class TestRolePolicy:
         assert r.permissions[0].tool == "read"
 
     def test_from_dict_restrictions(self) -> None:
-        r = RolePolicy.from_dict(
-            {"name": "dev", "restrictions": ["a", "b"]}
-        )
+        r = RolePolicy.from_dict({"name": "dev", "restrictions": ["a", "b"]})
         assert r.restrictions == ["a", "b"]
 
     def test_from_dict_extends_none(self) -> None:
@@ -672,7 +667,10 @@ class TestEvaluateRolePostRestrictions:
     def test_none_role_returns_none(self) -> None:
         ctx = ToolRequestContext(tool_name="write_file")
         decision = PolicyDecision(
-            DecisionAction.ALLOW, DecisionSource.DEFAULT, RiskLevel.LOW, "ok",
+            DecisionAction.ALLOW,
+            DecisionSource.DEFAULT,
+            RiskLevel.LOW,
+            "ok",
         )
         result = evaluate_role_post_restrictions(None, ctx, decision)
         assert result is None
@@ -684,7 +682,10 @@ class TestEvaluateRolePostRestrictions:
             role="junior",
         )
         decision = PolicyDecision(
-            DecisionAction.ALLOW, DecisionSource.DEFAULT, RiskLevel.LOW, "ok",
+            DecisionAction.ALLOW,
+            DecisionSource.DEFAULT,
+            RiskLevel.LOW,
+            "ok",
         )
         result = evaluate_role_post_restrictions("junior", ctx, decision)
         assert result is not None
@@ -698,7 +699,10 @@ class TestEvaluateRolePostRestrictions:
             role="senior",
         )
         decision = PolicyDecision(
-            DecisionAction.ALLOW, DecisionSource.DEFAULT, RiskLevel.LOW, "ok",
+            DecisionAction.ALLOW,
+            DecisionSource.DEFAULT,
+            RiskLevel.LOW,
+            "ok",
         )
         result = evaluate_role_post_restrictions("senior", ctx, decision)
         assert result is None
@@ -710,7 +714,10 @@ class TestEvaluateRolePostRestrictions:
             role="ci",
         )
         decision = PolicyDecision(
-            DecisionAction.ALLOW, DecisionSource.DEFAULT, RiskLevel.LOW, "ok",
+            DecisionAction.ALLOW,
+            DecisionSource.DEFAULT,
+            RiskLevel.LOW,
+            "ok",
         )
         result = evaluate_role_post_restrictions("ci", ctx, decision)
         assert result is not None
@@ -724,7 +731,10 @@ class TestEvaluateRolePostRestrictions:
             role="junior",
         )
         decision = PolicyDecision(
-            DecisionAction.ALLOW, DecisionSource.DEFAULT, RiskLevel.LOW, "ok",
+            DecisionAction.ALLOW,
+            DecisionSource.DEFAULT,
+            RiskLevel.LOW,
+            "ok",
         )
         result = evaluate_role_post_restrictions("junior", ctx, decision)
         assert result is None

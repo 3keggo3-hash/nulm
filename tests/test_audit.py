@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from claude_bridge import server as mcp_server
+from claude_bridge._audit_core import current_session_id
 from claude_bridge.audit import (
     AuditExport,
     ExportFormat,
@@ -194,6 +195,44 @@ class TestExtractPolicyDecision:
         assert fields["decision_reason"] is None
         assert fields["decision_risk_reasons"] == []
         assert fields["decision_metadata"] == {}
+
+
+class TestAuditIndex:
+    async def test_get_recent_tool_calls_uses_compact_audit_index(
+        self, temp_audit_project, monkeypatch
+    ):
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+
+        await mcp_server.workspace_status()
+        await mcp_server.run_shell("sudo apt update")
+
+        session_id = current_session_id()
+        index_path = audit_dir / f"{session_id}.index.jsonl"
+        assert index_path.exists()
+
+        result = get_recent_tool_calls(limit=5, ok=False)
+
+        assert result["query_strategy"] == "audit_index"
+        assert result["total_records"] == 1
+        assert result["returned_records"] == 1
+        assert result["records"][0]["tool_name"] == "run_shell"
+
+    async def test_get_recent_tool_calls_falls_back_without_index(
+        self, temp_audit_project, monkeypatch
+    ):
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+
+        await mcp_server.workspace_status()
+        session_id = current_session_id()
+        (audit_dir / f"{session_id}.index.jsonl").unlink()
+
+        result = get_recent_tool_calls(limit=5, tool_name="workspace_status")
+
+        assert result["query_strategy"] == "linear_scan"
+        assert result["total_records"] == 1
+        assert result["records"][0]["tool_name"] == "workspace_status"
 
 
 # ---------------------------------------------------------------------------
@@ -925,7 +964,12 @@ class TestStripRedactedValue:
     def test_strips_nested_redacted(self):
         nested = {
             "params": {
-                "api_key": {"redacted": True, "sha256": "abc", "length": 8, "reason": "sensitive value"},
+                "api_key": {
+                    "redacted": True,
+                    "sha256": "abc",
+                    "length": 8,
+                    "reason": "sensitive value",
+                },
                 "file": "config.py",
             }
         }

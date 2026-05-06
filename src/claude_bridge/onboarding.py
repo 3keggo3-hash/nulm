@@ -77,6 +77,8 @@ def apply_onboarding(tool_name: str, result: str, *, enabled: bool) -> str:
     hint = _tips_for_call(call_number)
     hint["tool_calls_seen"] = call_number
     hint["remaining_before_auto_hide"] = max(0, _ONBOARDING_MAX_TOOL_CALLS - call_number)
-    hint["dismiss_hint"] = 'Disable later with set_config_value(key="onboarding_enabled", value=false).'
+    hint["dismiss_hint"] = (
+        'Disable later with set_config_value(key="onboarding_enabled", value=false).'
+    )
     details["onboarding"] = hint
     return json.dumps(payload, ensure_ascii=False)
