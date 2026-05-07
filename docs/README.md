@@ -27,6 +27,8 @@ These documents are considered the primary reference for the current product dir
   CI-friendly policy-as-code PR workflow: policy diff, simulate, validate.
 - `ai-collaboration-token-budget.md`
   Practical rules for reducing token/context burn during AI collaboration sessions.
+- `overnight-autopilot-plan.md`
+  Unattended low-risk execution plan for overnight maintenance slices.
 
 ### Completed / Reference
 
