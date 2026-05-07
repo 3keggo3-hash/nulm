@@ -56,3 +56,4 @@ Validation:
 - Stop after any unexpected state change in tracked files.
 - Stop if a task needs architecture-level decision or broad refactor.
 - Stop if validation indicates behavior risk outside the current slice.
+- Delete or pause the heartbeat automation when overnight scope is completed.

@@ -66,9 +66,17 @@ support compliance objectives for Claude Bridge deployments.
 - [ ] Guard policy file committed and version-controlled.
 - [ ] `power-user` / auto-approve disabled in production-adjacent deployments.
 - [ ] Audit directory is backed up or on persistent storage.
-- [ ] Retention policy matches organisational requirements.
+- [ ] Retention policy matches organizational requirements.
 - [ ] Policy diffs reviewed in CI before deployment.
 - [ ] Anomaly scans reviewed after each session.
 - [ ] Allowed roots scoped to the minimum required directories.
 - [ ] `CLAUDE_BRIDGE_GUARD_POLICY` environment variable set to the reviewed policy file.
 - [ ] Appeal and replay workflows tested for policy change validation.
+
+---
+
+## Related Documents
+
+- `docs/security-model.md`
+- `docs/policy-pr-workflow.md`
+- `docs/product-vision.md`

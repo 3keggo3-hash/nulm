@@ -36,7 +36,7 @@ These documents are not the master plan; they are retained under `archive/` as c
 audits, or historical decision records.
 
 - `archive/competitive-analysis-desktopcommander.md`
-  DesktopCommanderMCP comparison and findings.
+  Archived DesktopCommanderMCP comparison and findings.
 - `archive/performance-and-completion-audit.md`
   Performance, completion, and UX audit report. Actionable items from its content
   have been converted into newer canonical plans and docs.
