@@ -50,7 +50,7 @@ does this match the user's intent?"
 
 ## What We Are Not Building Now
 
-- **No browser extension / Web LLM bridge in the current roadmap.** The previous Faz 5 Web LLM
+- **No browser extension / Web LLM bridge in the current roadmap.** The previous Phase 5 Web LLM
   Extension idea is cancelled for now and should be treated as historical context only.
 - **No mandatory cloud service for core use.** The core server stays local-first and stdio-based.
 - **No remote policy marketplace yet.** A local policy hub may come first; remote registry/SaaS

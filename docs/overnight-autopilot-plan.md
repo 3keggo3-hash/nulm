@@ -12,6 +12,7 @@ This plan defines low-risk, low-usage autonomous work slices for overnight runs.
 
 - Prefer documentation consistency, small test hardening, and narrow bug fixes.
 - One batch contains 3-5 tiny tasks, then one commit and one push.
+- If a batch creates no tracked diff, skip commit/push and move to the next slice.
 - No interactive or destructive commands.
 - Skip large scans unless a task requires them.
 
