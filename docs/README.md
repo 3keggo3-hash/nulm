@@ -13,19 +13,12 @@ These documents are considered the primary reference for the current product dir
 - `roadmap.md`
   Technical implementation phases and current technical status. Links to
   `product-vision.md` for the updated product vision.
-- `merged-execution-plan.md`
-  Actionable technical backlog, dependency ordering, and delegation packages.
 - `known-issues-and-improvements.md`
   Known gaps, risks, and improvement suggestions.
 - `optional-dependencies.md`
   Canonical guide for the optional dependency pattern and doctor checks.
 - `publishing-checklist.md`
   Pre-release and publishing checklist.
-- `competitive-development-plan.md`
-  Long-term development plan that translates competitive insights into an
-  architecture-aligned work plan.
-- `competitive-analysis-template.md`
-  Reusable template for new competitive analyses.
 - `security-model.md`
   Security model: trust boundary, approval modes, guard policy layer, audit logging.
 - `compliance-readiness.md`
@@ -35,14 +28,15 @@ These documents are considered the primary reference for the current product dir
 
 ### Completed / Reference
 
-These documents are not the master plan; they are retained as completed analyses, audits, or historical decision records.
+These documents are not the master plan; they are retained under `archive/` as completed analyses,
+audits, or historical decision records.
 
-- `competitive-analysis-desktopcommander.md`
+- `archive/competitive-analysis-desktopcommander.md`
   DesktopCommanderMCP comparison and findings.
-- `performance-and-completion-audit.md`
+- `archive/performance-and-completion-audit.md`
   Performance, completion, and UX audit report. Actionable items from its content
-  have been converted into work packages within `merged-execution-plan.md`.
-- `product-roadmap.md`
+  have been converted into newer canonical plans and docs.
+- `archive/product-roadmap.md`
   Historical strategy and the earlier AI security layer pivot. The Phase 5 Web LLM
   Extension idea was cancelled, so this should not be treated as canonical in new plans.
 
@@ -56,12 +50,7 @@ The task lifecycle is not maintained under `docs/`. Active work and completed re
 
 ### Candidates for Review or Archival
 
-These documents should not be deleted outright; their relevance to the new pivot
-should be clarified and, if necessary, they should be moved under `archive/`.
-
-- `strategic-roadmap.md`
-  Largely repositioned by the new `product-vision.md`.
-  The ideas within are valuable, but this should not be read as the canonical product plan.
+Use `tasks/needs-review.md` as the source of truth for pending doc review/archival decisions.
 
 ## Directory Rules
 
