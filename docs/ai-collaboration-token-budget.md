@@ -46,6 +46,16 @@ extra insights work.
 5. Keep a short handoff note after each implementation slice: changed files, reason, validation,
    and next slice.
 
+## Night Mode (Low Usage)
+
+When weekly budget is tight, run short maintenance slices instead of feature work:
+
+1. Commit and push current work first so recovery is easy.
+2. Run one focused test target instead of the full suite.
+3. Run `ruff check` only on touched paths (`src`, `tests`, or specific files).
+4. Limit each slice to one tiny patch and one verification command.
+5. End each slice with a 3-line note: what changed, what passed, what is next.
+
 ## Codebase Direction
 
 Reducing token use is also a code quality task:
