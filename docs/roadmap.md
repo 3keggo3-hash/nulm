@@ -5,7 +5,7 @@
 > The security layer is the backbone of the product; the main goal is to consolidate file, shell,
 > patch, workflow, audit, replay, AI Advisor, and meta-agent tools into a single auditable local
 > runtime layer. For the canonical product vision, see [`docs/product-vision.md`](./product-vision.md).
-> The previous AI-security-layer-focused strategy is retained in `product-roadmap.md`
+> The previous AI-security-layer-focused strategy is retained in `archive/product-roadmap.md`
 > as a historical reference.
 
 > **Rule:** Do not move to the next feature until the current one is completed.
