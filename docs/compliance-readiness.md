@@ -80,3 +80,4 @@ support compliance objectives for Claude Bridge deployments.
 - `docs/security-model.md`
 - `docs/policy-pr-workflow.md`
 - `docs/product-vision.md`
+- `docs/publishing-checklist.md`

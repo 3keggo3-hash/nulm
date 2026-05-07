@@ -112,3 +112,8 @@ deployments):
 | Secret exfiltration | Audit redaction + secret pattern detection in writes. |
 | Tampered audit log | Append-only JSONL; session isolation. |
 | Privilege escalation | No cloud component; all runs as the invoking user. |
+
+## Related Documents
+
+- `docs/compliance-readiness.md`
+- `docs/policy-pr-workflow.md`

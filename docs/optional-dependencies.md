@@ -42,3 +42,8 @@ except ImportError:
 
 Missing optional packages are not treated as errors for core usage; the doctor output should
 display the relevant extra installation command.
+
+## Related Documents
+
+- `docs/known-issues-and-improvements.md`
+- `docs/roadmap.md`
