@@ -471,7 +471,7 @@ class TestAiEvaluatorDecisions:
         assert payload["ok"] is False
         assert payload["code"] == "approval_rejected"
         decision = assert_decision(payload, action="ask", source="ai", risk_level="medium")
-        assert "timed out" in decision["reason"].lower()
+        assert "timeout" in decision["reason"].lower()
 
     async def test_rule_no_match_ai_deny_beats_default_allow(
         self, policy_project: tuple[Path, Path]

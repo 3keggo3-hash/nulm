@@ -14,6 +14,7 @@ from claude_bridge.ai_evaluator import (
     OpenAIProvider,
     Provider,
     ProviderConfig,
+    _validate_provider_url,
     ai_latency_summary,
     create_provider,
     evaluate_tool_with_ai,
@@ -163,7 +164,7 @@ class _DummyHttpResponse:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def read(self) -> bytes:
+    def read(self, *_args: object) -> bytes:
         return self._payload
 
 
@@ -227,12 +228,17 @@ class TestNetworkProviders:
             return _DummyHttpResponse('{"response": "{\\"action\\": \\"ask\\"}"}')
 
         monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        monkeypatch.setattr("claude_bridge.ai_evaluator._validate_provider_url", lambda url: None)
         provider = OllamaProvider(timeout=13)
 
         response = provider.evaluate(EvaluationRequest(prompt="run curl"))
 
         assert response.action == EvaluationAction.ASK
         assert seen["timeout"] == 13
+
+    def test_ollama_provider_rejects_private_base_url(self) -> None:
+        with pytest.raises(ValueError, match="private/internal"):
+            _validate_provider_url("http://169.254.169.254/latest/meta-data/")
 
     def test_provider_rejects_fenced_json_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
@@ -549,7 +555,7 @@ class TestEvaluateToolWithAi:
         assert result.source == DecisionSource.AI
 
     @pytest.mark.asyncio
-    async def test_timeout_fallback_allow(self) -> None:
+    async def test_timeout_fallback_allow_is_treated_as_ask(self) -> None:
         class SlowProvider(Provider):
             def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
                 import time
@@ -565,7 +571,7 @@ class TestEvaluateToolWithAi:
             fallback_action="allow",
         )
         assert result is not None
-        assert result.action == DecisionAction.ALLOW
+        assert result.action == DecisionAction.ASK
         assert "fallback" in result.reason.lower()
 
     @pytest.mark.asyncio
@@ -602,4 +608,4 @@ class TestEvaluateToolWithAi:
         )
         assert result is not None
         assert result.action == DecisionAction.ASK
-        assert "failed" in result.reason.lower()
+        assert "failure" in result.reason.lower()

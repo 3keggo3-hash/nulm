@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -145,6 +146,21 @@ def restore_checkpoint(name: str) -> dict[str, Any]:
         return {
             "ok": False,
             "error": "Checkpoint snapshot missing git_commit_hash",
+            "name": name,
+        }
+
+    if not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+        return {
+            "ok": False,
+            "error": f"Invalid git commit hash format: {commit_hash}",
+            "name": name,
+        }
+
+    verify_result = _run_git(["git", "cat-file", "-t", commit_hash])
+    if verify_result.returncode != 0 or verify_result.stdout.strip() != "commit":
+        return {
+            "ok": False,
+            "error": f"Git commit hash not found in repository: {commit_hash}",
             "name": name,
         }
 

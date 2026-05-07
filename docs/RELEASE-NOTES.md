@@ -27,7 +27,7 @@ with explicit approval and audit controls.
 ### Security Layer
 - **Fail-closed security model:** all tool calls pass through guard policy evaluation
 - **Rule engine:** JSON/YAML-based custom rules with regex, glob, extension, and file_exists conditions
-- **AI evaluator:** optional advisory provider path with fail-closed parsing and built-in hard-deny precedence
+- **AI Advisor:** optional second-opinion provider path with fail-closed parsing and built-in hard-deny precedence
 - **Policy-as-code:** version-controlled guard policies with validate, diff, and simulate commands
 - **Approval flow:** interactive approval for sensitive operations
 
@@ -95,7 +95,7 @@ pip install -e ".[dev]"
 **Added:**
 - Core MCP server with file, shell, and patch tools
 - Security guard policy engine with JSON/YAML rule support
-- AI evaluator with fail-closed decision model
+- AI Advisor/evaluator with fail-closed decision model and audit-visible recommendations
 - Audit logging with secret masking and session management
 - Deterministic policy replay engine
 - Rule-based anomaly scoring for audit records

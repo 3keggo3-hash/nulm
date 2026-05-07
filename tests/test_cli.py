@@ -288,6 +288,7 @@ class TestCLI:
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
         monkeypatch.setenv("CLAUDE_BRIDGE_ALLOWED_ROOTS", f"{tmp_path}:{extra_root}")
         monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "true")
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
         monkeypatch.setenv("CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL", "false")
 
         mcp_server.configure_from_env()

@@ -26,6 +26,7 @@ from claude_bridge.guard_policy import (
 )
 from claude_bridge.tool_utils import _mask_secrets
 
+_AI_PROVIDER_MAX_RESPONSE_BYTES = 65536
 _AI_LATENCY_SAMPLES_MS: deque[float] = deque(maxlen=100)
 
 
@@ -301,6 +302,13 @@ def create_provider(
             model=model or "llama3",
             timeout=timeout,
         )
+    if provider_name == "deepseek":
+        key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "DeepSeek provider requires an API key (set DEEPSEEK_API_KEY or ai_evaluator_api_key)"
+            )
+        return DeepSeekProvider(api_key=key, model=model or "deepseek-chat", timeout=timeout)
     raise ValueError(f"Unknown provider: {provider_name!r}")
 
 
@@ -400,7 +408,7 @@ class AnthropicProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
         content = data.get("content", [{}])[0].get("text", "{}")
         return _parse_json_response(content)
 
@@ -452,9 +460,26 @@ class OpenAIProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
+
+
+def _validate_provider_url(url: str) -> None:
+    """Raise ValueError if *url* points to a private/internal host."""
+    from urllib.parse import urlparse as _urlparse
+
+    parsed = _urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError(f"Invalid provider URL: {url!r}")
+    from claude_bridge.url_tools import _is_private_host, _resolve_and_check_host
+
+    if _is_private_host(hostname):
+        raise ValueError(f"Provider URL hostname is blocked (private/internal): {hostname}")
+    private_ip = _resolve_and_check_host(hostname)
+    if private_ip is not None:
+        raise ValueError(f"Provider URL hostname resolves to internal IP: {private_ip}")
 
 
 class OllamaProvider(Provider):
@@ -464,6 +489,7 @@ class OllamaProvider(Provider):
         model: str = "llama3",
         timeout: int = 30,
     ):
+        _validate_provider_url(base_url)
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
@@ -496,8 +522,60 @@ class OllamaProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
         content = data.get("response", "{}")
+        return _parse_json_response(content)
+
+
+class DeepSeekProvider(Provider):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "deepseek-chat",
+        timeout: int = 30,
+    ):
+        self.api_key = api_key.strip()
+        self.model = model
+        self.timeout = timeout
+        self._endpoint = "https://api.deepseek.com/v1/chat/completions"
+
+    def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+        body = json.dumps(
+            {
+                "model": self.model,
+                "max_tokens": 256,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a security evaluator for a CLI tool bridge. "
+                            "Determine if the tool call is safe. "
+                            'Respond with JSON only: {"action": "allow"|"deny"|"ask", '
+                            '"reason": "string"}'
+                        ),
+                    },
+                    {"role": "user", "content": request.prompt},
+                ],
+            }
+        ).encode("utf-8")
+        try:
+            return self._call_api(body)
+        except Exception as exc:
+            return EvaluationResponse.fail_closed(reason=_provider_error_reason("DeepSeek", exc))
+
+    def _call_api(self, body: bytes) -> EvaluationResponse:
+        req = urllib.request.Request(
+            self._endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
 
 
@@ -590,8 +668,9 @@ async def evaluate_tool_with_ai(
     if not enabled or provider is None:
         return None
     masked_params = _mask_evaluation_params(dict(ctx.params))
+    safe_params = json.dumps(masked_params)[:500]
     request = EvaluationRequest(
-        prompt=f"Tool: {ctx.tool_name}\nParams: {json.dumps(masked_params)}",
+        prompt=f"Tool: {ctx.tool_name}\nParams: {safe_params}",
         tool_name=ctx.tool_name,
         tool_params=masked_params,
         context={"project_dir": ctx.project_dir or ""},
@@ -606,17 +685,16 @@ async def evaluate_tool_with_ai(
         or resp.reason.startswith("AI evaluator failed")
     )
     if is_fallback_trigger:
-        if fallback_action == "allow":
-            resp = EvaluationResponse(
-                action=EvaluationAction.ALLOW,
-                reason=f"AI evaluator fallback ({fallback_action}) after timeout/failure",
-            )
-        elif fallback_action == "deny":
+        if fallback_action == "deny":
             resp = EvaluationResponse(
                 action=EvaluationAction.DENY,
                 reason=f"AI evaluator fallback ({fallback_action}) after timeout/failure",
             )
-        # else keep ASK (fail-closed)
+        else:
+            resp = EvaluationResponse(
+                action=EvaluationAction.ASK,
+                reason="AI evaluator fallback after timeout/failure; requires approval",
+            )
 
     decision = evaluation_response_to_policy_decision(resp, ctx=ctx)
     latency = ai_latency_summary().get("last_ms")

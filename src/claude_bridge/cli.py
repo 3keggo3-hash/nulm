@@ -1128,7 +1128,7 @@ def benchmark(
         load_benchmark_profile,
     ) = _benchmark_runtime()
     resolved_project_dir = project_dir.resolve()
-    set_config(project_dir=resolved_project_dir, auto_approve=True)
+    set_config(project_dir=resolved_project_dir, auto_approve=False, client_managed_approval=True)
     selected_path = path
     selected_query = query
     selected_limit = limit

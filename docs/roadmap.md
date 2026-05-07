@@ -3,7 +3,7 @@
 > **📌 Current Product Direction:** Claude Bridge is positioned as a
 > **local-first, security-controlled MCP agent runtime** for Claude Desktop and other MCP clients.
 > The security layer is the backbone of the product; the main goal is to consolidate file, shell,
-> patch, workflow, audit, replay, AI evaluator, and meta-agent tools into a single auditable local
+> patch, workflow, audit, replay, AI Advisor, and meta-agent tools into a single auditable local
 > runtime layer. For the canonical product vision, see [`docs/product-vision.md`](./product-vision.md).
 > The previous AI-security-layer-focused strategy is retained in `product-roadmap.md`
 > as a historical reference.

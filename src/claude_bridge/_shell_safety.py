@@ -30,16 +30,16 @@ def _tokens_after_env(tokens: list[str]) -> list[str]:
     if not tokens or _command_basename(tokens[0]) != "env":
         return tokens
     for index, token in enumerate(tokens[1:], start=1):
-        if "=" in token:
+        if "=" in token and not token.startswith("-"):
             continue
         if token == "-S":
             if index + 1 < len(tokens):
                 try:
-                    inner = shlex.split(tokens[index + 1])
+                    split_tokens = shlex.split(tokens[index + 1])
                 except ValueError:
-                    inner = [tokens[index + 1]]
-                return inner + list(tokens[index + 2 :])
-            continue
+                    split_tokens = [tokens[index + 1]]
+                return split_tokens + list(tokens[index + 2 :])
+            return []
         if token.startswith("-"):
             continue
         return tokens[index:]
@@ -92,6 +92,21 @@ def _find_unquoted_shell_construct(command: str) -> str | None:
                 return "$() substitution"
             if next_char == "{":
                 return "${} expansion"
+            if next_char == "'":
+                return "$' ANSI-C quoting"
+            if next_char == '"':
+                return '$" locale translation'
+        if char == "<":
+            if index + 1 < len(command):
+                next_char = command[index + 1]
+                if next_char == "(":
+                    return "<() process substitution"
+                if next_char == "<":
+                    if index + 2 < len(command) and command[index + 2] == "<":
+                        return "<<< here-string"
+                    return "<< heredoc"
+        if char == ">" and index + 1 < len(command) and command[index + 1] == "(":
+            return ">() process substitution"
         if char == "(":
             prefix = command[:index].rstrip()
             if not prefix or prefix.endswith((";", "&&", "||", "|", "&")):

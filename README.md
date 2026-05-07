@@ -41,7 +41,7 @@ For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
 - **URL reading**: `read_url` — constrained text-only HTTP/HTTPS reader with SSRF protections
 - **Git integration**: file mutations committed automatically when target is in a Git repository
 - **Audit logging**: tool calls recorded as structured JSONL
-- **Policy engine**: custom guard rules, team RBAC, AI evaluator advisor, policy diff for CI/CD
+- **Policy engine**: custom guard rules, team RBAC, AI advisor, policy diff for CI/CD
 - **Replay and appeal**: deterministic decision replay and post-hoc appeal with audit chain
 - **Anomaly detection**: rule-based audit anomaly scanning
 - **Meta-agent tools**: local plans, approach exploration, deterministic self-critique, git-backed
@@ -136,12 +136,17 @@ Team policies define role-based access controls with inheritance. See
 claude-bridge policy diff --base .claude-bridge/team.json --head pr/team.json
 ```
 
-## AI Evaluator (Optional)
+## AI Advisor (Optional)
 
-An optional advisory layer that suggests `allow`, `deny`, or `ask` without overriding built-in hard
-denies. Disabled by default. The local deterministic provider works without network access;
-Anthropic, OpenAI, and Ollama providers are optional and fail closed on invalid responses or
-provider errors.
+An optional second-opinion layer for proposed agent actions. It can suggest `allow`, `deny`, or
+`ask`, but its broader role is to critique whether the next step is necessary, scoped, safe, and
+aligned with the user's intent. It acts like a debate partner between the coding agent and local
+execution, without overriding built-in hard denies.
+
+Disabled by default. The local deterministic provider works without network access; Anthropic,
+OpenAI, and Ollama providers are optional and fail closed on invalid responses or provider errors.
+The current Python module and environment variables still use the `ai_evaluator` name for backward
+compatibility.
 
 ```bash
 export CLAUDE_BRIDGE_AI_EVALUATOR_ENABLED=1

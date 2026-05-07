@@ -50,6 +50,14 @@ class TestTokensAfterEnv:
         result = st._tokens_after_env(["env", "FOO=bar", "ls", "-la"])
         assert result == ["ls", "-la"]
 
+    def test_env_split_preserves_remaining_options(self):
+        result = st._tokens_after_env(["env", "-S", "bash", "-c", "id"])
+        assert result == ["bash", "-c", "id"]
+
+    def test_env_split_string_is_tokenized(self):
+        result = st._tokens_after_env(["env", "-S", "bash -c id"])
+        assert result == ["bash", "-c", "id"]
+
     def test_foobar_env_not_stripped(self):
         # FOO=bar is not "env", so tokens are returned unchanged
         result = st._tokens_after_env(["FOO=bar", "ls", "-la"])
@@ -164,6 +172,18 @@ class TestUnquotedShellConstruct:
 
     def test_subshell_parens(self):
         result = st._find_unquoted_shell_construct("(cd /tmp && ls)")
+        assert result is not None
+
+    def test_ansi_c_quoting_caught(self):
+        result = st._find_unquoted_shell_construct("echo $'secret'")
+        assert result is not None
+
+    def test_process_substitution_caught(self):
+        result = st._find_unquoted_shell_construct("cat <(echo secret)")
+        assert result is not None
+
+    def test_here_string_caught(self):
+        result = st._find_unquoted_shell_construct("cat <<< secret")
         assert result is not None
 
 

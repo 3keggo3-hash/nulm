@@ -110,6 +110,11 @@ _FULL_PATH_BLOCKED = {
     "service",
     "launchctl",
     "crontab",
+    "nc",
+    "ncat",
+    "socat",
+    "openssl",
+    "telnet",
 }
 
 _ENV_BLOCKED_COMMANDS = {
@@ -122,6 +127,11 @@ _ENV_BLOCKED_COMMANDS = {
     "umount",
     "kill",
     "systemctl",
+    "nc",
+    "ncat",
+    "socat",
+    "openssl",
+    "telnet",
 }
 
 _BLOCKED_DIRECT_COMMANDS = frozenset(
@@ -142,6 +152,11 @@ _BLOCKED_DIRECT_COMMANDS = frozenset(
         "crontab",
         "fdisk",
         "parted",
+        "nc",
+        "ncat",
+        "socat",
+        "openssl",
+        "telnet",
     }
 )
 

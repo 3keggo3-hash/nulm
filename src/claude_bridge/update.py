@@ -55,7 +55,7 @@ def _fetch_latest_version() -> str:
     try:
         req = Request(url, headers={"Accept": "application/json"})
         with urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read(65536).decode("utf-8"))
         return str(data.get("info", {}).get("version", "unknown"))
     except (URLError, OSError, ValueError, KeyError):
         return "unknown"

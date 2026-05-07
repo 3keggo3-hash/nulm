@@ -128,6 +128,14 @@ class TestUpdateRuntimeConfig:
         with pytest.raises(ValueError, match="shell_timeout must be a positive integer"):
             config_module.update_runtime_config("shell_timeout", -1)
 
+    async def test_ai_api_key_cannot_be_set_at_runtime(self, temp_project):
+        with pytest.raises(ValueError, match="cannot be set via MCP tool"):
+            config_module.update_runtime_config("ai_evaluator_api_key", "sk-test")
+
+    async def test_ai_fallback_allow_rejected_at_runtime(self, temp_project):
+        with pytest.raises(ValueError, match="must be one of deny/ask"):
+            config_module.update_runtime_config("ai_evaluator_fallback_action", "allow")
+
 
 class TestConfigureFromEnvState:
     async def test_env_var_reading(self, temp_project, monkeypatch):
@@ -135,6 +143,7 @@ class TestConfigureFromEnvState:
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", env_dir)
         monkeypatch.setenv("CLAUDE_BRIDGE_SHELL_TIMEOUT", "90")
         monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "1")
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
         monkeypatch.setenv("CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE", "deep")
 
         config_module.configure_from_env_state()
@@ -144,6 +153,18 @@ class TestConfigureFromEnvState:
         assert cfg["shell_timeout"] == 90
         assert cfg["auto_approve"] is True
         assert cfg["context_budget_profile"] == "deep"
+
+    async def test_auto_approve_requires_second_env_confirmation(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(temp_project.resolve()))
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "1")
+        monkeypatch.delenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", raising=False)
+        monkeypatch.delenv("CLAUDE_BRIDGE_UNSAFE_NOAPPROVAL_CONFIRMED", raising=False)
+
+        config_module.configure_from_env_state()
+        cfg = config_module.current_config()
+
+        assert cfg["auto_approve"] is False
+        assert cfg["client_managed_approval"] is True
 
 
 class TestConfigGetters:

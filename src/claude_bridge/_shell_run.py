@@ -7,6 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import os as _os
+
 from claude_bridge.ai_evaluator import evaluate_tool_with_ai
 from claude_bridge.config import active_role, active_user, current_config
 from claude_bridge.guard_policy import (
@@ -15,7 +17,7 @@ from claude_bridge.guard_policy import (
     ToolRequestContext,
 )
 from claude_bridge.rules_engine import evaluate_runtime_policy_chain
-from claude_bridge.tool_utils import json_response, require_approval
+from claude_bridge.tool_utils import _mask_secrets, json_response, require_approval
 
 from claude_bridge._process_session import (
     _ProcessSession,
@@ -39,6 +41,28 @@ from claude_bridge._shell_constants import (
 )
 
 _MAX_INTERACT_INPUT_CHARS = 4000
+
+_ENV_BLOCK_KEYS = frozenset(
+    {
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AZURE_CLIENT_SECRET",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "CLAUDE_BRIDGE_AI_EVALUATOR_API_KEY",
+        "DATABASE_URL",
+        "PGPASSWORD",
+    }
+)
+
+
+def _sanitized_env() -> dict[str, str]:
+    env = dict(_os.environ)
+    for key in _ENV_BLOCK_KEYS:
+        env.pop(key, None)
+    return env
 
 
 async def run_shell(
@@ -81,7 +105,7 @@ async def run_shell(
             rule_decision.reason,
             code="policy_denied",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -94,7 +118,7 @@ async def run_shell(
             rule_decision.reason,
             code="approval_rejected",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -125,7 +149,7 @@ async def run_shell(
             ai_decision.reason,
             code="policy_denied",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -138,7 +162,7 @@ async def run_shell(
             ai_decision.reason,
             code="approval_rejected",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -155,7 +179,7 @@ async def run_shell(
             {"command": stripped},
             rejection_message="Shell command rejected by user",
             rejection_details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -173,7 +197,7 @@ async def run_shell(
                 "Shell command rejected by user",
                 code="approval_rejected",
                 details={
-                    "command": command,
+                    "command": _mask_secrets(command),
                     "risk_level": analysis["details"]["risk_level"],
                     "risk_reasons": analysis["details"]["risk_reasons"],
                 },
@@ -202,6 +226,7 @@ async def run_shell(
             errors="replace",
             cwd=cwd_snapshot,
             timeout=timeout_seconds,
+            env=_sanitized_env(),
         )
     except subprocess.TimeoutExpired:
         return json_response(
@@ -209,7 +234,7 @@ async def run_shell(
             f"Shell command timed out after {timeout_seconds} seconds",
             code="command_timeout",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "timeout_seconds": timeout_seconds,
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
@@ -223,7 +248,7 @@ async def run_shell(
             f"Failed to execute shell command: {exc}",
             code="command_error",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -234,7 +259,7 @@ async def run_shell(
     stdout, stdout_truncated = _truncate_output(result.stdout)
     stderr, stderr_truncated = _truncate_output(result.stderr)
     details = {
-        "command": command,
+        "command": _mask_secrets(command),
         "stdout": stdout,
         "stderr": stderr,
         "exit_code": result.returncode,
@@ -302,7 +327,7 @@ async def start_process(
             rule_decision.reason,
             code="policy_denied",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -315,7 +340,7 @@ async def start_process(
             rule_decision.reason,
             code="approval_rejected",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -346,7 +371,7 @@ async def start_process(
             ai_decision.reason,
             code="policy_denied",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -359,7 +384,7 @@ async def start_process(
             ai_decision.reason,
             code="approval_rejected",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -376,7 +401,7 @@ async def start_process(
             {"command": stripped},
             rejection_message="Process start rejected by user",
             rejection_details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -394,7 +419,7 @@ async def start_process(
                 "Process start rejected by user",
                 code="approval_rejected",
                 details={
-                    "command": command,
+                    "command": _mask_secrets(command),
                     "risk_level": analysis["details"]["risk_level"],
                     "risk_reasons": analysis["details"]["risk_reasons"],
                 },
@@ -433,6 +458,7 @@ async def start_process(
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            env=_sanitized_env(),
         )
     except OSError as exc:
         return json_response(
@@ -440,7 +466,7 @@ async def start_process(
             f"Failed to start process: {exc}",
             code="command_error",
             details={
-                "command": command,
+                "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
@@ -448,7 +474,7 @@ async def start_process(
             decision_in_details=True,
         )
 
-    session_id = uuid.uuid4().hex[:12]
+    session_id = uuid.uuid4().hex
     session = _ProcessSession(
         session_id=session_id,
         command=command,

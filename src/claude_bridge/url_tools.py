@@ -179,12 +179,11 @@ async def read_url(url: str) -> str:
         if private_ip is not None:
             return json_response(
                 False,
-                f"Blocked: host resolves to internal IP: {private_ip}",
+                "Blocked: host resolves to internal IP",
                 code="ssrf_blocked",
                 details={
                     "url_hash": _url_hash(url),
                     "host": hostname,
-                    "resolved_ip": private_ip,
                 },
             )
 
@@ -196,13 +195,12 @@ async def read_url(url: str) -> str:
         resp = opener.open(req, timeout=_TIMEOUT_SECONDS)
     except HTTPError as exc:
         if exc.code in (301, 302, 303, 307, 308) and redirect_handler._blocked_host:
-            blocked = redirect_handler._blocked_host
             redirect_handler._blocked_host = None
             return json_response(
                 False,
-                f"Blocked: redirect to internal address: {blocked}",
+                "Blocked: redirect to internal address",
                 code="ssrf_blocked_redirect",
-                details={"url_hash": _url_hash(url), "redirect_target": blocked},
+                details={"url_hash": _url_hash(url)},
             )
         return json_response(
             False,

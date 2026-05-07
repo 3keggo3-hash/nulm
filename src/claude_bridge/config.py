@@ -263,18 +263,18 @@ def apply_config(
         raise ValueError(f"Unknown tool profile: {tool_profile}")
     if not isinstance(shell_timeout, int) or shell_timeout <= 0:
         raise ValueError(f"shell_timeout must be a positive integer, got {shell_timeout!r}")
-    if ai_evaluator_provider not in {"local", "openai", "anthropic", "ollama"}:
+    if ai_evaluator_provider not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
         raise ValueError(
-            f"ai_evaluator_provider must be one of local/openai/anthropic/ollama, "
+            f"ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek, "
             f"got {ai_evaluator_provider!r}"
         )
     if not isinstance(ai_evaluator_timeout, int) or ai_evaluator_timeout <= 0:
         raise ValueError(
             f"ai_evaluator_timeout must be a positive integer, got {ai_evaluator_timeout!r}"
         )
-    if ai_evaluator_fallback_action not in {"allow", "deny", "ask"}:
+    if ai_evaluator_fallback_action not in {"deny", "ask"}:
         raise ValueError(
-            f"ai_evaluator_fallback_action must be one of allow/deny/ask, "
+            f"ai_evaluator_fallback_action must be one of deny/ask, "
             f"got {ai_evaluator_fallback_action!r}"
         )
     with _CONFIG_LOCK:
@@ -313,6 +313,18 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
         os.environ.get("CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL", "0").strip().lower()
     )
     client_managed_approval = raw_client_managed in {"1", "true", "yes", "on"}
+    safety_confirm = (
+        os.environ.get("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "0").strip().lower()
+    )
+    noapproval_confirm = (
+        os.environ.get("CLAUDE_BRIDGE_UNSAFE_NOAPPROVAL_CONFIRMED", "0").strip().lower()
+    )
+    auto_approve_confirmed = (
+        safety_confirm in {"1", "true", "yes", "on"} or noapproval_confirm == "1"
+    )
+    if auto_approve and not auto_approve_confirmed:
+        auto_approve = False
+        client_managed_approval = True
     raw_approval_preset = os.environ.get("CLAUDE_BRIDGE_APPROVAL_PRESET", "").strip() or None
     raw_onboarding_enabled = os.environ.get("CLAUDE_BRIDGE_ONBOARDING_ENABLED", "0").strip().lower()
     onboarding_enabled = raw_onboarding_enabled in {"1", "true", "yes", "on"}
@@ -354,10 +366,14 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     ai_evaluator_fallback_action = (
         os.environ.get("CLAUDE_BRIDGE_AI_EVALUATOR_FALLBACK_ACTION", "ask").strip().lower() or "ask"
     )
+    if ai_evaluator_fallback_action == "allow":
+        ai_evaluator_fallback_action = "ask"
     raw_role = os.environ.get("CLAUDE_BRIDGE_ROLE", "").strip() or None
     raw_user = os.environ.get("CLAUDE_BRIDGE_USER", "").strip() or None
     if force_auto_approve is not None:
-        auto_approve = force_auto_approve
+        auto_approve = force_auto_approve and auto_approve_confirmed
+        if force_auto_approve and not auto_approve_confirmed:
+            client_managed_approval = True
     apply_config(
         project_dir=project_dir,
         allowed_roots=allowed_roots,
@@ -514,16 +530,18 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
 
         if key == "ai_evaluator_provider":
             provider = str(value).lower()
-            if provider not in {"local", "openai", "anthropic", "ollama"}:
+            if provider not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
                 raise ValueError(
-                    "ai_evaluator_provider must be one of local/openai/anthropic/ollama"
+                    "ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek"
                 )
             _CONFIG[key] = provider
             return current_config()
 
         if key == "ai_evaluator_api_key":
-            _CONFIG[key] = str(value)
-            return current_config()
+            raise ValueError(
+                "ai_evaluator_api_key cannot be set via MCP tool; "
+                "use CLAUDE_BRIDGE_AI_EVALUATOR_API_KEY environment variable instead"
+            )
 
         if key == "ai_evaluator_model":
             _CONFIG[key] = str(value)
@@ -541,8 +559,8 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
 
         if key == "ai_evaluator_fallback_action":
             action = str(value).lower()
-            if action not in {"allow", "deny", "ask"}:
-                raise ValueError("ai_evaluator_fallback_action must be one of allow/deny/ask")
+            if action not in {"deny", "ask"}:
+                raise ValueError("ai_evaluator_fallback_action must be one of deny/ask")
             _CONFIG[key] = action
             return current_config()
 

@@ -23,6 +23,7 @@ class TestEnvConfiguration:
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
         monkeypatch.setenv("CLAUDE_BRIDGE_ALLOWED_ROOTS", f"{tmp_path}:{extra_root}")
         monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "yes")
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
         monkeypatch.setenv("CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL", "off")
         monkeypatch.setenv("CLAUDE_BRIDGE_SHELL_TIMEOUT", "45")
 
@@ -38,11 +39,23 @@ class TestEnvConfiguration:
     def test_force_auto_approve_overrides_env(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
         monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "false")
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
 
         mcp_server.configure_from_env(force_auto_approve=True)
         current = mcp_server.current_config()
 
         assert current["auto_approve"] is True
+
+    def test_force_auto_approve_requires_second_confirmation(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))
+        monkeypatch.delenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", raising=False)
+        monkeypatch.delenv("CLAUDE_BRIDGE_UNSAFE_NOAPPROVAL_CONFIRMED", raising=False)
+
+        mcp_server.configure_from_env(force_auto_approve=True)
+        current = mcp_server.current_config()
+
+        assert current["auto_approve"] is False
+        assert current["client_managed_approval"] is True
 
     def test_invalid_shell_timeout_falls_back_to_default(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(tmp_path))

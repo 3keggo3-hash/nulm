@@ -19,7 +19,8 @@ _POLICY_FILENAME = ".claude-bridge-guard.json"
 _RULES_YAML_FILENAME = ".claude-bridge/rules.yaml"
 _MAX_ITEMS = 100
 _MAX_PATTERN_LENGTH = 500
-_MAX_REGEX_PATTERN_LENGTH = 256  # FIX: stricter limit for user-defined regexes
+_MAX_REGEX_PATTERN_LENGTH = 256
+_MAX_POLICY_FILE_BYTES = 2 * 1024 * 1024  # FIX: stricter limit for user-defined regexes
 _REGEX_QUANTIFIER = r"(?:[*+?]|\{\d+(?:,\d*)?\})"
 _NESTED_QUANTIFIER_PATTERN = re.compile(
     rf"\((?:[^()\\]|\\.)*{_REGEX_QUANTIFIER}(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
@@ -563,9 +564,12 @@ _POLICY_CACHE_LOCK = threading.RLock()
 def _read_file_with_fallback(path: Path) -> str | None:
     """Read file contents or return None on any error."""
     try:
-        return path.read_text(encoding="utf-8")
+        raw = path.read_text(encoding="utf-8")
     except OSError:
         return None
+    if len(raw) > _MAX_POLICY_FILE_BYTES:
+        return None
+    return raw
 
 
 def _parse_json_safe(raw: str, path: Path) -> dict[str, Any] | None:
