@@ -29,6 +29,7 @@ These documents are considered the primary reference for the current product dir
   Practical rules for reducing token/context burn during AI collaboration sessions.
 - `overnight-autopilot-plan.md`
   Unattended low-risk execution plan for overnight maintenance slices.
+- Cross-document sections named `Related Documents` should use `docs/...` paths for consistency.
 
 ### Completed / Reference
 

@@ -1,6 +1,6 @@
 # Claude Bridge — Product Vision
 
-> **Last updated:** 2026-05-05
+> **Last updated:** 2026-05-08
 > **Status:** Canonical product direction
 
 Claude Bridge is a **local-first MCP agent runtime** for Claude Desktop and other MCP clients.

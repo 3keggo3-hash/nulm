@@ -64,3 +64,8 @@ Reducing token use is also a code quality task:
 - Keep tool profiles enforced at MCP registration time.
 - Keep disk/index caches token-based instead of content-heavy.
 - Keep docs canonical and avoid duplicate long plans for the same roadmap.
+
+## Related Documents
+
+- `docs/overnight-autopilot-plan.md`
+- `docs/README.md`
