@@ -206,6 +206,14 @@ What it does:
 
 ---
 
+## Related Documents
+
+- `docs/product-vision.md`
+- `docs/known-issues-and-improvements.md`
+- `docs/RELEASE-NOTES.md`
+
+---
+
 ## Stabilization Roadmap
 
 1. Record baseline benchmark results on 2-3 large real repos

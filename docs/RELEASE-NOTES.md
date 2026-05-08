@@ -138,3 +138,4 @@ pip install -e ".[dev]"
 - `docs/publishing-checklist.md`
 - `docs/security-model.md`
 - `docs/product-vision.md`
+- `docs/roadmap.md`

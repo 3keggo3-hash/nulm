@@ -100,8 +100,9 @@ This mode assumes the MCP client actually implements an approval UI.
 
 ---
 
-## References
+## Related Documents
 
 - Claude Code review (2026-04-29)
 - `archive/competitive-analysis-desktopcommander.md`
 - `docs/product-vision.md`
+- `docs/roadmap.md`
