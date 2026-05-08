@@ -44,6 +44,8 @@ audits, or historical decision records.
 - `archive/product-roadmap.md`
   Historical strategy and the earlier AI security layer pivot. The Phase 5 Web LLM
   Extension idea was cancelled, so this should not be treated as canonical in new plans.
+- `RELEASE-NOTES.md`
+  Release snapshot and historical change log for the public alpha candidate.
 
 ### In Progress / Task Tracking
 

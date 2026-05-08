@@ -130,3 +130,11 @@ pip install -e ".[dev]"
 | Entry point | `claude_bridge.cli:main` |
 | Core deps | mcp, pathspec, typer, rich, pydantic |
 | Optional deps | tree-sitter, tiktoken, Pillow, PyPDF2 |
+
+---
+
+## Related Documents
+
+- `docs/publishing-checklist.md`
+- `docs/security-model.md`
+- `docs/product-vision.md`
