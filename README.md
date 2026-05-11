@@ -1,5 +1,6 @@
 # Claude Bridge
 
+<!-- GitHub Topics: mcp-server, claude-bridge, agent-quality, local-ai, developer-tools -->
 CI: GitHub Actions | PyPI package: `claude-bridge-mcp` | CLI: `claude-bridge` |
 Python: 3.10+ | License: MIT |
 Code style: Black
