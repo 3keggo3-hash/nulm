@@ -67,9 +67,16 @@ PROMPT_SHORTCUTS = [
     {
         "name": "quality",
         "category": "workflow",
-        "description": "Evaluate shipping quality and regression safety.",
-        "token_strategy": "Start from the prompt catalog entry to reduce prompt repetition.",
-        "chat_fallback": '/quality target="src/" focus="correctness and regression safety"',
+        "description": (
+            "Run a quality-first advisory workflow with goal, plan, context, and result gates."
+        ),
+        "token_strategy": (
+            "Use the quality workflow to get compact Agent Quality Layer guidance in one call."
+        ),
+        "chat_fallback": (
+            'run_workflow(mode="quality", target="src/", '
+            'option="correctness and regression safety")'
+        ),
     },
     {
         "name": "test",
@@ -465,15 +472,18 @@ WORKFLOW_PROMPT_TEMPLATES = {
         "Prefer safe, low-blast-radius edits and stop when evidence is insufficient."
     ),
     "quality": (
-        "Evaluate the target against a practical shipping-quality bar.\n"
+        "Run a quality-first Agent Quality Layer workflow for the target.\n"
         "Target: {target}\n"
         "Focus: {focus}\n"
         "Response language: {language}\n"
+        "Start from the clarified goal, improved request, plan quality review,"
+        " context/token strategy, and result quality gate.\n"
         "Do not stop at the first plausible explanation.\n"
         "Cross-check related implementation, config, scene, and build/export"
         " files before judging quality complete.\n"
         "Call out where the code is acceptable, where it is fragile, and what"
-        " evidence is still missing."
+        " evidence is still missing.\n"
+        "End with the next smallest prompt that would improve result quality."
     ),
     "test": (
         "Design or improve tests for the target.\n"
@@ -592,10 +602,10 @@ WORKFLOW_STEPS = {
         "Repeat only while the evidence improves and the iteration budget allows.",
     ],
     "quality": [
-        "Inspect the target structure and likely execution path.",
-        "Read the implementation together with nearby config or runtime override files.",
-        "Judge correctness, regression safety, readability, and test depth before"
-        " suggesting changes.",
+        "Clarify the goal and convert the request into a scoped quality pass.",
+        "Review the plan for scope, validation, security/config, and token risk.",
+        "Choose the smallest context that can answer the quality question.",
+        "Prepare a result quality gate checklist before suggesting changes.",
     ],
     "test": [
         "Inspect the current test surface.",
@@ -669,6 +679,7 @@ WORKFLOW_EXAMPLES = {
     "quality": [
         'run_workflow(mode="quality", target="src/")',
         'run_workflow(mode="quality", target="src/", option="correctness and regression safety")',
+        'run_workflow(mode="quality", target=".", option="public-ready quality gate")',
     ],
     "test": [
         'run_workflow(mode="test", target="tests/")',

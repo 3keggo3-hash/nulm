@@ -3,31 +3,41 @@
 > **Last updated:** 2026-05-08
 > **Status:** Canonical product direction
 
-Claude Bridge is a **local-first MCP agent runtime** for Claude Desktop and other MCP clients.
-It gives an agent controlled access to local files, shell commands, patches, workflows, code
-indexing, and project memory while keeping policy, approval, audit, and replay visible.
+Claude Bridge is a **local-first agent quality and execution layer** for Claude Desktop and other
+MCP clients. It gives an agent controlled access to local files, shell commands, patches,
+workflows, code indexing, and project memory while adding the missing middle layer: intent
+clarification, context strategy, plan critique, token optimization, result quality review, and safe
+configuration guidance.
 
 The short version:
 
-> A secure, local-first MCP workspace layer for running useful coding agents with explicit
-> approvals, deterministic policy controls, auditability, bounded orchestration, and an optional
-> second-opinion AI advisor.
+> A secure, local-first MCP workspace layer that helps ordinary user requests become professional
+> software work: clearer plans, better context choices, safer execution, stronger quality checks,
+> and explicit approvals.
 
 ---
 
 ## Current Direction
 
-Claude Bridge started as a Python MCP server for file, shell, and patch tools. The original pivot
-framed it as an AI-assisted security layer. That security layer remains essential, but the product
-has broadened: the goal is now to become the local control plane between an MCP client and a real
-developer workspace.
+Claude Bridge started as a Python MCP server for file, shell, and patch tools. The first product
+pivot framed it as an AI-assisted security layer. That security layer remains essential, but the
+product has broadened again: the goal is now to become the local control plane and quality layer
+between an MCP client and a real developer workspace.
 
-Security is the governance backbone, not the whole product. The user-facing value is that an agent
-can inspect, edit, validate, plan, critique, checkpoint, and explain work in a local project without
-turning the machine into an unbounded execution surface. Claude Bridge should also be able to sit
-between the coding agent and execution as a debate partner: not only asking "is this allowed?", but
-also "is this the right next step, is the scope too broad, is there a safer or more direct plan, and
-does this match the user's intent?"
+The release decision follows from that: do not hurry into a broad public launch as a "safe MCP
+server." First, reshape the product around the Agent Quality Layer. That is what makes Claude Bridge
+different from a normal MCP tool collection: it should help users get better code, better plans, and
+better workflow settings without needing deep prompting or engineering-process expertise.
+
+Security is the governance backbone, not the whole product. The user-facing value is that a user
+should not need to know how to write a perfect engineering prompt. They should be able to describe
+what they want in ordinary language, and Bridge should help turn that into scoped plans, relevant
+context, safe tool use, cleaner code, better tests, and lower token waste.
+
+Claude Bridge should sit between the coding agent and execution as a senior collaborator: not only
+asking "is this allowed?", but also "is this the right next step, is the scope too broad, what
+context is actually needed, how can token use be reduced, is there a better approach, and does the
+result meet a professional quality bar?"
 
 ## What We Are Building
 
@@ -41,10 +51,13 @@ does this match the user's intent?"
   workflow presets, prompt shortcuts, and compact intent helpers.
 - **Meta-agent layer:** local plan files, approach exploration, deterministic self-critique, and
   git-backed checkpoints.
-- **Optional AI Advisor / debate layer:** local deterministic provider plus Anthropic, OpenAI, and
-  Ollama provider interfaces. The current code surface is named `ai_evaluator`, but the product role
-  is broader than permission checking: it reviews proposed actions for necessity, scope, safety,
-  and fit with the user's intent. It cannot override built-in hard denies.
+- **Agent Quality Layer:** intent normalization, prompt improvement, context strategy, plan
+  critique, result quality review, creative alternatives, token optimization, and safe MCP config
+  recommendations. The current `ai_evaluator` code is an early security-advisor slice, not the full
+  target layer.
+- **Optional provider-backed advisor:** local deterministic provider plus Anthropic, OpenAI, Ollama,
+  and other provider interfaces where configured. Provider advice cannot override built-in hard
+  denies.
 - **Team and compliance foundations:** policy-as-code, policy diff, role bundles, compliance
   readiness docs, and CI-oriented validation.
 
@@ -57,7 +70,8 @@ does this match the user's intent?"
   remains a later business decision.
 - **No model-hosting product.** Claude Bridge does not ship model weights or become an LLM host.
 - **No silent auto-approval expansion.** Approval mode, path boundaries, and hard denies remain
-  explicit controls.
+  explicit controls. Chat-driven settings may recommend safer profiles, but cannot quietly weaken
+  policy.
 
 ## Product Pillars
 
@@ -72,19 +86,31 @@ state.
 Every risky action should have a policy path: built-in guard, user rule, AI advisory decision,
 approval request, audit record, and replayable outcome where possible.
 
-### 3. Productive Disagreement
+### 3. Agent Quality By Default
 
-Claude Bridge should make room for structured disagreement before execution. The AI Advisor can
-challenge the primary agent's plan, ask for narrower context, recommend a safer validation path, or
-suggest that a proposed tool call is premature. This is advisory by default, but it should be visible
-in audit records and useful to the user as a second opinion.
+Claude Bridge should make professional work easier even when the user gives an imprecise prompt. It
+should clarify intent, create acceptance criteria, choose a context plan, challenge broad or risky
+implementation plans, recommend validation, and review the result.
 
-### 4. Bounded Orchestration
+### 4. Productive Disagreement
+
+The advisor can challenge the primary agent's plan, ask for narrower context, recommend a safer
+validation path, or suggest that a proposed tool call is premature. This is advisory by default, but
+it should be visible in audit records and useful to the user as a second opinion.
+
+### 5. Self-Tuning Local Workflow
+
+Bridge should be configurable from chat for safe settings: tool profiles, context budget, workflow
+defaults, advisor provider choice, and timeout values. It must explain tradeoffs, ask for approval
+before mutation, audit changes, and reject secrets or policy-weakening changes through ordinary MCP
+payloads.
+
+### 6. Bounded Orchestration
 
 Agent loops should be small, inspectable, and reversible. Plans, approaches, self-critique, and
 checkpoints exist to make longer work safer rather than more autonomous by default.
 
-### 5. Local-First Extensibility
+### 7. Local-First Extensibility
 
 Optional providers, multi-format readers, URL tools, update checks, and team policy features should
 extend the local runtime without making core startup fragile or cloud-dependent.
@@ -107,7 +133,10 @@ Completed or mostly implemented:
 
 Still needs product hardening:
 
-- Documentation alignment across roadmap files.
+- Agent Quality Layer MCP tools are implemented as an advisory MVP and need real-world polish.
+- Agent-facing config changes through `apply_bridge_config_change` are limited to safe allowlisted
+  keys; broader admin/runtime config remains explicit and should not be model-generated.
+- Documentation alignment is mostly complete, but public examples still need use-case hardening.
 - Release quality gates and cross-platform validation.
 - Provider latency measurement, keychain-backed secret storage, and provider test hardening.
 - Enforced workspace/time restrictions for team roles.
@@ -118,38 +147,40 @@ Still needs product hardening:
 
 ## Roadmap Shape
 
-### Phase A — Alignment and Release Readiness
+### Phase A — Product Repositioning and Docs
 
-Unify docs, remove contradictory Web LLM Extension references, stabilize package metadata, run the
-full quality gate, and keep the public README honest about current capabilities.
+Reposition the project from "security-controlled MCP runtime" to "agent quality and execution
+layer." Keep public docs honest about which pieces exist today and which are still planned.
 
-### Phase B — Runtime Architecture and Performance
+### Phase B — Agent Quality Contract
 
-Finish tool-profile filtering, lazy registration/imports, cache bounds, parser caches, and large
-module splits without changing the public MCP contract.
+Introduce a structured advisor contract for intent, plan, context, token, quality, and config
+recommendations. Keep provider output strictly parsed and fail-safe.
 
-### Phase C — AI Provider Completion
+### Phase C — Safe Chat-Driven Config
 
-Harden Anthropic/OpenAI/Ollama provider behavior, add latency metadata, fail-closed telemetry,
-secure local key storage, and evolve evaluator prompts toward second-opinion critique instead of
-only allow/deny/ask permission advice.
+Let users inspect, explain, suggest, apply, and reset safe Bridge settings from chat. Do not allow
+chat payloads to set secrets, widen path boundaries casually, or weaken shell hard denies.
 
-### Phase D — Team Policy Enforcement
+### Phase D — Prompt, Plan, and Quality Workflows
 
-Move role workspace/time restrictions from policy definitions into actual pre-execution enforcement
-and CI examples.
+Add request improvement, plan critique, result quality review, and next-prompt generation. Wire the
+advisor into workflows at clear boundaries.
 
-### Phase E — Audit, Anomaly, and Trust
+### Phase E — Runtime Architecture and Performance
 
-Scale audit search, add AI consistency reports, add baseline aging, and decide whether high anomaly
-scores should remain advisory or become configurable ask/deny behavior.
+Continue module splits, lazy imports, cache bounds, parser caches, and release hardening without
+breaking the public MCP contract.
 
-### Phase F — Meta-Agent Maturity
+### Phase F — Governance, Audit, and Team Policy
 
-Make plans, approach comparison, self-critique, checkpoints, and workflow sessions more useful as a
-coherent local agent workbench.
+Scale audit search, improve replay/appeal, enforce role restrictions, add policy examples, and keep
+anomaly scoring advisory unless explicitly configured otherwise.
 
-### Phase G — Feature Parity and Ecosystem
+### Phase G — Ecosystem and Public Release Polish
 
-Improve onboarding, update workflows, multi-format readers, in-memory code execution if safe, and
-local policy hub support.
+Improve onboarding, package install, optional dependencies, local policy hub support, examples, and
+public release messaging.
+
+For the detailed long-term implementation plan, see
+[`docs/agent-quality-layer-plan.md`](./agent-quality-layer-plan.md).

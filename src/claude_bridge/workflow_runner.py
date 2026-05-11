@@ -6,6 +6,15 @@ import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from claude_bridge.agent_advisor import (
+    AgentAdviceRequest,
+    PlanQualityReviewRequest,
+    ResultQualityReviewRequest,
+    advise_next_step,
+    improve_request,
+    plan_quality_review,
+    review_result_quality,
+)
 from claude_bridge.tool_utils import path_outside_project_details
 from claude_bridge.workflow_agent_loop import build_agent_loop_execution_plan
 from claude_bridge.workflow_cache import (
@@ -61,6 +70,311 @@ def _workflow_recipe(
     elif mode == "commit":
         recipe["shape"] = ["discover", "read_changes", "summarize_impact"]
     return recipe
+
+
+def _workflow_goal(*, mode: str, target: str, option: str | None) -> str:
+    focus = option or WORKFLOW_DISCOVERY_TERMS[mode]
+    return f"{mode} workflow for {target}: {focus}"
+
+
+def _workflow_plan_text(
+    *,
+    mode: str,
+    target: str,
+    steps: list[str],
+    recommended_tools: list[str],
+    execute: bool,
+) -> str:
+    return (
+        f"Run {mode} workflow for {target}. "
+        f"Steps: {'; '.join(steps)}. "
+        f"Recommended tools: {', '.join(recommended_tools)}. "
+        f"execute={execute}."
+    )
+
+
+def _workflow_quality_gate_plan(*, mode: str, execute: bool) -> str:
+    if execute:
+        return (
+            "After the workflow result is produced, summarize changed files, validation, docs "
+            "impact, security/config impact, and call review_result_quality."
+        )
+    return (
+        "Before executing edits, keep this workflow as a quality gate plan: collect changed files, "
+        "run focused validation, note docs/security impact, then call review_result_quality."
+    )
+
+
+def _result_quality_gate_checklist() -> list[str]:
+    return [
+        "Compare the final result with the clarified goal.",
+        "Confirm changed files stayed inside the intended scope.",
+        "Run or name focused validation for touched behavior.",
+        "Check docs or roadmap drift when user-facing behavior changes.",
+        "Verify no shell, path, approval, config, or secret-handling risk changed.",
+        "Record any token/context waste and how to avoid it next time.",
+        "Name the next smallest fix instead of opening a broad follow-up.",
+    ]
+
+
+def _workflow_agent_quality(
+    *,
+    mode: str,
+    target: str,
+    option: str | None,
+    steps: list[str],
+    recommended_tools: list[str],
+    execute: bool,
+) -> dict[str, Any]:
+    goal = _workflow_goal(mode=mode, target=target, option=option)
+    plan = _workflow_plan_text(
+        mode=mode,
+        target=target,
+        steps=steps,
+        recommended_tools=recommended_tools,
+        execute=execute,
+    )
+    recent_context = {
+        "workflow_mode": mode,
+        "execute": execute,
+        "read_only_boundary": not execute,
+    }
+    advice = advise_next_step(
+        AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
+    )
+    improved = improve_request(goal, target=target)
+    plan_review = plan_quality_review(PlanQualityReviewRequest(plan=plan, goal=goal, target=target))
+    result_review = review_result_quality(
+        ResultQualityReviewRequest(
+            goal=goal,
+            result_summary=_workflow_quality_gate_plan(mode=mode, execute=execute),
+            validation={"planned": True, "commands": advice.validation},
+            recent_context=recent_context,
+            constraints={"read-only": not execute, "advisory": True},
+        )
+    )
+    return {
+        "schema_version": "workflow_agent_quality.v1",
+        "boundary": {
+            "start": "improve_request + advise_next_step + plan_quality_review",
+            "finish": "quality gate plan for review_result_quality",
+        },
+        "especially_visible": mode == "quality",
+        "improved_request": improved.to_dict(),
+        "clarified_goal": improved.clarified_goal,
+        "plan_quality": plan_review.to_dict(),
+        "context_strategy": advice.needed_context,
+        "token_strategy": advice.token_strategy,
+        "suggested_next_prompt": advice.next_prompt,
+        "risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
+        "quality_gate_plan": {
+            "summary": _workflow_quality_gate_plan(mode=mode, execute=execute),
+            "checklist": _result_quality_gate_checklist(),
+            "result_review_template": result_review.to_dict(),
+        },
+        "quality_first": {
+            "enabled": mode == "quality",
+            "clarified_goal": improved.clarified_goal,
+            "improved_request": improved.to_dict(),
+            "plan_quality_review": plan_review.to_dict(),
+            "context_strategy": advice.needed_context,
+            "token_strategy": advice.token_strategy,
+            "result_quality_gate_checklist": _result_quality_gate_checklist(),
+            "suggested_next_prompt": advice.next_prompt,
+        },
+        "read_only": True,
+    }
+
+
+def _execution_result_summary(execution: dict[str, Any] | None) -> dict[str, Any]:
+    if execution is None:
+        return {
+            "status": "not_executed",
+            "performed_actions": [],
+            "changed_files": [],
+            "validation_ok": None,
+            "result_summary": "Workflow was prepared but not executed.",
+            "risks": ["Quality gate still needs real execution evidence."],
+            "follow_up": ["Execute the workflow or run the relevant quality gate manually."],
+        }
+
+    performed_actions = [
+        str(item) for item in execution.get("performed_actions", []) if isinstance(item, str)
+    ]
+    changed_files: list[str] = []
+    validation_ok: bool | None = None
+    risks: list[str] = []
+    follow_up: list[str] = []
+    result_messages: list[str] = []
+
+    results = execution.get("results", [])
+    if isinstance(results, list):
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            result_messages.append(str(result.get("message", "")))
+            details = result.get("details", {})
+            if not isinstance(details, dict):
+                continue
+            path = details.get("path")
+            if isinstance(path, str) and path not in changed_files:
+                changed_files.append(path)
+            validation_result = details.get("validation_result")
+            if isinstance(validation_result, dict) and isinstance(
+                validation_result.get("ok"), bool
+            ):
+                validation_ok = validation_result["ok"]
+
+    if validation_ok is False:
+        risks.append("Validation failed during workflow execution.")
+        follow_up.append("Inspect validation output before planning another patch.")
+    elif validation_ok is True:
+        follow_up.append("Run result quality review against changed files and validation.")
+    else:
+        risks.append("No validation result was produced by this workflow execution.")
+        follow_up.append("Name and run focused validation before treating the result as complete.")
+
+    if not changed_files:
+        follow_up.append("No changed files were reported; use the execution evidence as context.")
+
+    summary = (
+        f"Executed actions: {', '.join(performed_actions) if performed_actions else 'none'}. "
+        f"Changed files: {', '.join(changed_files) if changed_files else 'none'}. "
+        f"Validation: {_validation_label(validation_ok)}."
+    )
+    if result_messages:
+        summary += f" Last result: {result_messages[-1]}."
+
+    return {
+        "status": "succeeded",
+        "performed_actions": performed_actions,
+        "changed_files": changed_files,
+        "validation_ok": validation_ok,
+        "result_summary": summary,
+        "risks": risks,
+        "follow_up": follow_up,
+    }
+
+
+def _validation_label(validation_ok: bool | None) -> str:
+    if validation_ok is True:
+        return "passed"
+    if validation_ok is False:
+        return "failed"
+    return "not run"
+
+
+def _execution_failure_summary(
+    *,
+    execution: dict[str, Any] | None,
+    error_payload: dict[str, Any],
+) -> dict[str, Any]:
+    summary = _execution_result_summary(execution)
+    summary["status"] = "failed"
+    summary["error_message"] = str(error_payload.get("message", "Execution failed"))
+    summary["error_code"] = error_payload.get("code")
+    summary["risks"] = [
+        "Workflow execution failed before the quality gate could complete.",
+        *list(summary.get("risks", [])),
+    ]
+    summary["follow_up"] = [
+        "Inspect the failure output before making another change.",
+        "Re-run only the smallest failing discovery or validation step.",
+    ]
+    summary["result_summary"] = (
+        f"Workflow execution failed: {summary['error_message']}. "
+        f"Actions before failure: {', '.join(summary['performed_actions']) or 'none'}."
+    )
+    return summary
+
+
+def _executed_workflow_next_prompt(
+    *,
+    goal: str,
+    summary: dict[str, Any],
+) -> str:
+    status = str(summary.get("status", "not_executed"))
+    validation_ok = summary.get("validation_ok")
+    changed_files = summary.get("changed_files", [])
+    result_summary = str(summary.get("result_summary", ""))
+
+    if status == "failed" or validation_ok is False:
+        return (
+            f"Inspect this workflow failure before editing further: {result_summary} "
+            f"Original goal: {goal}. Read the failure/validation output, identify the "
+            "smallest next evidence-gathering step, and stop if the cause is ambiguous."
+        )
+
+    if validation_ok is True:
+        files = ", ".join(changed_files) if changed_files else "the touched files"
+        return (
+            f"Review the executed workflow result for {files}: {result_summary} "
+            "Run review_result_quality with changed files and validation evidence, then propose "
+            "the next smallest improvement only if the quality gate passes."
+        )
+
+    return (
+        f"Turn this executed workflow summary into the next small quality step: {result_summary} "
+        f"Original goal: {goal}. First name focused validation, then decide whether result "
+        "quality review or a narrower follow-up is needed."
+    )
+
+
+def _add_executed_workflow_quality(
+    *,
+    agent_quality: dict[str, Any],
+    mode: str,
+    target: str,
+    option: str | None,
+    execution_summary: dict[str, Any],
+) -> None:
+    goal = _workflow_goal(mode=mode, target=target, option=option)
+    result_review = review_result_quality(
+        ResultQualityReviewRequest(
+            goal=goal,
+            result_summary=str(execution_summary.get("result_summary", "")),
+            changed_files=list(execution_summary.get("changed_files", [])),
+            validation={
+                "ok": execution_summary.get("validation_ok"),
+                "failed": execution_summary.get("validation_ok") is False,
+            },
+            recent_context={"executed_workflow": True, "mode": mode},
+            constraints={"advisory": True, "read-only": True},
+        )
+    )
+    next_prompt = _executed_workflow_next_prompt(goal=goal, summary=execution_summary)
+    agent_quality["execution_summary"] = execution_summary
+    agent_quality["executed_result_quality"] = result_review.to_dict()
+    agent_quality["suggested_next_prompt"] = next_prompt
+    quality_first = agent_quality.get("quality_first")
+    if isinstance(quality_first, dict):
+        quality_first["suggested_next_prompt"] = next_prompt
+        quality_first["executed_result_quality"] = result_review.to_dict()
+
+
+def _ensure_agent_quality_details(details: dict[str, Any]) -> None:
+    existing = details.get("agent_quality")
+    if isinstance(existing, dict) and "quality_first" in existing:
+        return
+    mode = str(details.get("mode", "review"))
+    target = str(details.get("target", "."))
+    option = None
+    steps = details.get("steps", [])
+    recommended_tools = details.get("recommended_tools", [])
+    if not isinstance(steps, list) or not all(isinstance(item, str) for item in steps):
+        steps = []
+    if not isinstance(recommended_tools, list) or not all(
+        isinstance(item, str) for item in recommended_tools
+    ):
+        recommended_tools = []
+    details["agent_quality"] = _workflow_agent_quality(
+        mode=mode,
+        target=target,
+        option=option,
+        steps=steps,
+        recommended_tools=recommended_tools,
+        execute=bool(details.get("execute", False)),
+    )
 
 
 async def _execute_workflow_first_step(
@@ -264,6 +578,7 @@ async def run_workflow(
             cached = _safe_cached_json_payload(cached_payload)
             if cached is not None and isinstance(cached.get("details"), dict):
                 cached["details"]["cached"] = True
+                _ensure_agent_quality_details(cached["details"])
                 return json.dumps(cached, ensure_ascii=False)
     recommended_tools = ["list_directory", "read_file"]
     if mode == "todo":
@@ -274,6 +589,14 @@ async def run_workflow(
     quality_bar = WORKFLOW_QUALITY_BAR
     orchestration_rules = WORKFLOW_ORCHESTRATION_RULES
     agent_loop_policy = build_agent_loop_policy(max_iterations)
+    agent_quality = _workflow_agent_quality(
+        mode=mode,
+        target=target,
+        option=option,
+        steps=steps,
+        recommended_tools=recommended_tools,
+        execute=execute,
+    )
 
     execution: dict[str, Any] | None = None
     if execute:
@@ -292,6 +615,23 @@ async def run_workflow(
             json_response=json_response,
         )
         if execution_error is not None:
+            try:
+                error_payload = json.loads(execution_error)
+            except (json.JSONDecodeError, TypeError):
+                error_payload = {
+                    "message": "Execution failed with invalid response",
+                    "code": "agent_loop_execution_failed",
+                }
+            _add_executed_workflow_quality(
+                agent_quality=agent_quality,
+                mode=mode,
+                target=target,
+                option=option,
+                execution_summary=_execution_failure_summary(
+                    execution=execution,
+                    error_payload=error_payload,
+                ),
+            )
             error_details: dict[str, Any] = {
                 "mode": mode,
                 "target": target,
@@ -307,14 +647,8 @@ async def run_workflow(
                 "execute": execute,
                 "max_iterations": max_iterations,
                 "execution": execution,
+                "agent_quality": agent_quality,
             }
-            try:
-                error_payload = json.loads(execution_error)
-            except (json.JSONDecodeError, TypeError):
-                error_payload = {
-                    "message": "Execution failed with invalid response",
-                    "code": "agent_loop_execution_failed",
-                }
             return json_response(
                 False,
                 error_payload["message"],
@@ -343,9 +677,17 @@ async def run_workflow(
             execute=execute,
             max_iterations=max_iterations,
         ),
+        "agent_quality": agent_quality,
     }
     if execution is not None:
         details["execution"] = execution
+        _add_executed_workflow_quality(
+            agent_quality=agent_quality,
+            mode=mode,
+            target=target,
+            option=option,
+            execution_summary=_execution_result_summary(execution),
+        )
 
     response = json_response(True, f"Workflow prepared for mode: {mode}", details=details)
     if not execute:
@@ -364,5 +706,8 @@ def build_prompt_catalog_payload() -> dict[str, Any]:
         "shortcuts": catalog["shortcuts"],
         "client_side_only": catalog["client_side_only"],
         "notes": catalog["notes"],
-        "recommended_path": "Use an MCP prompt or slash UI when the client exposes it; fall back to run_workflow or a natural-language request only when necessary.",
+        "recommended_path": (
+            "Use an MCP prompt or slash UI when the client exposes it; fall back to "
+            "run_workflow or a natural-language request only when necessary."
+        ),
     }

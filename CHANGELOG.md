@@ -5,7 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-05-03
+## [0.1.0] - 2026-05-10
+
+Public alpha candidate. The project is now positioned as a local-first agent quality and execution
+layer, with deterministic Agent Quality tools implemented as the first advisory slice.
 
 ### Added
 
@@ -28,12 +31,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Meta-agent tools: local plans, approach exploration, deterministic self-critique, git-backed
   checkpoints.
 - Tool profiles (`essential`, `standard`, `full`) for token/capability tradeoffs.
+- Agent Quality tools: `advise_next_step`, `improve_request`, `plan_quality_review`,
+  `suggest_bridge_config`, `apply_bridge_config_change`, and `review_result_quality`.
+- Quality workflow integration with compact next prompts and result review guidance.
 - CLI interface: `claude-bridge install`, `setup`, `doctor`, `benchmark`, `policy`, `audit`,
   `replay`, `appeal`, `anomaly`.
 - Multi-format readers as optional dependencies.
 - Release quality gate script (`scripts/release-gate.sh`).
 - CI pipeline (GitHub Actions) with matrix testing on Python 3.10–3.13 (Linux, macOS).
 - PyPI publish workflow with Trusted Publisher support.
+- Agent Quality Layer docs and example chat flows for prompt improvement, context strategy, plan
+  critique, chat-driven safe config suggestions, result review, and token reduction.
 
 ### Fixed
 
@@ -46,5 +54,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Security model hardened to fail-closed by default.
 - MCP tool registration split into separate modules.
 - Meta prompt registration split into dedicated module.
+- Public release docs updated to separate implemented advisory behavior from future provider-backed
+  ambitions.
 
 [0.1.0]: https://github.com/3keggo3-hash/claude-bridge/releases/tag/v0.1.0

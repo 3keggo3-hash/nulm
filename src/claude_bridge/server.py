@@ -31,6 +31,7 @@ from claude_bridge.config import (
     apply_config,
     configure_from_env_state,
     current_config,
+    raw_ai_evaluator_config,
     update_runtime_config,
 )
 from claude_bridge.onboarding import apply_onboarding as _apply_onboarding
@@ -328,18 +329,18 @@ def configure_from_env(*, force_auto_approve: bool | None = None) -> None:
 
 
 def _get_ai_provider() -> Any | None:
-    cfg = current_config()
-    if not cfg.get("ai_evaluator_enabled", False):
+    cfg = raw_ai_evaluator_config()
+    if not cfg["enabled"]:
         return None
-    provider_name = cfg.get("ai_evaluator_provider", "local")
+    provider_name = cfg["provider"]
     try:
         from claude_bridge.ai_evaluator import create_provider
 
         return create_provider(
             provider_name,
-            api_key=cfg.get("ai_evaluator_api_key", ""),
-            model=cfg.get("ai_evaluator_model", ""),
-            timeout=int(cfg.get("ai_evaluator_timeout", 5)),
+            api_key=cfg["api_key"],
+            model=cfg["model"],
+            timeout=int(cfg["timeout"]),
         )
     except (ValueError, ImportError):
         return None
@@ -613,6 +614,12 @@ _META_TOOLS = register_meta_tools(
     enabled_names=_ENABLED_TOOL_NAMES,
 )
 get_recent_tool_calls = _tool_or_disabled(_META_TOOLS, "get_recent_tool_calls")
+advise_next_step = _tool_or_disabled(_META_TOOLS, "advise_next_step")
+improve_request = _tool_or_disabled(_META_TOOLS, "improve_request")
+plan_quality_review = _tool_or_disabled(_META_TOOLS, "plan_quality_review")
+review_result_quality = _tool_or_disabled(_META_TOOLS, "review_result_quality")
+suggest_bridge_config = _tool_or_disabled(_META_TOOLS, "suggest_bridge_config")
+apply_bridge_config_change = _tool_or_disabled(_META_TOOLS, "apply_bridge_config_change")
 session_insights = _tool_or_disabled(_META_TOOLS, "session_insights")
 activity_summary = _tool_or_disabled(_META_TOOLS, "activity_summary")
 usage_insights = _tool_or_disabled(_META_TOOLS, "usage_insights")

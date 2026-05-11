@@ -8,10 +8,14 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       id-token: write
       contents: read
     steps:
+      - name: Confirm protected environment
+        run: echo "Publishing requires the protected 'pypi' GitHub environment."
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

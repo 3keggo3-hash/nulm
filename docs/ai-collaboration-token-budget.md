@@ -67,5 +67,5 @@ Reducing token use is also a code quality task:
 
 ## Related Documents
 
-- `docs/overnight-autopilot-plan.md`
+- `docs/agent-quality-layer-plan.md`
 - `docs/README.md`

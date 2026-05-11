@@ -66,7 +66,7 @@ def build_doctor_report(
         DoctorCheck("Python executable", Path(python_executable).exists(), python_executable),
         DoctorCheck(
             "Python version is supported",
-            tuple(python_version[:2]) >= (3, 8),
+            tuple(python_version[:2]) >= (3, 10),
             version_text,
         ),
         DoctorCheck(

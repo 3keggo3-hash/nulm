@@ -1,13 +1,14 @@
 include README.md
 include LICENSE
 include pyproject.toml
+graft docs
+graft examples
 graft src
 prune tests
 prune archive
 prune tasks
 prune benchmarks
-prune examples
-prune docs
 prune build
 prune dist
+prune src/*.egg-info
 global-exclude __pycache__ *.py[cod] .DS_Store

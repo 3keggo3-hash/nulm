@@ -11,17 +11,25 @@ APPROVAL_PRESETS: dict[str, dict[str, Any]] = {
     "read-only": {
         "auto_approve": False,
         "client_managed_approval": False,
-        "description": "Only read-only tools are practical; approval-requiring writes and shell calls fail closed.",
+        "description": (
+            "Only read-only tools are practical; approval-requiring writes and shell calls "
+            "fail closed."
+        ),
     },
     "dev-safe": {
         "auto_approve": False,
         "client_managed_approval": True,
-        "description": "Recommended daily development mode with client-managed approvals for writes and shell commands.",
+        "description": (
+            "Recommended daily development mode with client-managed approvals for writes and "
+            "shell commands."
+        ),
     },
     "ci-like": {
         "auto_approve": False,
         "client_managed_approval": True,
-        "description": "Reviewable automation mode with explicit approvals and no blanket auto-approve.",
+        "description": (
+            "Reviewable automation mode with explicit approvals and no blanket auto-approve."
+        ),
     },
     "power-user": {
         "auto_approve": True,
@@ -48,10 +56,11 @@ BUDGET_PROFILES: dict[str, dict[str, Any]] = {
 TOOL_PROFILES: dict[str, dict[str, Any]] = {
     "essential": {
         "description": (
-            "Minimal tool set for lowest token overhead. ~18 tools. "
+            "Minimal tool set for lowest token overhead. "
             "Best for free-tier usage where every token counts."
         ),
         "groups": {
+            "agent_quality",
             "file_core",
             "shell_core",
             "indexing",
@@ -60,10 +69,11 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
     },
     "standard": {
         "description": (
-            "Commonly used tools without niche features. ~30 tools. "
+            "Commonly used tools without niche features. "
             "Good balance of capability and token cost."
         ),
         "groups": {
+            "agent_quality",
             "file_core",
             "shell_core",
             "indexing",
@@ -75,10 +85,9 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
         },
     },
     "full": {
-        "description": (
-            "All available tools. ~51 tools. Maximum capability " "but highest per-turn token cost."
-        ),
+        "description": "All available tools. Maximum capability but highest per-turn token cost.",
         "groups": {
+            "agent_quality",
             "file_core",
             "shell_core",
             "indexing",
@@ -98,6 +107,14 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 TOOL_GROUPS: dict[str, set[str]] = {
+    "agent_quality": {
+        "advise_next_step",
+        "improve_request",
+        "plan_quality_review",
+        "review_result_quality",
+        "suggest_bridge_config",
+        "apply_bridge_config_change",
+    },
     "file_core": {
         "read_file",
         "read_multiple_files",
@@ -115,7 +132,9 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "analyze_shell_command",
         "start_process",
         "read_process_output",
+        "list_process_sessions",
         "kill_process",
+        "interact_with_process",
     },
     "indexing": {
         "index_codebase",
@@ -130,6 +149,8 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "narrow_context",
         "suggest_validation_commands",
         "run_workflow",
+        "run_agent_loop_step",
+        "run_agent_loop_session",
     },
     "meta_core": {
         "bridge_status",
@@ -137,6 +158,17 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "set_config_value",
         "compact_user_intent",
         "tools_overview",
+        "get_recent_tool_calls",
+        "session_insights",
+        "activity_summary",
+        "usage_insights",
+        "prompt_shortcuts",
+        "appeal_decision",
+        "send_feedback",
+        "anomaly_summary",
+        "generate_pr_description",
+        "get_trust_score",
+        "autocomplete",
     },
     "meta_agent": {
         "create_plan",
@@ -183,6 +215,34 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "commit_changes",
     },
 }
+
+SAFE_CHAT_CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        "tool_profile",
+        "context_budget_profile",
+        "intent_compaction_enabled",
+        "ai_evaluator_timeout",
+        "onboarding_enabled",
+        "shell_timeout",
+    }
+)
+
+RESTRICTED_CHAT_CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        "allowed_roots",
+        "project_dir",
+        "approval_preset",
+        "auto_approve",
+        "client_managed_approval",
+        "ai_evaluator_enabled",
+        "ai_evaluator_provider",
+        "ai_evaluator_api_key",
+        "ai_evaluator_model",
+        "ai_evaluator_fallback_action",
+        "role",
+        "user",
+    }
+)
 
 _CONFIG: dict[str, Any] = {
     "project_dir": Path.cwd().resolve(),
@@ -440,6 +500,18 @@ def current_config() -> dict[str, Any]:
         }
 
 
+def raw_ai_evaluator_config() -> dict[str, Any]:
+    """Return private AI evaluator settings for provider construction."""
+    with _CONFIG_LOCK:
+        return {
+            "enabled": bool(_CONFIG["ai_evaluator_enabled"]),
+            "provider": str(_CONFIG["ai_evaluator_provider"]),
+            "api_key": str(_CONFIG.get("ai_evaluator_api_key", "")),
+            "model": str(_CONFIG.get("ai_evaluator_model", "")),
+            "timeout": int(_CONFIG["ai_evaluator_timeout"]),
+        }
+
+
 def active_role() -> str | None:
     """Return the currently configured role name, or None if not set."""
     with _CONFIG_LOCK:
@@ -577,3 +649,22 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             return current_config()
 
         raise ValueError(f"Unsupported config key: {key}")
+
+
+def update_safe_chat_config(key: str, value: Any) -> dict[str, Any]:
+    """Update a runtime config key that is safe for chat-driven mutation."""
+    if key in RESTRICTED_CHAT_CONFIG_KEYS:
+        raise ValueError(
+            f"{key} cannot be changed through chat-driven config; use explicit local config"
+        )
+    if key not in SAFE_CHAT_CONFIG_KEYS:
+        raise ValueError(f"Unsupported safe chat config key: {key}")
+    if key == "shell_timeout":
+        timeout = int(value)
+        if timeout > 120:
+            raise ValueError("shell_timeout cannot exceed 120 seconds through chat config")
+    if key == "ai_evaluator_timeout":
+        timeout = int(value)
+        if timeout > 30:
+            raise ValueError("ai_evaluator_timeout cannot exceed 30 seconds through chat config")
+    return update_runtime_config(key, value)

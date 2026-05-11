@@ -5,6 +5,166 @@ import json
 from claude_bridge import server as mcp_server
 
 
+class TestAdviseNextStep:
+    async def test_advise_next_step_returns_agent_advice(self, temp_project):
+        payload = json.loads(
+            await mcp_server.advise_next_step(
+                "Make this project public ready",
+                target=".",
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "agent_advice.v1"
+        assert "release-readiness" in details["recommended_next_step"]
+        assert "README.md" in details["needed_context"]
+        assert details["should_ask_user"] is False
+
+    async def test_advise_next_step_rejects_invalid_context_json(self, temp_project):
+        payload = json.loads(
+            await mcp_server.advise_next_step(
+                "Improve quality",
+                recent_context_json="[]",
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_advisor_context"
+
+
+class TestAgentQualityTools:
+    async def test_improve_request_returns_scoped_prompt(self, temp_project):
+        payload = json.loads(
+            await mcp_server.improve_request(
+                "Make this code professional",
+                target="src/claude_bridge/server.py",
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "improved_request.v1"
+        assert "smallest safe implementation slice" in details["improved_prompt"]
+
+    async def test_plan_quality_review_flags_missing_validation(self, temp_project):
+        payload = json.loads(
+            await mcp_server.plan_quality_review(
+                "Read the entire codebase and refactor everything.",
+                goal="Improve quality",
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "plan_quality_review.v1"
+        assert details["verdict"] == "revise"
+        assert details["missing_tests"]
+
+    async def test_plan_quality_review_rejects_invalid_context_json(self, temp_project):
+        payload = json.loads(
+            await mcp_server.plan_quality_review(
+                "Inspect target and run pytest.",
+                recent_context_json="[]",
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_advisor_context"
+
+    async def test_suggest_bridge_config_returns_safe_config_suggestions(self, temp_project):
+        payload = json.loads(await mcp_server.suggest_bridge_config("Token usage is too high"))
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "bridge_config_suggestions.v1"
+        assert "ai_evaluator_api_key" in details["restricted_keys"]
+        assert details["suggestions"]
+
+    async def test_review_result_quality_returns_quality_review(self, temp_project):
+        payload = json.loads(
+            await mcp_server.review_result_quality(
+                "Add review_result_quality MCP tool",
+                "Added deterministic review logic and ran pytest.",
+                changed_files_json=json.dumps(
+                    {
+                        "files": [
+                            "src/claude_bridge/agent_advisor.py",
+                            "src/claude_bridge/meta_tool_server.py",
+                            "docs/roadmap.md",
+                        ]
+                    }
+                ),
+                validation_json=json.dumps({"commands": ["pytest tests/test_agent_advisor.py"]}),
+                self_critique_json=json.dumps(
+                    {"ok": True, "details": {"summary": {"total_issues": 0}}}
+                ),
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "result_quality_review.v1"
+        assert details["verdict"] == "pass_with_notes"
+        assert details["goal_alignment"]
+        assert any("self_critique" in item for item in details["strengths"])
+
+    async def test_review_result_quality_rejects_invalid_json(self, temp_project):
+        payload = json.loads(
+            await mcp_server.review_result_quality(
+                "Add review_result_quality MCP tool",
+                "Added deterministic review logic.",
+                validation_json="[]",
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_advisor_context"
+
+    async def test_review_result_quality_rejects_invalid_changed_files(self, temp_project):
+        payload = json.loads(
+            await mcp_server.review_result_quality(
+                "Add review_result_quality MCP tool",
+                "Added deterministic review logic.",
+                changed_files_json=json.dumps({"files": "src/claude_bridge/agent_advisor.py"}),
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_advisor_context"
+
+    async def test_review_result_quality_rejects_invalid_self_critique_json(self, temp_project):
+        payload = json.loads(
+            await mcp_server.review_result_quality(
+                "Add review_result_quality MCP tool",
+                "Added deterministic review logic.",
+                self_critique_json="[]",
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_advisor_context"
+
+    async def test_apply_bridge_config_change_updates_safe_key(self, temp_project):
+        payload = json.loads(
+            await mcp_server.apply_bridge_config_change("intent_compaction_enabled", True)
+        )
+
+        assert payload["ok"] is True
+        assert payload["details"]["key"] == "intent_compaction_enabled"
+        assert payload["details"]["previous_value"] is False
+        assert payload["details"]["new_value"] is True
+        assert "rollback_hint" in payload["details"]
+
+    async def test_apply_bridge_config_change_rejects_secret_key(self, temp_project):
+        payload = json.loads(
+            await mcp_server.apply_bridge_config_change("ai_evaluator_api_key", "secret")
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "unsafe_config_change"
+
+
 class TestGetRecentToolCalls:
     async def test_get_recent_tool_calls_no_filters(self, temp_project):
         payload = json.loads(await mcp_server.get_recent_tool_calls(limit=5))
@@ -64,6 +224,33 @@ class TestBridgeStatus:
         assert payload["ok"] is True
         assert "smart_features" in payload["details"]
 
+    async def test_bridge_status_includes_agent_quality_telemetry(self, temp_project):
+        payload = json.loads(await mcp_server.bridge_status())
+        assert payload["ok"] is True
+        assert payload["details"]["summary"]
+        assert payload["details"]["next_best_actions"]
+        readiness = payload["details"]["readiness"]
+        assert readiness["ready_to_read"] is True
+        assert "approval" in readiness["approval_mode_explained"].lower()
+        assert readiness["first_safe_prompt"]
+        agent_quality = payload["details"]["agent_quality"]
+        assert "advise_next_step" in agent_quality["available_tools"]["planning"]
+        assert "review_result_quality" in agent_quality["available_tools"]["workflow_result_review"]
+        assert agent_quality["telemetry"]["sample_count"] >= 0
+        assert agent_quality["safe_config_mutation"]["only_via"] == "apply_bridge_config_change"
+
+
+class TestToolsOverview:
+    async def test_tools_overview_groups_agent_quality_tools(self, temp_project):
+        payload = json.loads(await mcp_server.tools_overview())
+        assert payload["ok"] is True
+        assert payload["details"]["recommended_starters"]
+        assert payload["details"]["recommended_starters"][0]["intent"] == "public_ready_check"
+        agent_quality = payload["details"]["groups"]["agent_quality"]
+        assert "improve_request" in agent_quality["planning"]
+        assert "suggest_bridge_config" in agent_quality["config"]
+        assert "review_result_quality" in agent_quality["workflow_result_review"]
+
 
 class TestAppealDecision:
     async def test_appeal_invalid_record_id_returns_error(self, temp_project):
@@ -83,6 +270,7 @@ class TestGetConfig:
         assert "allowed_roots" in details
         assert "editable_keys" in details
         assert "shell_timeout" in details["editable_keys"]
+        assert "auto_approve" not in details["editable_keys"]
 
 
 class TestSetConfigValue:
@@ -90,6 +278,24 @@ class TestSetConfigValue:
         payload = json.loads(await mcp_server.set_config_value("shell_timeout", 60))
         assert payload["ok"] is True
         assert payload["details"]["shell_timeout"] == 60
+
+    async def test_set_config_value_rejects_auto_approve(self, temp_project):
+        payload = json.loads(await mcp_server.set_config_value("auto_approve", True))
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_config_value"
+
+    async def test_set_config_value_rejects_approval_and_remote_ai_keys(self, temp_project):
+        for key, value in [
+            ("approval_preset", "dev-safe"),
+            ("client_managed_approval", True),
+            ("ai_evaluator_enabled", True),
+            ("ai_evaluator_provider", "openai"),
+            ("ai_evaluator_model", "gpt-4o-mini"),
+            ("ai_evaluator_fallback_action", "ask"),
+        ]:
+            payload = json.loads(await mcp_server.set_config_value(key, value))
+            assert payload["ok"] is False
+            assert payload["code"] == "invalid_config_value"
 
 
 class TestWorkspaceStatus:

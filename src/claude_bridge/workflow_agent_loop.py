@@ -7,6 +7,15 @@ import shlex
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from claude_bridge.agent_advisor import (
+    AgentAdviceRequest,
+    PlanQualityReviewRequest,
+    ResultQualityReviewRequest,
+    advise_next_step,
+    improve_request,
+    plan_quality_review,
+    review_result_quality,
+)
 from claude_bridge.workflow_project import (
     detect_project_type,
     suggest_validation_commands,
@@ -104,7 +113,9 @@ def build_agent_loop_execution_plan(
         "project_type": detect_project_type(resolved, project_root),
         "focus_target": focus_target,
         "inspect_targets": read_targets,
-        "proposed_patch_strategy": "make the smallest reversible change that tests the current hypothesis",
+        "proposed_patch_strategy": (
+            "make the smallest reversible change that tests the current hypothesis"
+        ),
         "validation_commands": validation_commands,
         "decision_rule": "continue only if validation yields clearer evidence or a narrower fix",
         "stop_if": [
@@ -330,6 +341,117 @@ def compact_agent_loop_session_results(
     return True, compacted_history, recent_results, len(recent_results)
 
 
+def _agent_loop_session_goal(planned_steps: list[dict[str, Any]]) -> str:
+    files = _planned_step_files(planned_steps)
+    if files:
+        return f"Run bounded agent-loop session for {', '.join(files)}."
+    return "Run a bounded agent-loop session."
+
+
+def _planned_step_files(planned_steps: list[dict[str, Any]]) -> list[str]:
+    files: list[str] = []
+    for step in planned_steps:
+        file_name = step.get("file")
+        if isinstance(file_name, str) and file_name not in files:
+            files.append(file_name)
+    return files
+
+
+def _agent_loop_plan_text(planned_steps: list[dict[str, Any]], max_iterations: int) -> str:
+    parts = [
+        f"Run up to {max_iterations} bounded inspect-patch-validate step(s).",
+        "Stop when validation passes, fails at budget, or evidence becomes ambiguous.",
+    ]
+    for index, step in enumerate(planned_steps, start=1):
+        file_name = str(step.get("file", "unknown"))
+        validation = str(step.get("validation_command", "missing validation"))
+        parts.append(f"Step {index}: patch {file_name} and validate with {validation}.")
+    return " ".join(parts)
+
+
+def _agent_loop_next_prompt(
+    *,
+    goal: str,
+    session_summary: dict[str, Any],
+) -> str:
+    final_decision = str(session_summary.get("final_decision", "stop_failure"))
+    if final_decision == "stop_success":
+        return (
+            f"Review this completed agent-loop result against the original goal: {goal}. "
+            "Check changed files, validation evidence, docs drift, and remaining risks."
+        )
+    if final_decision == "stop_failure":
+        return (
+            f"Inspect the last validation failure for this agent-loop goal: {goal}. "
+            "Identify the smallest next patch or stop if evidence is insufficient."
+        )
+    return (
+        f"Continue this bounded agent-loop goal with the next smallest patch: {goal}. "
+        "Use the last validation output as evidence before editing."
+    )
+
+
+def build_agent_loop_session_quality_advice(
+    *,
+    planned_steps: list[dict[str, Any]],
+    session_summary: dict[str, Any],
+    max_iterations: int,
+    results_compacted: bool,
+) -> dict[str, Any]:
+    """Build deterministic session-boundary advice without touching per-step results."""
+    goal = _agent_loop_session_goal(planned_steps)
+    target = ", ".join(_planned_step_files(planned_steps))
+    plan = _agent_loop_plan_text(planned_steps, max_iterations)
+    recent_context = {
+        "agent_loop_session": True,
+        "results_compacted": results_compacted,
+        "executed_steps": session_summary.get("executed_steps", 0),
+        "final_decision": session_summary.get("final_decision", "unknown"),
+    }
+    advice = advise_next_step(
+        AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
+    )
+    improved = improve_request(goal, target=target)
+    plan_review = plan_quality_review(PlanQualityReviewRequest(plan=plan, goal=goal, target=target))
+    validation = {
+        "last_validation_ok": session_summary.get("last_validation_ok"),
+        "last_validation_command": session_summary.get("last_validation_command"),
+        "failed": session_summary.get("last_validation_ok") is False,
+    }
+    result_review = review_result_quality(
+        ResultQualityReviewRequest(
+            goal=goal,
+            result_summary=str(session_summary.get("handoff_summary", "")),
+            changed_files=list(session_summary.get("files_touched", [])),
+            validation=validation,
+            recent_context=recent_context,
+            constraints={"advisory": True, "session-boundary-only": True},
+        )
+    )
+    return {
+        "schema_version": "agent_loop_session_quality.v1",
+        "boundary": {
+            "start": "improve_request + advise_next_step + plan_quality_review",
+            "finish": "review_result_quality + handoff next prompt",
+        },
+        "per_step_advisory": False,
+        "improved_request": improved.to_dict(),
+        "clarified_goal": improved.clarified_goal,
+        "plan_quality": plan_review.to_dict(),
+        "context_strategy": advice.needed_context,
+        "token_strategy": advice.token_strategy,
+        "session_risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
+        "result_quality": result_review.to_dict(),
+        "validation_gaps": result_review.validation_gaps,
+        "next_small_fixes": result_review.next_small_fixes,
+        "suggested_next_prompt": _agent_loop_next_prompt(
+            goal=goal,
+            session_summary=session_summary,
+        ),
+        "read_only": True,
+    }
+
+
 async def run_agent_loop_session(
     *,
     steps_json: str | None,
@@ -459,6 +581,12 @@ async def run_agent_loop_session(
         compacted_steps=len(compacted_history),
         retained_recent_steps=retained_recent_steps,
     )
+    agent_quality = build_agent_loop_session_quality_advice(
+        planned_steps=planned_steps,
+        session_summary=session_summary,
+        max_iterations=max_iterations,
+        results_compacted=results_compacted,
+    )
 
     return json_response(
         True,
@@ -473,6 +601,7 @@ async def run_agent_loop_session(
             "compacted_steps": len(compacted_history),
             "compacted_history": compacted_history,
             "session_summary": session_summary,
+            "agent_quality": agent_quality,
             "results": visible_results,
         },
     )

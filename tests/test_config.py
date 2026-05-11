@@ -12,6 +12,34 @@ import pytest
 from claude_bridge import config as config_module
 
 
+def _list_tools_for_profile(tmp_path: Path, profile: str) -> set[str]:
+    script = (
+        "import asyncio, json\n"
+        "from claude_bridge import server\n"
+        "async def main():\n"
+        "    tools = await server.mcp.list_tools()\n"
+        "    print(json.dumps(sorted(tool.name for tool in tools)))\n"
+        "asyncio.run(main())\n"
+    )
+    env = {
+        **os.environ,
+        "CLAUDE_BRIDGE_TOOL_PROFILE": profile,
+        "CLAUDE_BRIDGE_PROJECT_DIR": str(tmp_path),
+    }
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    return set(json.loads(result.stdout))
+
+
 class TestApplyConfig:
     async def test_apply_config_valid(self, temp_project):
         config_module.apply_config(
@@ -185,31 +213,7 @@ class TestConfigGetters:
 
 
 def test_tool_profile_filters_registered_mcp_tools(tmp_path):
-    script = (
-        "import asyncio, json\n"
-        "from claude_bridge import server\n"
-        "async def main():\n"
-        "    tools = await server.mcp.list_tools()\n"
-        "    print(json.dumps(sorted(tool.name for tool in tools)))\n"
-        "asyncio.run(main())\n"
-    )
-    env = {
-        **os.environ,
-        "CLAUDE_BRIDGE_TOOL_PROFILE": "essential",
-        "CLAUDE_BRIDGE_PROJECT_DIR": str(tmp_path),
-    }
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=Path(__file__).resolve().parents[1],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-
-    assert result.returncode == 0, result.stderr
-    tool_names = set(json.loads(result.stdout))
+    tool_names = _list_tools_for_profile(tmp_path, "essential")
     assert "read_file" in tool_names
     assert "run_shell" in tool_names
     assert "find_relevant_files" in tool_names
@@ -217,6 +221,68 @@ def test_tool_profile_filters_registered_mcp_tools(tmp_path):
     assert "read_pdf" not in tool_names
     assert "create_plan" not in tool_names
     assert "commit_changes" not in tool_names
+
+
+def test_standard_tool_profile_registers_documented_workflow_tools(tmp_path):
+    tool_names = _list_tools_for_profile(tmp_path, "standard")
+    assert "run_workflow" in tool_names
+    assert "run_agent_loop_step" in tool_names
+    assert "run_agent_loop_session" in tool_names
+    assert "_run_workflow" not in tool_names
+
+
+def test_tool_profile_union_covers_public_server_exports():
+    from claude_bridge import server
+
+    public_tool_exports = {
+        name for name, value in vars(server).items() if callable(value) and not name.startswith("_")
+    }
+    profile_tools = set().union(*config_module.TOOL_GROUPS.values())
+    ignored_exports = {
+        "approval_mode",
+        "Any",
+        "FastMCP",
+        "Path",
+        "ToolAnnotations",
+        "active_tool_names",
+        "apply_config",
+        "clear_index_cache",
+        "configure_from_env",
+        "configure_from_env_state",
+        "current_config",
+        "get_last_bridge_change",
+        "get_trust_score_impl",
+        "git_commit",
+        "git_status_snapshot",
+        "mcp",
+        "raw_ai_evaluator_config",
+        "register_file_tools",
+        "register_git_tools",
+        "register_indexing_tools",
+        "register_insights_tools",
+        "register_meta_agent_tools",
+        "register_meta_tools",
+        "register_multi_format_tools",
+        "register_prompts",
+        "register_shell_tools",
+        "register_smart_tools",
+        "register_url_tools",
+        "register_workflow_tools",
+        "reset_audit_session",
+        "reset_onboarding_state",
+        "reset_process_sessions",
+        "run_mcp_server",
+        "send_feedback_impl",
+        "set_config",
+        "update_runtime_config",
+    }
+
+    assert sorted(public_tool_exports - profile_tools - ignored_exports) == []
+
+
+def test_tools_overview_recommendations_exist_in_standard_profile(tmp_path):
+    tool_names = _list_tools_for_profile(tmp_path, "standard")
+    assert {"session_insights", "usage_insights", "smart_status"}.issubset(tool_names)
 
 
 def test_essential_tool_profile_avoids_heavy_server_imports(tmp_path):
