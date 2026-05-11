@@ -11,6 +11,7 @@ import pytest
 
 from claude_bridge import server as mcp_server
 from claude_bridge.ai_evaluator import EvaluationAction, LocalEvaluatorProvider
+from claude_bridge.file_tools import patch_file
 from claude_bridge.file_tools import write_file
 from claude_bridge.rules_engine import evaluate_policy_chain
 from claude_bridge.shell_tools import run_shell
@@ -55,6 +56,10 @@ def assert_decision(
     assert isinstance(decision["reason"], str)
     assert isinstance(decision["risk_reasons"], list)
     return decision
+
+
+async def reject_approval(_tool_name: str, _params: dict[str, Any]) -> bool:
+    return False
 
 
 class TestPolicyDecisionE2E:
@@ -303,7 +308,7 @@ class TestPolicyDecisionE2E:
 
 
 class TestAiEvaluatorDecisions:
-    async def test_ai_allow_shell_command_bypasses_approval(
+    async def test_ai_allow_shell_command_still_requires_approval(
         self, policy_project: tuple[Path, Path]
     ) -> None:
         project, _ = policy_project
@@ -320,16 +325,16 @@ class TestAiEvaluatorDecisions:
         payload = parse_payload(
             await run_shell(
                 "echo ai-allow-test",
-                request_approval=lambda _t, _p: False,  # type: ignore[return-value]
+                request_approval=reject_approval,
                 project_dir=lambda: project,
                 shell_timeout=lambda: 2,
                 ai_provider=provider,
             )
         )
 
-        assert payload["ok"] is True
-        decision = assert_decision(payload, action="allow", source="ai", risk_level="low")
-        assert "ai" in decision["source"]
+        assert payload["ok"] is False
+        assert payload["code"] == "approval_rejected"
+        assert_decision(payload, action="ask", source="approval", risk_level="medium")
 
     async def test_ai_deny_shell_command_blocks_execution(
         self, policy_project: tuple[Path, Path]
@@ -383,7 +388,7 @@ class TestAiEvaluatorDecisions:
         assert payload["code"] == "approval_rejected"
         assert_decision(payload, action="ask", source="ai", risk_level="medium")
 
-    async def test_ai_allow_write_file_bypasses_approval(
+    async def test_ai_allow_write_file_still_requires_approval(
         self, policy_project: tuple[Path, Path]
     ) -> None:
         project, _ = policy_project
@@ -405,9 +410,36 @@ class TestAiEvaluatorDecisions:
             )
         )
 
-        assert payload["ok"] is True
-        assert_decision(payload, action="allow", source="ai", risk_level="low")
-        assert (project / "ai-allowed.txt").exists()
+        assert payload["ok"] is False
+        assert payload["code"] == "approval_rejected"
+        assert_decision(payload, action="ask", source="approval", risk_level="medium")
+        assert not (project / "ai-allowed.txt").exists()
+
+    async def test_ai_allow_patch_file_still_requires_approval(
+        self, policy_project: tuple[Path, Path]
+    ) -> None:
+        project, _ = policy_project
+        (project / "module.py").write_text("value = 1\n", encoding="utf-8")
+        mcp_server.set_config(
+            project_dir=project,
+            auto_approve=False,
+            client_managed_approval=False,
+            shell_timeout=2,
+            ai_evaluator_enabled=True,
+        )
+
+        payload = parse_payload(
+            await patch_file(
+                file="module.py",
+                search="value = 1",
+                replace="value = 2",
+                ai_provider=LocalEvaluatorProvider(),
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "approval_rejected"
+        assert "value = 1" in (project / "module.py").read_text(encoding="utf-8")
 
     async def test_ai_deny_write_file_blocks_execution(
         self, policy_project: tuple[Path, Path]

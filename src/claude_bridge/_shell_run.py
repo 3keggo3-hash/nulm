@@ -169,9 +169,7 @@ async def run_shell(
             decision=ai_decision,
             decision_in_details=True,
         )
-    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
-        allow_decision = ai_decision
-    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         rejection = await require_approval(
@@ -391,9 +389,7 @@ async def start_process(
             decision=ai_decision,
             decision_in_details=True,
         )
-    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
-        allow_decision = ai_decision
-    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         rejection = await require_approval(

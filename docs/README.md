@@ -6,10 +6,16 @@ This directory houses persistent and reference documentation for the project.
 
 ### Active / Canonical
 
-These documents are considered the primary reference for the current product direction, technical behavior, or operational flow.
+These documents are considered the primary reference for current product direction, technical
+behavior, or operational flow.
 
 - `product-vision.md`
-  Current canonical product vision: local-first, security-controlled MCP agent runtime.
+  Current canonical product vision: local-first agent quality and execution layer.
+- `agent-quality-layer-plan.md`
+  Canonical long-term plan for the AI-backed quality layer, prompt improvement, token strategy,
+  chat-driven safe config, and result review.
+- `agent-quality-chat-flows.md`
+  Current non-expert chat flow examples for Agent Quality tools and quality workflows.
 - `roadmap.md`
   Technical implementation phases and current technical status. Links to
   `product-vision.md` for the updated product vision.
@@ -27,8 +33,6 @@ These documents are considered the primary reference for the current product dir
   CI-friendly policy-as-code PR workflow: policy diff, simulate, validate.
 - `ai-collaboration-token-budget.md`
   Practical rules for reducing token/context burn during AI collaboration sessions.
-- `overnight-autopilot-plan.md`
-  Unattended low-risk execution plan for overnight maintenance slices.
 - Cross-document sections named `Related Documents` should use `docs/...` paths for consistency.
 
 ### Completed / Reference
@@ -44,6 +48,8 @@ audits, or historical decision records.
 - `archive/product-roadmap.md`
   Historical strategy and the earlier AI security layer pivot. The Phase 5 Web LLM
   Extension idea was cancelled, so this should not be treated as canonical in new plans.
+- `archive/overnight-autopilot-plan.md`
+  Historical internal maintenance plan. Not part of public product docs.
 - `RELEASE-NOTES.md`
   Release snapshot and historical change log for the public alpha candidate.
 

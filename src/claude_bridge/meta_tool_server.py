@@ -167,6 +167,12 @@ def _autocomplete_suggestions(
                 "kill_process",
                 "interact_with_process",
                 "analyze_shell_command",
+                "advise_next_step",
+                "improve_request",
+                "plan_quality_review",
+                "review_result_quality",
+                "suggest_bridge_config",
+                "apply_bridge_config_change",
                 "index_codebase",
                 "find_relevant_files",
                 "run_workflow",
@@ -304,6 +310,437 @@ def register_meta_tools(
     _enabled = enabled_names
     results: dict[str, Any] = {}
 
+    if _enabled is None or "advise_next_step" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Advise the next high-quality step for a rough user goal.", read_only=True
+            )
+        )
+        async def advise_next_step(
+            goal: str,
+            target: str = "",
+            recent_context_json: str | None = None,
+            constraints_json: str | None = None,
+        ) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.agent_advisor import (
+                AgentAdviceRequest,
+                advise_next_step as advise_next_step_impl,
+                parse_optional_json_object,
+            )
+
+            try:
+                recent_context = parse_optional_json_object(
+                    recent_context_json,
+                    field_name="recent_context_json",
+                )
+                constraints = parse_optional_json_object(
+                    constraints_json,
+                    field_name="constraints_json",
+                )
+            except ValueError as exc:
+                result = json_response(
+                    False,
+                    str(exc),
+                    code="invalid_advisor_context",
+                    details={"error": str(exc)},
+                )
+                return audit_tool_call(
+                    "advise_next_step",
+                    {
+                        "goal": goal,
+                        "target": target,
+                        "recent_context_json_length": len(recent_context_json or ""),
+                        "constraints_json_length": len(constraints_json or ""),
+                    },
+                    result,
+                    started_at=started_at,
+                )
+
+            advice = advise_next_step_impl(
+                AgentAdviceRequest(
+                    goal=goal,
+                    target=target,
+                    recent_context=recent_context,
+                    constraints=constraints,
+                    current_config=current_config(),
+                )
+            )
+            result = json_response(
+                True,
+                "Agent quality advice generated",
+                details=advice.to_dict(),
+            )
+            return audit_tool_call(
+                "advise_next_step",
+                {
+                    "goal": goal,
+                    "target": target,
+                    "recent_context_json_length": len(recent_context_json or ""),
+                    "constraints_json_length": len(constraints_json or ""),
+                },
+                result,
+                started_at=started_at,
+            )
+
+        results["advise_next_step"] = advise_next_step
+
+    if _enabled is None or "improve_request" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Rewrite a rough user request into a scoped execution prompt.",
+                read_only=True,
+            )
+        )
+        async def improve_request(
+            goal: str,
+            target: str = "",
+            constraints_json: str | None = None,
+        ) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.agent_advisor import (
+                improve_request as improve_request_impl,
+                parse_optional_json_object,
+            )
+
+            try:
+                constraints = parse_optional_json_object(
+                    constraints_json,
+                    field_name="constraints_json",
+                )
+            except ValueError as exc:
+                result = json_response(
+                    False,
+                    str(exc),
+                    code="invalid_advisor_context",
+                    details={"error": str(exc)},
+                )
+                return audit_tool_call(
+                    "improve_request",
+                    {
+                        "goal": goal,
+                        "target": target,
+                        "constraints_json_length": len(constraints_json or ""),
+                    },
+                    result,
+                    started_at=started_at,
+                )
+
+            improved = improve_request_impl(goal, target=target, constraints=constraints)
+            result = json_response(
+                True,
+                "Request improved",
+                details=improved.to_dict(),
+            )
+            return audit_tool_call(
+                "improve_request",
+                {
+                    "goal": goal,
+                    "target": target,
+                    "constraints_json_length": len(constraints_json or ""),
+                },
+                result,
+                started_at=started_at,
+            )
+
+        results["improve_request"] = improve_request
+
+    if _enabled is None or "plan_quality_review" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Critique an implementation plan before editing files.",
+                read_only=True,
+            )
+        )
+        async def plan_quality_review(
+            plan: str,
+            goal: str = "",
+            target: str = "",
+            recent_context_json: str | None = None,
+            constraints_json: str | None = None,
+        ) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.agent_advisor import (
+                PlanQualityReviewRequest,
+                parse_optional_json_object,
+                plan_quality_review as plan_quality_review_impl,
+            )
+
+            try:
+                recent_context = parse_optional_json_object(
+                    recent_context_json,
+                    field_name="recent_context_json",
+                )
+                constraints = parse_optional_json_object(
+                    constraints_json,
+                    field_name="constraints_json",
+                )
+            except ValueError as exc:
+                result = json_response(
+                    False,
+                    str(exc),
+                    code="invalid_advisor_context",
+                    details={"error": str(exc)},
+                )
+                return audit_tool_call(
+                    "plan_quality_review",
+                    {
+                        "plan_length": len(plan or ""),
+                        "goal": goal,
+                        "target": target,
+                        "recent_context_json_length": len(recent_context_json or ""),
+                        "constraints_json_length": len(constraints_json or ""),
+                    },
+                    result,
+                    started_at=started_at,
+                )
+
+            review = plan_quality_review_impl(
+                PlanQualityReviewRequest(
+                    plan=plan,
+                    goal=goal,
+                    target=target,
+                    recent_context=recent_context,
+                    constraints=constraints,
+                )
+            )
+            result = json_response(
+                True,
+                "Plan quality review generated",
+                details=review.to_dict(),
+            )
+            return audit_tool_call(
+                "plan_quality_review",
+                {
+                    "plan_length": len(plan or ""),
+                    "goal": goal,
+                    "target": target,
+                    "recent_context_json_length": len(recent_context_json or ""),
+                    "constraints_json_length": len(constraints_json or ""),
+                },
+                result,
+                started_at=started_at,
+            )
+
+        results["plan_quality_review"] = plan_quality_review
+
+    if _enabled is None or "suggest_bridge_config" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Suggest safe Bridge configuration changes for a user goal.",
+                read_only=True,
+            )
+        )
+        async def suggest_bridge_config(goal: str) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.agent_advisor import (
+                suggest_bridge_config as suggest_bridge_config_impl,
+            )
+
+            suggestions = suggest_bridge_config_impl(
+                goal,
+                current_config=current_config(),
+            )
+            result = json_response(
+                True,
+                "Bridge config suggestions generated",
+                details=suggestions,
+            )
+            return audit_tool_call(
+                "suggest_bridge_config",
+                {"goal": goal},
+                result,
+                started_at=started_at,
+            )
+
+        results["suggest_bridge_config"] = suggest_bridge_config
+
+    if _enabled is None or "review_result_quality" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Review completed work for result quality, validation, and risk.",
+                read_only=True,
+            )
+        )
+        async def review_result_quality(
+            goal: str,
+            result_summary: str,
+            changed_files_json: str | None = None,
+            validation_json: str | None = None,
+            recent_context_json: str | None = None,
+            constraints_json: str | None = None,
+            self_critique_json: str | None = None,
+        ) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.agent_advisor import (
+                ResultQualityReviewRequest,
+                parse_optional_json_object,
+                review_result_quality as review_result_quality_impl,
+            )
+
+            try:
+                changed_files_payload = parse_optional_json_object(
+                    changed_files_json,
+                    field_name="changed_files_json",
+                )
+                validation = parse_optional_json_object(
+                    validation_json,
+                    field_name="validation_json",
+                )
+                recent_context = parse_optional_json_object(
+                    recent_context_json,
+                    field_name="recent_context_json",
+                )
+                constraints = parse_optional_json_object(
+                    constraints_json,
+                    field_name="constraints_json",
+                )
+                self_critique = parse_optional_json_object(
+                    self_critique_json,
+                    field_name="self_critique_json",
+                )
+            except ValueError as exc:
+                result = json_response(
+                    False,
+                    str(exc),
+                    code="invalid_advisor_context",
+                    details={"error": str(exc)},
+                )
+                return audit_tool_call(
+                    "review_result_quality",
+                    {
+                        "goal": goal,
+                        "result_summary_length": len(result_summary or ""),
+                        "changed_files_json_length": len(changed_files_json or ""),
+                        "validation_json_length": len(validation_json or ""),
+                        "recent_context_json_length": len(recent_context_json or ""),
+                        "constraints_json_length": len(constraints_json or ""),
+                        "self_critique_json_length": len(self_critique_json or ""),
+                    },
+                    result,
+                    started_at=started_at,
+                )
+
+            raw_changed_files = changed_files_payload.get("files", [])
+            if not isinstance(raw_changed_files, list) or not all(
+                isinstance(item, str) for item in raw_changed_files
+            ):
+                result = json_response(
+                    False,
+                    "changed_files_json.files must be a list of strings",
+                    code="invalid_advisor_context",
+                    details={"error": "changed_files_json.files must be a list of strings"},
+                )
+                return audit_tool_call(
+                    "review_result_quality",
+                    {
+                        "goal": goal,
+                        "result_summary_length": len(result_summary or ""),
+                        "changed_files_json_length": len(changed_files_json or ""),
+                        "validation_json_length": len(validation_json or ""),
+                        "recent_context_json_length": len(recent_context_json or ""),
+                        "constraints_json_length": len(constraints_json or ""),
+                        "self_critique_json_length": len(self_critique_json or ""),
+                    },
+                    result,
+                    started_at=started_at,
+                )
+
+            changed_files = [str(item) for item in raw_changed_files]
+            review = review_result_quality_impl(
+                ResultQualityReviewRequest(
+                    goal=goal,
+                    result_summary=result_summary,
+                    changed_files=changed_files,
+                    validation=validation,
+                    recent_context=recent_context,
+                    constraints=constraints,
+                    self_critique=self_critique,
+                )
+            )
+            result = json_response(
+                True,
+                "Result quality review generated",
+                details=review.to_dict(),
+            )
+            return audit_tool_call(
+                "review_result_quality",
+                {
+                    "goal": goal,
+                    "result_summary_length": len(result_summary or ""),
+                    "changed_files_count": len(changed_files),
+                    "validation_json_length": len(validation_json or ""),
+                    "recent_context_json_length": len(recent_context_json or ""),
+                    "constraints_json_length": len(constraints_json or ""),
+                    "self_critique_json_length": len(self_critique_json or ""),
+                },
+                result,
+                started_at=started_at,
+            )
+
+        results["review_result_quality"] = review_result_quality
+
+    if _enabled is None or "apply_bridge_config_change" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Apply one safe chat-driven Bridge configuration change.",
+                destructive=True,
+            )
+        )
+        async def apply_bridge_config_change(key: str, value: Any) -> str:
+            started_at = time.perf_counter()
+            from claude_bridge.config import update_safe_chat_config
+
+            before = current_config()
+            try:
+                updated = update_safe_chat_config(key, value)
+            except ValueError as exc:
+                result = json_response(
+                    False,
+                    str(exc),
+                    code="unsafe_config_change",
+                    details={"key": key},
+                )
+                return audit_tool_call(
+                    "apply_bridge_config_change",
+                    {"key": key, "value_omitted": True},
+                    result,
+                    started_at=started_at,
+                )
+
+            result = json_response(
+                True,
+                f"Applied safe Bridge config change: {key}",
+                details={
+                    "key": key,
+                    "previous_value": before.get(key),
+                    "new_value": updated.get(key),
+                    "rollback_hint": (
+                        f"Call apply_bridge_config_change with key={key!r} "
+                        f"and value={before.get(key)!r} to restore this setting."
+                    ),
+                    "config": {
+                        **updated,
+                        "project_dir": str(updated["project_dir"]),
+                        "allowed_roots": [str(root) for root in updated["allowed_roots"]],
+                    },
+                },
+            )
+            return audit_tool_call(
+                "apply_bridge_config_change",
+                {"key": key, "value": value},
+                result,
+                started_at=started_at,
+            )
+
+        results["apply_bridge_config_change"] = apply_bridge_config_change
+
     if _enabled is None or "get_recent_tool_calls" in _enabled:
 
         @mcp.tool(
@@ -426,7 +863,10 @@ def register_meta_tools(
                     "session_id": summary["session_id"],
                     "telemetry": telemetry,
                     "top_cost_tools": top_tools,
-                    "recommended_next_step": "Use narrow_context or a lower context budget profile if one tool dominates token usage.",
+                    "recommended_next_step": (
+                        "Use narrow_context or a lower context budget profile if one tool "
+                        "dominates token usage."
+                    ),
                 },
             )
             return audit_tool_call(
@@ -445,6 +885,7 @@ def register_meta_tools(
             pending_escalations = get_pending_escalations(limit=5)
             smart_avail = smart_available()
             from claude_bridge.ai_evaluator import ai_latency_summary
+            from claude_bridge.agent_advisor import agent_quality_telemetry_summary
 
             profile_name = str(config_snapshot.get("context_budget_profile", "balanced"))
             profile = budget_profiles.get(profile_name, {})
@@ -452,6 +893,41 @@ def register_meta_tools(
                 True,
                 "Bridge status loaded",
                 details={
+                    "summary": (
+                        "Agent Quality tools are available; use quality workflow for rough goals "
+                        "and review_result_quality before broad follow-up work."
+                    ),
+                    "readiness": {
+                        "ready_to_read": True,
+                        "ready_to_edit": bool(
+                            config_snapshot["auto_approve"]
+                            or config_snapshot["client_managed_approval"]
+                        ),
+                        "approval_mode_explained": (
+                            "Approval mode: auto-approve is enabled; use only in trusted local "
+                            "workspaces."
+                            if config_snapshot["auto_approve"]
+                            else (
+                                "Approval mode: client-managed approval is enabled; writes and "
+                                "shell commands should be approved by the MCP client."
+                                if config_snapshot["client_managed_approval"]
+                                else (
+                                    "Approval mode: fail-closed. Read-only work is ready, while "
+                                    "writes and shell commands will be rejected without an "
+                                    "approval path."
+                                )
+                            )
+                        ),
+                        "first_safe_prompt": (
+                            "Use Claude Bridge to inspect this project and suggest the smallest "
+                            "safe next step."
+                        ),
+                    },
+                    "next_best_actions": [
+                        "Ask: Use Claude Bridge to check whether this project is public-ready.",
+                        'Run run_workflow with mode="quality" for feature or release work.',
+                        "Use suggest_bridge_config before changing token or tool settings.",
+                    ],
                     "active_project_dir": str(config_snapshot["project_dir"]),
                     "allowed_roots": [str(root) for root in config_snapshot["allowed_roots"]],
                     "approval_preset": config_snapshot["approval_preset"],
@@ -468,6 +944,30 @@ def register_meta_tools(
                         "provider": config_snapshot.get("ai_evaluator_provider", "local"),
                         "timeout": config_snapshot.get("ai_evaluator_timeout", 5),
                         "latency": ai_latency_summary(),
+                    },
+                    "agent_quality": {
+                        "available_tools": {
+                            "planning": [
+                                "advise_next_step",
+                                "improve_request",
+                                "plan_quality_review",
+                            ],
+                            "config": [
+                                "suggest_bridge_config",
+                                "apply_bridge_config_change",
+                            ],
+                            "workflow_result_review": [
+                                'run_workflow(mode="quality")',
+                                "run_agent_loop_session",
+                                "review_result_quality",
+                            ],
+                        },
+                        "telemetry": agent_quality_telemetry_summary(),
+                        "safe_config_mutation": {
+                            "enabled": True,
+                            "guarded_by": "SAFE_CHAT_CONFIG_KEYS",
+                            "only_via": "apply_bridge_config_change",
+                        },
                     },
                     "smart_features": smart_avail,
                     "session_telemetry": session_summary.get("telemetry", {}),
@@ -490,6 +990,31 @@ def register_meta_tools(
                 True,
                 "Tools overview loaded",
                 details={
+                    "recommended_starters": [
+                        {
+                            "intent": "public_ready_check",
+                            "prompt": "Use Claude Bridge to check whether this project is public-ready.",
+                            "use": 'run_workflow(mode="quality") plus review_result_quality.',
+                        },
+                        {
+                            "intent": "first_safe_slice",
+                            "prompt": (
+                                "Use Claude Bridge to turn this rough request into a safe first "
+                                "implementation slice."
+                            ),
+                            "use": "improve_request, plan_quality_review, then a small workflow.",
+                        },
+                        {
+                            "intent": "reduce_token_use",
+                            "prompt": "Token usage feels high; suggest safe Bridge settings.",
+                            "use": "suggest_bridge_config before apply_bridge_config_change.",
+                        },
+                        {
+                            "intent": "review_finished_work",
+                            "prompt": "Review whether this completed change is actually good enough.",
+                            "use": "review_result_quality with changed files and validation evidence.",
+                        },
+                    ],
                     "groups": {
                         "orientation": [
                             "workspace_status",
@@ -497,6 +1022,22 @@ def register_meta_tools(
                             "tools_overview",
                             "bridge_status",
                         ],
+                        "agent_quality": {
+                            "planning": [
+                                "advise_next_step",
+                                "improve_request",
+                                "plan_quality_review",
+                            ],
+                            "config": [
+                                "suggest_bridge_config",
+                                "apply_bridge_config_change",
+                            ],
+                            "workflow_result_review": [
+                                'run_workflow(mode="quality")',
+                                "run_agent_loop_session",
+                                "review_result_quality",
+                            ],
+                        },
                         "low_cost_context": [
                             "compact_user_intent",
                             "find_relevant_files",
@@ -514,7 +1055,11 @@ def register_meta_tools(
                         "telemetry": ["session_insights", "usage_insights", "smart_status"],
                     },
                     "notes": [
-                        "Low-cost context tools (compact_user_intent, narrow_context) reduce token usage for routine queries.",
+                        "Agent quality tools turn rough goals into safer plans and config advice.",
+                        (
+                            "Low-cost context tools (compact_user_intent, narrow_context) "
+                            "reduce token usage for routine queries."
+                        ),
                         "Execution tools require approval unless auto_approve is set.",
                         "Telemetry tools are read-only and never modify your project.",
                     ],
@@ -541,19 +1086,31 @@ def register_meta_tools(
                     "budget_profiles": budget_profiles,
                     "guard_policy": load_guard_policy(),
                     "editable_keys": [
-                        "approval_preset",
-                        "auto_approve",
-                        "client_managed_approval",
                         "shell_timeout",
                         "onboarding_enabled",
                         "context_budget_profile",
                         "tool_profile",
                         "intent_compaction_enabled",
+                        "ai_evaluator_timeout",
+                    ],
+                    "safe_chat_config_keys": [
+                        "tool_profile",
+                        "context_budget_profile",
+                        "intent_compaction_enabled",
+                        "ai_evaluator_timeout",
+                        "onboarding_enabled",
+                        "shell_timeout",
+                    ],
+                    "restricted_chat_config_keys": [
+                        "allowed_roots",
+                        "project_dir",
+                        "approval_preset",
+                        "auto_approve",
+                        "client_managed_approval",
                         "ai_evaluator_enabled",
                         "ai_evaluator_provider",
                         "ai_evaluator_api_key",
                         "ai_evaluator_model",
-                        "ai_evaluator_timeout",
                         "ai_evaluator_fallback_action",
                         "role",
                         "user",
@@ -566,20 +1123,41 @@ def register_meta_tools(
 
     if _enabled is None or "set_config_value" in _enabled:
 
-        @mcp.tool(**tool_options("Update a single runtime configuration value.", destructive=True))
+        @mcp.tool(
+            **tool_options(
+                "Update one safe runtime configuration value.",
+                destructive=True,
+            )
+        )
         async def set_config_value(key: str, value: Any) -> str:
             started_at = time.perf_counter()
             try:
+                if key in {
+                    "approval_preset",
+                    "auto_approve",
+                    "client_managed_approval",
+                    "ai_evaluator_enabled",
+                    "ai_evaluator_provider",
+                    "ai_evaluator_model",
+                    "ai_evaluator_fallback_action",
+                }:
+                    raise ValueError(
+                        f"{key} cannot be changed via set_config_value; "
+                        "use explicit local config instead"
+                    )
                 updated = update_runtime_config(key, value)
             except ValueError as exc:
                 result = json_response(
                     False,
                     str(exc),
                     code="invalid_config_value",
-                    details={"key": key, "value": value},
+                    details={"key": key},
                 )
                 return audit_tool_call(
-                    "set_config_value", {"key": key, "value": value}, result, started_at=started_at
+                    "set_config_value",
+                    {"key": key, "value_omitted": True},
+                    result,
+                    started_at=started_at,
                 )
             result = json_response(
                 True,

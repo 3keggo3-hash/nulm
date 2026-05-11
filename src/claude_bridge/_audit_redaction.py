@@ -118,12 +118,10 @@ def _plain_string(value: Any) -> str | None:
 
 
 def _mask_secret_value(raw: str) -> dict[str, Any]:
-    """Produce a deterministic redacted representation for a secret string."""
+    """Produce an opaque redacted representation for a secret string."""
     return {
         "redacted": True,
         "reason": "sensitive value",
-        "sha256": sha256(raw.encode("utf-8")).hexdigest(),
-        "length": len(raw),
     }
 
 
@@ -176,7 +174,7 @@ def _strip_redacted_value(value: Any, *, depth: int = 0) -> Any:
     if depth >= 20:
         return value
     if isinstance(value, dict):
-        if value.get("redacted") is True and "sha256" in value:
+        if value.get("redacted") is True:
             return "[REDACTED]"
         return {k: _strip_redacted_value(v, depth=depth + 1) for k, v in value.items()}
     if isinstance(value, list):

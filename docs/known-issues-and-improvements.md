@@ -1,6 +1,9 @@
 # Known Issues and Improvement Plan
 
-This document lists known gaps identified through code reviews and test analysis, along with proposed solutions.
+This document lists known gaps identified through code reviews and test analysis, along with
+proposed solutions. Product-direction work for the Agent Quality Layer lives in
+`docs/agent-quality-layer-plan.md`; this file tracks technical gaps around the current runtime
+substrate.
 
 ---
 
@@ -8,8 +11,9 @@ This document lists known gaps identified through code reviews and test analysis
 
 ### 1. Anomaly baseline runtime policy
 
-**Current state:** Anomaly scoring and baseline-backed rules exist. Runtime behavior for v0.1 is
-intentionally `warn_and_log`: scores are visible in audit/summary, but do not modify guard decisions.
+**Current state:** Anomaly scoring and baseline-backed rules exist. Runtime behavior for v0.1
+is intentionally `warn_and_log`: scores are visible in audit/summary, but do not modify guard
+decisions.
 
 **Open decision:**
 - Should `ask` / `deny` enforcement thresholds be configurable in v0.2 or later?
@@ -35,16 +39,21 @@ uses `_CONFIG` with `threading.RLock()`. No coordination.
 
 **Affected files:** `src/claude_bridge/tool_utils.py` or new `state.py`
 
-### 3. server.py God Object tendency
+### 3. Remaining registration/module split work
 
-**Current state:** `server.py` ~1060 lines, all MCP tool registration in a single file.
+**Current state:** `server.py` is smaller than the original single-file registration design and now
+delegates many tool groups to focused `*_tool_server.py` modules. It still contains orchestration
+glue, conditional imports, config handling, and some registration sequencing. The remaining
+release-hardening pass keeps this stable: workflow registration now preserves public MCP function
+names, and the standard tool profile includes the documented workflow and bounded agent-loop tools.
 
 **Proposed solution:**
-- Split tools by category: `file_server.py`, `shell_server.py`, `meta_server.py`, `workflow_server.py`
-- Each module registers its own tools on the `mcp` instance
-- `server.py` contains only `mcp = FastMCP(...)` and `run_mcp_server()`
+- Defer any larger split until there is a concrete ownership boundary.
+- Keep lazy imports for heavier optional groups.
+- Preserve tool-profile filtering and MCP public names.
+- Do not split everything in one pass.
 
-**Affected files:** `src/claude_bridge/server.py`, `src/claude_bridge/mcp_server.py`
+**Affected files:** `src/claude_bridge/server.py`, `src/claude_bridge/*_tool_server.py`
 
 ### 4. Disk cache size quota
 
@@ -59,8 +68,8 @@ uses `_CONFIG` with `threading.RLock()`. No coordination.
 
 ### 5. client_managed_approval real client contract
 
-**Current state:** Server tool path is tested for `client_managed_approval=True` mode for write/shell.
-This mode assumes the MCP client actually implements an approval UI.
+**Current state:** Server tool path is tested for `client_managed_approval=True` mode for
+write/shell. This mode assumes the MCP client actually implements an approval UI.
 
 **Remaining risk:** Not all MCP clients implement approval semantics identically.
 
@@ -77,12 +86,14 @@ This mode assumes the MCP client actually implements an approval UI.
 **Current state:** 2118 lines, all MCP tool tests in a single file.
 
 **Proposed solution:**
-- Split by category: `test_file_tools.py`, `test_shell_tools.py`, `test_meta_tools.py`, `test_workflow_tools.py`
+- Split by category: `test_file_tools.py`, `test_shell_tools.py`, `test_meta_tools.py`,
+  `test_workflow_tools.py`
 - Shared fixtures in `conftest.py`
 
 ### 7. Parallel test isolation
 
-**Current state:** Global state (`mcp_server.set_config`) causes issues with parallel testing (pytest-xdist).
+**Current state:** Global state (`mcp_server.set_config`) causes issues with parallel testing
+(`pytest-xdist`).
 
 **Proposed solution:**
 - Fixtures reset state after each test
@@ -95,7 +106,8 @@ This mode assumes the MCP client actually implements an approval UI.
 - **power-user auto_approve risk** → Partially resolved with audit logging
 - **Python 3.8 annotations** → Closed by moving minimum to Python 3.10+
 - **Missing async test decorator** → `asyncio_mode = "auto"` in pyproject.toml, no issue
-- **Shell blocklist bypass vectors** → basename/full-path/env normalization and extended shell list added
+- **Shell blocklist bypass vectors** → basename/full-path/env normalization and extended shell
+  list added
 - **Output truncation semantic integrity** → `TRUNCATED:` marker added when shell output is cut
 
 ---
@@ -105,4 +117,5 @@ This mode assumes the MCP client actually implements an approval UI.
 - Claude Code review (2026-04-29)
 - `archive/competitive-analysis-desktopcommander.md`
 - `docs/product-vision.md`
+- `docs/agent-quality-layer-plan.md`
 - `docs/roadmap.md`

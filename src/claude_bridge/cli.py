@@ -49,7 +49,7 @@ class _MCPProxy:
 
     def __getattr__(self, name: str) -> Any:
         if name not in self._cache:
-            _, runtime_mcp, _ = _server_runtime()
+            _, runtime_mcp, _, _ = _server_runtime()
             self._cache[name] = getattr(runtime_mcp, name)
         return self._cache[name]
 
@@ -103,10 +103,10 @@ def _load_desktop_config(config_path: Path) -> dict[str, object]:
     return raw
 
 
-def _server_runtime() -> tuple[Any, Any, Any]:
-    from claude_bridge.server import current_config, mcp, set_config
+def _server_runtime() -> tuple[Any, Any, Any, Any]:
+    from claude_bridge.server import current_config, mcp, run_mcp_server, set_config
 
-    return current_config, mcp, set_config
+    return current_config, mcp, set_config, run_mcp_server
 
 
 def _prompt_runtime() -> tuple[str, Any, Any, tuple[str, ...]]:
@@ -715,7 +715,7 @@ def start(
     ),
 ) -> None:
     """Start the MCP bridge server (stdio transport)."""
-    _, _, set_config = _server_runtime()
+    _, _, set_config, run_mcp_server = _server_runtime()
     extra_roots = [path.resolve() for path in allow_root] if allow_root else []
     resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
         approval_preset=approval_preset,
@@ -730,7 +730,7 @@ def start(
         approval_preset=resolved_preset,
     )
     try:
-        mcp.run(transport="stdio")
+        run_mcp_server()
     except KeyboardInterrupt:
         sys.exit(0)
 
@@ -1121,7 +1121,7 @@ def benchmark(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Benchmark indexing and relevance ranking on a real repository."""
-    _, _, set_config = _server_runtime()
+    _, _, set_config, _ = _server_runtime()
     (
         run_index_and_relevance_benchmark,
         compare_benchmark_to_baseline,
@@ -1826,7 +1826,7 @@ def doctor(
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory to inspect"),
 ) -> None:
     """Run lightweight environment and configuration checks."""
-    current_config, _, _ = _server_runtime()
+    current_config, _, _, _ = _server_runtime()
     report = build_doctor_report(
         project_dir=project_dir,
         config_snapshot=current_config(),
@@ -1864,7 +1864,7 @@ def security(
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory to inspect"),
 ) -> None:
     """Run security-focused checks on the current configuration."""
-    current_config, _, _ = _server_runtime()
+    current_config, _, _, _ = _server_runtime()
     report = build_security_doctor_report(
         project_dir=project_dir,
         config_snapshot=current_config(),

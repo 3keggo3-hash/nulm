@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-bridge"
+name = "claude-bridge-mcp"
 version = "0.1.0"
-description = "Local-first MCP bridge with AI-powered security layer, policy engine, and audit logging"
+description = "Local-first MCP agent quality and execution layer with guarded local tools"
 readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
 requires-python = ">=3.10"
@@ -16,7 +16,6 @@ keywords = ["claude", "mcp", "security", "policy", "audit", "ai", "bridge"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

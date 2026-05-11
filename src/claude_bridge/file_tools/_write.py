@@ -217,9 +217,7 @@ async def write_file(
     decision_risk_reasons = ["writes modify workspace contents"]
     if overwrite:
         decision_risk_reasons.append("overwrite requested")
-    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
-        allow_decision = ai_decision
-    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         approved = await request_approval("write_file", approval_params)

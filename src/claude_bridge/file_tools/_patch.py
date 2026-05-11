@@ -191,9 +191,7 @@ async def patch_file(
             decision_in_details=True,
         )
 
-    if ai_decision is not None and ai_decision.action == DecisionAction.ALLOW:
-        pass
-    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         pass
     else:
         rejection = await require_approval(

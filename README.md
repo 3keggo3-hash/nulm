@@ -1,32 +1,49 @@
 # Claude Bridge
 
-[![CI](https://github.com/3keggo3-hash/claude-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/3keggo3-hash/claude-bridge/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/claude-bridge.svg)](https://pypi.org/project/claude-bridge/)
-[![Python](https://img.shields.io/pypi/pyversions/claude-bridge.svg)](https://pypi.org/project/claude-bridge/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+CI: GitHub Actions | PyPI package: `claude-bridge-mcp` | CLI: `claude-bridge` |
+Python: 3.10+ | License: MIT |
+Code style: Black
 
-> A local-first, security-controlled MCP agent runtime for Claude Desktop and other MCP clients.
+> A local-first agent quality and execution layer for Claude Desktop and other MCP clients.
 
 Claude Bridge is a lightweight Python MCP server for local development and agent workflows. It lets
 an MCP client inspect project files, run guarded shell commands, apply controlled patches, build
 context packs, search/index source code, use bounded workflow helpers, and coordinate small
 meta-agent tasks without giving up path boundaries, auditability, or approval controls.
 
-It is designed for developers who want a Claude Code-like local workflow from Claude Desktop while
-keeping the security model explicit, inspectable, and replayable.
+It is designed to make rough user requests easier to turn into professional software work. Today it
+provides the local MCP execution substrate and early advisory tools. The longer-term direction is an
+Agent Quality Layer that improves prompts, critiques plans, chooses smaller context, suggests safe
+Bridge settings, reviews results, and reduces token waste while keeping the security model explicit,
+inspectable, and replayable.
 
 ## Quick Start
 
 ```bash
 pip install -e .
+claude-bridge doctor --project-dir .
 claude-bridge install
 ```
 
-Then fully quit and reopen Claude Desktop, and start a new conversation.
+Then fully quit and reopen Claude Desktop, and start a new conversation. A successful install gives
+Claude access to `tools_overview` and `bridge_status`; mutating actions should still ask for client
+approval.
 
 For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
 [`docs/ai-collaboration-token-budget.md`](docs/ai-collaboration-token-budget.md).
+
+## First 5 Minutes
+
+Try a natural request first:
+
+```text
+Use Claude Bridge to check whether this project is public-ready.
+```
+
+The useful first path is `tools_overview`, `bridge_status`, then
+`run_workflow(mode="quality")`. For completed work, call `review_result_quality` with the changed
+files and validation commands. For token or tool-surface tuning, call `suggest_bridge_config` before
+`apply_bridge_config_change`.
 
 ## Features
 
@@ -47,6 +64,9 @@ For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
 - **Meta-agent tools**: local plans, approach exploration, deterministic self-critique, git-backed
   checkpoints
 - **Tool profiles**: `essential`, `standard`, `full` for token/capability tradeoffs
+- **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
+  safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
+  advice parsing telemetry
 
 ## Installation
 
@@ -101,6 +121,18 @@ For Claude Desktop approval UI support:
 With `execute=true`, workflows run a safe read-only discovery step (file reads and listing only,
 no shell or patch execution).
 
+## Agent Quality examples
+
+The current Agent Quality Layer is deterministic and advisory by default. It can clarify rough
+requests, critique plans, suggest context/token strategy, expose quality-first workflow gates, and
+review result quality. Provider-backed advice parsing has a strict local fail-safe contract, but
+this layer does not make network provider calls by itself. It does not replace approvals, hard
+denies, or local configuration rules.
+
+See [`docs/agent-quality-chat-flows.md`](docs/agent-quality-chat-flows.md) for non-expert chat
+flows such as public readiness, professionalizing code, reducing token use, fixing bugs, and
+checking whether completed work is good enough.
+
 ## Security
 
 - **Local-only by design**: no remote service needed for core operation
@@ -122,7 +154,10 @@ conditions (`tool`, `field_equals`, `regex`, `glob`, `extension`, etc.).
 
 ```bash
 claude-bridge policy validate --path .claude-bridge-guard.json
-claude-bridge policy simulate --path .claude-bridge-guard.json --tool run_shell --param command="npm test"
+claude-bridge policy simulate \
+  --path .claude-bridge-guard.json \
+  --tool run_shell \
+  --param command="npm test"
 ```
 
 See [docs/security-model.md](docs/security-model.md) for full rule-writing guide.
@@ -136,7 +171,7 @@ Team policies define role-based access controls with inheritance. See
 claude-bridge policy diff --base .claude-bridge/team.json --head pr/team.json
 ```
 
-## AI Advisor (Optional)
+## AI Advisor and Agent Quality Direction
 
 An optional second-opinion layer for proposed agent actions. It can suggest `allow`, `deny`, or
 `ask`, but its broader role is to critique whether the next step is necessary, scoped, safe, and
@@ -147,6 +182,12 @@ Disabled by default. The local deterministic provider works without network acce
 OpenAI, and Ollama providers are optional and fail closed on invalid responses or provider errors.
 The current Python module and environment variables still use the `ai_evaluator` name for backward
 compatibility.
+
+The current advisor is an early slice of the larger Agent Quality Layer planned in
+[`docs/agent-quality-layer-plan.md`](docs/agent-quality-layer-plan.md). That layer is intended to
+help users write less-perfect prompts while still getting scoped plans, lower token usage, safer
+config choices, and stronger result review. `bridge_status` also exposes Agent Quality telemetry
+for provider-response parsing and fallback counts so failures stay visible.
 
 ```bash
 export CLAUDE_BRIDGE_AI_EVALUATOR_ENABLED=1
@@ -188,7 +229,7 @@ claude-bridge benchmark --query "login auth" --path src --json
 | Issue | Fix |
 |---|---|
 | No file access | Fully quit and reopen Claude Desktop; try "Use `workspace_status`" |
-| macOS: Operation not permitted | Use `command: /usr/bin/env` with `args: ["python3", "-m", "claude_bridge.mcp_server"]` |
+| macOS: Operation not permitted | Use `/usr/bin/env` with the module command in config. |
 | Prompts not appearing | Check `claude_desktop_config.json` is valid JSON; verify `PYTHONPATH` |
 | MCP logs | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |
 

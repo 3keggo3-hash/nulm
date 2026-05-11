@@ -8,6 +8,7 @@ import pytest  # noqa: F401
 from claude_bridge import server as mcp_server
 from claude_bridge import workflow_agent_loop as wf_agent_loop
 from claude_bridge import workflow_tools as wf
+from claude_bridge.workflow_runner import run_workflow as run_workflow_impl
 
 
 def parse_payload(result: str) -> dict:
@@ -155,3 +156,217 @@ class TestRunAgentLoopSession:
         assert payload["ok"] is True
         assert payload["details"]["final_decision"] == "stop_success"
         assert payload["details"]["executed_steps"] == 2
+
+    async def test_agent_loop_session_includes_boundary_quality_advice(
+        self, temp_project, monkeypatch
+    ):
+        test_file = temp_project / "module.py"
+        test_file.write_text("def fn_a():\n    return 'a'\n")
+        monkeypatch.setattr(wf_agent_loop, "_validation_command_error", lambda cmd: None)
+        steps = [
+            {
+                "file": "module.py",
+                "search": "fn_a",
+                "replace": "patched_a",
+                "validation_command": "echo ok",
+            }
+        ]
+
+        payload = parse_payload(await mcp_server.run_agent_loop_session(steps=steps))
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["schema_version"] == "agent_loop_session_quality.v1"
+        assert advisory["per_step_advisory"] is False
+        assert advisory["improved_request"]["schema_version"] == "improved_request.v1"
+        assert advisory["plan_quality"]["schema_version"] == "plan_quality_review.v1"
+        assert advisory["context_strategy"]
+        assert advisory["token_strategy"]
+        assert advisory["result_quality"]["schema_version"] == "result_quality_review.v1"
+        assert advisory["suggested_next_prompt"]
+
+    async def test_agent_loop_session_does_not_add_advice_to_each_step(
+        self, temp_project, monkeypatch
+    ):
+        test_file = temp_project / "module.py"
+        test_file.write_text("def fn_a():\n    return 'a'\n")
+        monkeypatch.setattr(wf_agent_loop, "_validation_command_error", lambda cmd: None)
+        steps = [
+            {
+                "file": "module.py",
+                "search": "fn_a",
+                "replace": "patched_a",
+                "validation_command": "echo ok",
+            }
+        ]
+
+        payload = parse_payload(await mcp_server.run_agent_loop_session(steps=steps))
+
+        assert payload["ok"] is True
+        assert "agent_quality" in payload["details"]
+        for result in payload["details"]["results"]:
+            assert "agent_quality" not in result
+
+
+class TestRunWorkflowAgentQuality:
+    async def test_workflow_output_includes_agent_quality_advisory(self, temp_project):
+        (temp_project / "module.py").write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(await mcp_server.run_workflow(mode="review", target="."))
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["schema_version"] == "workflow_agent_quality.v1"
+        assert advisory["improved_request"]["schema_version"] == "improved_request.v1"
+        assert advisory["plan_quality"]["schema_version"] == "plan_quality_review.v1"
+        assert advisory["context_strategy"]
+        assert advisory["token_strategy"]
+        assert advisory["read_only"] is True
+
+    async def test_quality_mode_surfaces_quality_boundaries(self, temp_project):
+        (temp_project / "module.py").write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(
+            await mcp_server.run_workflow(
+                mode="quality",
+                target=".",
+                option="correctness and regression safety",
+            )
+        )
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["especially_visible"] is True
+        quality_first = advisory["quality_first"]
+        assert quality_first["enabled"] is True
+        assert quality_first["clarified_goal"]
+        assert quality_first["improved_request"]["schema_version"] == "improved_request.v1"
+        assert quality_first["plan_quality_review"]["schema_version"] == "plan_quality_review.v1"
+        assert advisory["plan_quality"]["summary"]
+        assert advisory["context_strategy"]
+        assert advisory["token_strategy"]
+        assert quality_first["context_strategy"]
+        assert quality_first["token_strategy"]
+        assert quality_first["suggested_next_prompt"]
+        result_template = advisory["quality_gate_plan"]["result_review_template"]
+        assert result_template["schema_version"] == "result_quality_review.v1"
+        assert result_template["next_small_fixes"]
+        assert advisory["quality_gate_plan"]["checklist"]
+        assert quality_first["result_quality_gate_checklist"]
+
+    async def test_quality_mode_suggests_next_prompt(self, temp_project):
+        (temp_project / "module.py").write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(await mcp_server.run_workflow(mode="quality", target="."))
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert "smallest safe implementation slice" in advisory["suggested_next_prompt"]
+        assert (
+            advisory["quality_first"]["suggested_next_prompt"] == advisory["suggested_next_prompt"]
+        )
+
+    async def test_run_workflow_default_execute_false_does_not_mutate(self, temp_project):
+        target = temp_project / "module.py"
+        original = "def fn():\n    return 1\n"
+        target.write_text(original)
+
+        payload = parse_payload(await mcp_server.run_workflow(mode="quality", target="."))
+
+        assert payload["ok"] is True
+        assert payload["details"]["execute"] is False
+        assert "execution" not in payload["details"]
+        assert target.read_text() == original
+
+    async def test_existing_workflow_mode_still_returns_original_fields(self, temp_project):
+        (temp_project / "module.py").write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(await mcp_server.run_workflow(mode="review", target="."))
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["mode"] == "review"
+        assert details["steps"]
+        assert details["recommended_tools"] == ["list_directory", "read_file"]
+        assert details["agent_quality"]["quality_first"]["enabled"] is False
+
+    async def test_executed_workflow_success_adds_summary_based_next_prompt(self, temp_project):
+        target = temp_project / "module.py"
+        target.write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(
+            await mcp_server.run_workflow(mode="quality", target="module.py", execute=True)
+        )
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["schema_version"] == "workflow_agent_quality.v1"
+        assert advisory["execution_summary"]["status"] == "succeeded"
+        assert "read_file" in advisory["execution_summary"]["performed_actions"]
+        assert "executed workflow summary" in advisory["suggested_next_prompt"]
+        assert advisory["executed_result_quality"]["schema_version"] == "result_quality_review.v1"
+
+    async def test_executed_workflow_failure_next_prompt_inspects_failure(self, temp_project):
+        def json_response(
+            ok: bool,
+            message: str,
+            *,
+            code: str | None = None,
+            details: dict | None = None,
+        ) -> str:
+            payload = {"ok": ok, "message": message, "details": details or {}}
+            if code is not None:
+                payload["code"] = code
+            return json.dumps(payload)
+
+        async def read_file(path: str) -> str:
+            return json_response(True, "read", details={"path": path})
+
+        async def list_directory(path: str) -> str:
+            return json_response(True, "listed", details={"path": path})
+
+        async def find_relevant_files(**kwargs: object) -> str:
+            return json_response(
+                False,
+                "validation discovery failed",
+                code="validation_failed",
+                details={"output": "pytest failed"},
+            )
+
+        payload = parse_payload(
+            await run_workflow_impl(
+                mode="quality",
+                target=".",
+                option="regression safety",
+                language="English",
+                execute=True,
+                max_iterations=3,
+                resolve_path=lambda target: temp_project,
+                read_file=read_file,
+                list_directory=list_directory,
+                find_relevant_files=find_relevant_files,
+                path_from_active_root=lambda path: str(path),
+                project_dir=lambda: temp_project,
+                infer_project_root=lambda path: temp_project,
+                json_response=json_response,
+            )
+        )
+
+        assert payload["ok"] is False
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["execution_summary"]["status"] == "failed"
+        assert advisory["execution_summary"]["error_code"] == "validation_failed"
+        assert "Inspect this workflow failure" in advisory["suggested_next_prompt"]
+        assert advisory["executed_result_quality"]["schema_version"] == "result_quality_review.v1"
+
+    async def test_execute_false_keeps_agent_quality_schema(self, temp_project):
+        (temp_project / "module.py").write_text("def fn():\n    return 1\n")
+
+        payload = parse_payload(await mcp_server.run_workflow(mode="quality", target="."))
+
+        assert payload["ok"] is True
+        advisory = payload["details"]["agent_quality"]
+        assert advisory["schema_version"] == "workflow_agent_quality.v1"
+        assert "quality_first" in advisory
+        assert "execution_summary" not in advisory
+        assert payload["details"]["execute"] is False

@@ -3,7 +3,6 @@
 import json
 import os
 import tempfile
-from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -342,8 +341,8 @@ class TestRedactSensitiveValues:
         assert isinstance(redacted["api_key"], dict)
         assert redacted["api_key"]["redacted"] is True
         assert redacted["api_key"]["reason"] == "sensitive value"
-        assert redacted["api_key"]["length"] == len("sk-1234567890abcdef")
-        assert "sha256" in redacted["api_key"]
+        assert "length" not in redacted["api_key"]
+        assert "sha256" not in redacted["api_key"]
 
     def test_masks_token_case_insensitive(self):
         params = {"Token": "ghp_abc123def456ghi789"}
@@ -420,27 +419,18 @@ class TestRedactSensitiveValues:
         assert redacted["tool_config"]["encoding"] == "utf-8"
         assert redacted["tool_config"]["options"]["format"] is True
 
-    def test_masked_value_is_deterministic(self):
-        secret = "my-secret-value"
-        result1 = _mask_secret_value(secret)
-        result2 = _mask_secret_value(secret)
-        assert result1 == result2
-        assert result1["sha256"] == sha256(secret.encode("utf-8")).hexdigest()
-
-    def test_different_secrets_produce_different_hashes(self):
-        result1 = _mask_secret_value("secret-a")
-        result2 = _mask_secret_value("secret-b")
-        assert result1["sha256"] != result2["sha256"]
+    def test_masked_value_is_opaque(self):
+        masked = _mask_secret_value("my-secret-value")
+        assert "my-secret-value" not in str(masked)
+        assert "sha256" not in masked
+        assert "length" not in masked
 
     def test_masked_value_has_correct_structure(self):
         secret = "test-secret-123"
         masked = _mask_secret_value(secret)
-        assert set(masked.keys()) == {"redacted", "reason", "sha256", "length"}
+        assert set(masked.keys()) == {"redacted", "reason"}
         assert masked["redacted"] is True
         assert isinstance(masked["reason"], str)
-        assert isinstance(masked["sha256"], str)
-        assert len(masked["sha256"]) == 64
-        assert masked["length"] == len(secret)
 
     def test_handles_empty_dict(self):
         assert _redact_sensitive_values({}) == {}

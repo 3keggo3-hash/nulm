@@ -1,44 +1,40 @@
 # AGENTS.md
 
-## Project Purpose
+## Project
 
-This repo contains `claude-bridge`, a Python-based MCP server that provides local file system, shell,
-and controlled patch flows for Claude Desktop and other MCP clients.
+`claude-bridge`: Python 3.10+ MCP server for local filesystem, shell, and patch flows.
 
-## Repo Structure
+- App: `src/claude_bridge/`
+- Tests: `tests/`
+- Docs: `docs/`
+- Examples: `examples/`
+- Benchmarks: `benchmarks/`
 
-- `src/claude_bridge/`: application code
-- `tests/`: pytest test suite
-- `docs/`: persistent product, operations, and roadmap documentation
-- `examples/`: example configurations and policy files
-- `benchmarks/`: benchmark profiles, baseline files, and benchmark-specific materials
+## Work Rules
 
-## Coding Conventions
+- Low-token mode: no preamble, no apologies, concise output; explain only when useful or asked.
+- DCP: use `.opencode/opencode.json` + `.opencode/dcp.jsonc`; prefer `/dcp` in long sessions.
+- RTK: load `.opencode/rules/*.md` only when the task matches; do not paste all rules by default.
+- Keep layers separate: CLI, MCP API, tools, config/state, indexing/relevance, workflows.
+- Match existing naming, module boundaries, and style.
+- Type-hint changed production code; keep strict `mypy`, Black, Ruff, and <=100-char lines.
+- Avoid new deps, broad abstractions, and unrelated refactors.
+- Preserve `shell_tools.py` security, path boundaries, approvals, and auto-approve behavior.
+- Do not relax `sudo`, destructive git, `rm -r`, `curl|bash`, or `wget|bash` blocks.
+- Use explicit shell commands and `subprocess.run(..., shell=False)`.
+- Never add secrets, personal config, or private local paths to docs.
+- Find relevant files first; avoid broad scans.
+- Identify the affected layer before editing.
+- Change only what is needed.
+- Add/update focused tests when behavior changes.
+- Run relevant validation.
+- Summarize changed files and reasons.
+- Plan first for large refactors, moves, or structural changes.
 
-- Maintain Python 3.10+ compatibility.
-- Follow the existing architecture: CLI, MCP surface, tool implementations, config/state,
-  indexing/relevance, and workflow layers must stay separate.
-- Adhere to naming style, module boundaries, and existing code organization.
-- 100-character line limit, Black formatting, and Ruff compliance required.
-- Use type hints for all new or changed production code; `mypy` strict settings apply.
-- Do not add unnecessary dependencies, abstractions, or large refactors.
-
-## Task Workflow
-
-1. Find relevant files first and outline a brief plan.
-2. Read only the files needed for the task; avoid unnecessary scanning.
-3. Clarify which architectural layer the change belongs to before modifying code.
-4. Change only the necessary files.
-5. Add or update relevant tests when possible.
-6. Run appropriate validation after changes.
-7. Briefly summarize changed files and reasons at the end.
-
-Always produce a plan before large refactors, moves, or structural changes, and verify impact.
-
-## Test / Lint / Build Commands
+## Commands
 
 - Install: `pip install -e .`
-- Dev dependencies: `pip install -e .[dev]`
+- Dev deps: `pip install -e .[dev]`
 - Optional Tree-sitter: `pip install -e .[treesitter]`
 - Test: `pytest`
 - Lint: `ruff check .`
@@ -46,28 +42,13 @@ Always produce a plan before large refactors, moves, or structural changes, and 
 - Type check: `mypy src`
 - Benchmark: `claude-bridge benchmark --project-dir . --path src --query "auth session login"`
 
-## Shell and Security Rules
+## Avoid
 
-- The security model in `shell_tools.py` must be preserved.
-- Do not add or relax `sudo`, destructive `git` commands, `rm -r`, `curl|bash`, `wget|bash` patterns.
-- Shell commands must be explicit, decomposed, and follow the `subprocess.run(..., shell=False)` model.
-- Path boundaries, approval flows, and auto-approve behavior must not be silently changed.
-- Do not add secret information, local paths, or personal config data to documentation.
+- `venv/`, `.git/`, `__pycache__/`
+- `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`
+- `benchmarks/baselines/`, `benchmarks/profiles/` unless benchmarking
 
-## Areas to Avoid Reading Unless Necessary
+## Docs
 
-- `venv/`
-- `.git/`
-- `__pycache__/`
-- `.pytest_cache/`
-- `.ruff_cache/`
-- `.mypy_cache/`
-- `benchmarks/baselines/` and `benchmarks/profiles/` only for benchmark-related tasks
-
-## Documentation Rules
-
-- Place persistent documents under `docs/`.
-- New tasks go in `tasks/active/`, completed ones in `tasks/done/`.
-- Old notes that should not be deleted go under `archive/`.
-- Check internal links when moving folders or renaming files.
-- `README.md` and `AGENTS.md` must remain at the repo root.
+- Durable docs: `docs/`; active tasks: `tasks/active/`; done tasks: `tasks/done/`.
+- Archive old notes in `archive/`; keep root `README.md` and `AGENTS.md`.

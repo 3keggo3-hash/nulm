@@ -36,6 +36,7 @@ def build_stdio_server_entry(
     approval_preset: str | None = None,
     tool_profile: str = "standard",
     context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> dict[str, Any]:
     """Build a portable stdio MCP server entry."""
     python_cmd = python_executable or sys.executable
@@ -50,6 +51,7 @@ def build_stdio_server_entry(
         "CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL": "1" if client_managed_approval else "0",
         "CLAUDE_BRIDGE_TOOL_PROFILE": tool_profile,
         "CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE": context_budget_profile,
+        "CLAUDE_BRIDGE_ONBOARDING_ENABLED": "1" if onboarding_enabled else "0",
         "PYTHONUNBUFFERED": "1",
     }
     if approval_preset is not None:
@@ -78,6 +80,7 @@ def build_target_config(
     approval_preset: str | None = None,
     tool_profile: str = "standard",
     context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> dict[str, Any]:
     """Build a target-specific MCP config snippet."""
     if target not in SUPPORTED_SETUP_TARGETS:
@@ -92,6 +95,7 @@ def build_target_config(
         approval_preset=approval_preset,
         tool_profile=tool_profile,
         context_budget_profile=context_budget_profile,
+        onboarding_enabled=onboarding_enabled,
     )
     if target == "claude-desktop":
         return {"mcpServers": {"claude-bridge": server_entry}}
@@ -111,6 +115,7 @@ def build_desktop_config(
     approval_preset: str | None = None,
     tool_profile: str = "standard",
     context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> dict[str, object]:
     """Build a Claude Desktop MCP config snippet."""
     return build_target_config(
@@ -124,6 +129,7 @@ def build_desktop_config(
         approval_preset=approval_preset,
         tool_profile=tool_profile,
         context_budget_profile=context_budget_profile,
+        onboarding_enabled=onboarding_enabled,
     )
 
 
@@ -139,6 +145,7 @@ def generate_mcp_setup_guide(
     approval_preset: str | None = None,
     tool_profile: str = "standard",
     context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> str:
     """Render a copy-paste setup guide for a supported MCP client target."""
     config = build_target_config(
@@ -152,6 +159,7 @@ def generate_mcp_setup_guide(
         approval_preset=approval_preset,
         tool_profile=tool_profile,
         context_budget_profile=context_budget_profile,
+        onboarding_enabled=onboarding_enabled,
     )
     config_json = json.dumps(config, indent=2, ensure_ascii=False)
     target_title = {

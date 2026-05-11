@@ -2,6 +2,12 @@
 
 from claude_bridge.server import (
     bridge_status,
+    advise_next_step,
+    improve_request,
+    suggest_bridge_config,
+    apply_bridge_config_change,
+    plan_quality_review,
+    review_result_quality,
     bridge_doodle,
     bridge_read_notes,
     bridge_save_note,
@@ -60,6 +66,12 @@ from claude_bridge.server import (
 __all__ = [
     "mcp",
     "bridge_status",
+    "advise_next_step",
+    "improve_request",
+    "suggest_bridge_config",
+    "apply_bridge_config_change",
+    "plan_quality_review",
+    "review_result_quality",
     "narrow_context",
     "set_config",
     "configure_from_env",

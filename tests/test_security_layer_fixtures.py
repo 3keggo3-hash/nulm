@@ -278,7 +278,8 @@ class TestMaskedSecretScenario:
         assert isinstance(masked, dict)
         assert masked.get("redacted") is True
         assert "AKIAIOSFODNN7EXAMPLE" not in str(masked)
-        assert "sha256" in masked
+        assert "sha256" not in masked
+        assert "length" not in masked
 
     def test_redact_sensitive_values_dict(self) -> None:
         data = {

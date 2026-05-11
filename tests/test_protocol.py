@@ -2379,17 +2379,15 @@ class TestConfigTools:
         assert payload["ok"] is True
         assert payload["details"]["shell_timeout"] == 45
 
-    async def test_set_config_value_can_switch_to_preset(self, temp_project):
+    async def test_set_config_value_rejects_approval_preset(self, temp_project):
         mcp_server.set_config(
             project_dir=temp_project, auto_approve=False, client_managed_approval=False
         )
 
         payload = parse_payload(await mcp_server.set_config_value("approval_preset", "dev-safe"))
 
-        assert payload["ok"] is True
-        assert payload["details"]["approval_preset"] == "dev-safe"
-        assert payload["details"]["auto_approve"] is False
-        assert payload["details"]["client_managed_approval"] is True
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_config_value"
 
     async def test_set_config_value_rejects_invalid_key(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)
@@ -2422,13 +2420,13 @@ class TestConfigTools:
         assert payload["ok"] is True
         assert payload["details"]["intent_compaction_enabled"] is True
 
-    async def test_set_config_value_can_set_ai_evaluator_provider(self, temp_project):
+    async def test_set_config_value_rejects_ai_evaluator_provider(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)
 
         payload = parse_payload(await mcp_server.set_config_value("ai_evaluator_provider", "local"))
 
-        assert payload["ok"] is True
-        assert payload["details"]["ai_evaluator_provider"] == "local"
+        assert payload["ok"] is False
+        assert payload["code"] == "invalid_config_value"
 
     async def test_set_config_value_rejects_invalid_ai_evaluator_provider(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)
@@ -2440,22 +2438,15 @@ class TestConfigTools:
         assert payload["ok"] is False
         assert payload["code"] == "invalid_config_value"
 
-    async def test_set_config_value_can_toggle_ai_evaluator(self, temp_project):
+    async def test_set_config_value_rejects_ai_evaluator_toggle(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)
 
         enable_payload = parse_payload(
             await mcp_server.set_config_value("ai_evaluator_enabled", True)
         )
 
-        assert enable_payload["ok"] is True
-        assert enable_payload["details"]["ai_evaluator_enabled"] is True
-
-        disable_payload = parse_payload(
-            await mcp_server.set_config_value("ai_evaluator_enabled", False)
-        )
-
-        assert disable_payload["ok"] is True
-        assert disable_payload["details"]["ai_evaluator_enabled"] is False
+        assert enable_payload["ok"] is False
+        assert enable_payload["code"] == "invalid_config_value"
 
     async def test_compact_user_intent_returns_canonical_summary(self, temp_project):
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)

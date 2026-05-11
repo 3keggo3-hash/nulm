@@ -35,6 +35,7 @@ class TestDesktopConfig:
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "0"
         assert server["env"]["CLAUDE_BRIDGE_TOOL_PROFILE"] == "standard"
         assert server["env"]["CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE"] == "balanced"
+        assert server["env"]["CLAUDE_BRIDGE_ONBOARDING_ENABLED"] == "1"
         assert server["env"]["PYTHONUNBUFFERED"] == "1"
 
     def test_build_desktop_config_can_explicitly_enable_client_managed_approval(
@@ -74,6 +75,26 @@ class TestDesktopConfig:
         server = config["mcpServers"]["claude-bridge"]
         assert server["env"]["CLAUDE_BRIDGE_APPROVAL_PRESET"] == "dev-safe"
 
+
+class TestStartCommand:
+    def test_start_uses_run_mcp_server_so_prompts_register(self, monkeypatch, tmp_path: Path):
+        calls: list[str] = []
+
+        def fake_server_runtime():
+            return (
+                lambda: {},
+                object(),
+                lambda **_kwargs: calls.append("set_config"),
+                lambda: calls.append("run_mcp_server"),
+            )
+
+        monkeypatch.setattr(cli, "_server_runtime", fake_server_runtime)
+
+        result = runner.invoke(cli.app, ["start", "--project-dir", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert calls == ["set_config", "run_mcp_server"]
+
     def test_generate_mcp_setup_guide_contains_json_config(self, tmp_path: Path):
         guide = generate_mcp_setup_guide(
             tmp_path,
@@ -107,18 +128,23 @@ class TestDesktopConfig:
 
 class TestCLI:
     def test_start_command_keeps_stdout_clean_for_mcp(self, tmp_path: Path, monkeypatch):
-        observed: dict[str, object] = {}
+        calls: list[str] = []
 
-        def fake_run(*, transport: str = "stdio") -> None:
-            observed["transport"] = transport
+        def fake_server_runtime():
+            return (
+                lambda: {},
+                object(),
+                lambda **_kwargs: None,
+                lambda: calls.append("run_mcp_server"),
+            )
 
-        monkeypatch.setattr(cli.mcp, "run", fake_run)
+        monkeypatch.setattr(cli, "_server_runtime", fake_server_runtime)
 
         result = runner.invoke(cli.app, ["start", "--project-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert result.stdout == ""
-        assert observed["transport"] == "stdio"
+        assert calls == ["run_mcp_server"]
 
     def test_setup_command_prints_setup_text(self, tmp_path: Path):
         extra_root = tmp_path.parent / "extra"

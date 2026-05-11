@@ -43,7 +43,7 @@ def register_workflow_tools(
 
     if ctx.should_register("run_agent_loop_step"):
 
-        async def _run_agent_loop_step(
+        async def run_agent_loop_step(
             file: str,
             search: str,
             replace: str,
@@ -80,7 +80,7 @@ def register_workflow_tools(
         ctx.register(
             "run_agent_loop_step",
             "Run one bounded agent-loop step: patch once, validate once.",
-            _run_agent_loop_step,
+            run_agent_loop_step,
             destructive=True,
         )
 
@@ -250,7 +250,7 @@ def register_workflow_tools(
 
     if ctx.should_register("run_agent_loop_session"):
 
-        async def _run_agent_loop_session(
+        async def run_agent_loop_session(
             steps_json: str | None = None,
             steps: list[dict[str, Any]] | None = None,
             max_iterations: int = 3,
@@ -278,13 +278,13 @@ def register_workflow_tools(
         ctx.register(
             "run_agent_loop_session",
             "Run a bounded multi-step agent-loop session.",
-            _run_agent_loop_session,
+            run_agent_loop_session,
             destructive=True,
         )
 
     if ctx.should_register("run_workflow"):
 
-        async def _run_workflow(
+        async def run_workflow(
             mode: str,
             target: str = ".",
             option: str | None = None,
@@ -325,7 +325,7 @@ def register_workflow_tools(
         ctx.register(
             "run_workflow",
             "Generate a workflow prompt and optional first step.",
-            _run_workflow,
+            run_workflow,
             read_only=True,
         )
 
