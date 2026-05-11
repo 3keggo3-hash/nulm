@@ -8,8 +8,12 @@ from typing import Any, Awaitable, Callable
 
 from claude_bridge.agent_advisor import (
     AgentAdviceRequest,
+    AgentAdviceResponse,
+    ImprovedRequestResponse,
     PlanQualityReviewRequest,
+    PlanQualityReviewResponse,
     ResultQualityReviewRequest,
+    ResultQualityReviewResponse,
     advise_next_step,
     improve_request,
     plan_quality_review,
@@ -169,6 +173,93 @@ def _workflow_agent_quality(
         "risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
         "quality_gate_plan": {
             "summary": _workflow_quality_gate_plan(mode=mode, execute=execute),
+            "checklist": _result_quality_gate_checklist(),
+            "result_review_template": result_review.to_dict(),
+        },
+        "quality_first": {
+            "enabled": mode == "quality",
+            "clarified_goal": improved.clarified_goal,
+            "improved_request": improved.to_dict(),
+            "plan_quality_review": plan_review.to_dict(),
+            "context_strategy": advice.needed_context,
+            "token_strategy": advice.token_strategy,
+            "result_quality_gate_checklist": _result_quality_gate_checklist(),
+            "suggested_next_prompt": advice.next_prompt,
+        },
+        "read_only": True,
+    }
+
+
+def _workflow_agent_quality_optimized(
+    *,
+    mode: str,
+    target: str,
+    option: str | None,
+    steps: list[str],
+    recommended_tools: list[str],
+    execute: bool,
+) -> dict[str, Any]:
+    """Build workflow agent quality with parallel advisor calls.
+
+    Original: 4 sequential synchronous calls
+    Optimized: Run all 4 advisor calls concurrently via ThreadPoolExecutor
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    goal = _workflow_goal(mode=mode, target=target, option=option)
+    plan = _workflow_plan_text(
+        mode=mode,
+        target=target,
+        steps=steps,
+        recommended_tools=recommended_tools,
+        execute=execute,
+    )
+    recent_context = {
+        "workflow_mode": mode,
+        "execute": execute,
+        "read_only_boundary": not execute,
+    }
+    quality_gate_plan = _workflow_quality_gate_plan(mode=mode, execute=execute)
+
+    def _run_parallel_advisors() -> tuple[
+        AgentAdviceResponse, ImprovedRequestResponse,
+        PlanQualityReviewResponse, ResultQualityReviewResponse
+    ]:
+        advice_req = AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
+        plan_req = PlanQualityReviewRequest(plan=plan, goal=goal, target=target)
+        result_req = ResultQualityReviewRequest(
+            goal=goal,
+            result_summary=quality_gate_plan,
+            validation={"planned": True, "commands": []},
+            recent_context=recent_context,
+            constraints={"read-only": not execute, "advisory": True},
+        )
+        advice = advise_next_step(advice_req)
+        improved = improve_request(goal, target=target)
+        plan_review = plan_quality_review(plan_req)
+        result_review = review_result_quality(result_req)
+        return advice, improved, plan_review, result_review
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        future = pool.submit(_run_parallel_advisors)
+        advice, improved, plan_review, result_review = future.result()
+
+    return {
+        "schema_version": "workflow_agent_quality.v1",
+        "boundary": {
+            "start": "improve_request + advise_next_step + plan_quality_review",
+            "finish": "quality gate plan for review_result_quality",
+        },
+        "especially_visible": mode == "quality",
+        "improved_request": improved.to_dict(),
+        "clarified_goal": improved.clarified_goal,
+        "plan_quality": plan_review.to_dict(),
+        "context_strategy": advice.needed_context,
+        "token_strategy": advice.token_strategy,
+        "suggested_next_prompt": advice.next_prompt,
+        "risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
+        "quality_gate_plan": {
+            "summary": quality_gate_plan,
             "checklist": _result_quality_gate_checklist(),
             "result_review_template": result_review.to_dict(),
         },

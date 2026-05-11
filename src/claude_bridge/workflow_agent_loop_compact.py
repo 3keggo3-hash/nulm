@@ -9,12 +9,8 @@ from typing import Any, Awaitable, Callable
 
 from claude_bridge.agent_advisor import (
     AgentAdviceRequest,
-    AgentAdviceResponse,
-    ImprovedRequestResponse,
     PlanQualityReviewRequest,
-    PlanQualityReviewResponse,
     ResultQualityReviewRequest,
-    ResultQualityReviewResponse,
     advise_next_step,
     improve_request,
     plan_quality_review,
@@ -25,23 +21,8 @@ from claude_bridge.workflow_project import (
     suggest_validation_commands,
 )
 
-_VALIDATION_OPERATOR_TOKENS = {
-    "|",
-    "||",
-    "&",
-    "&&",
-    ";",
-    ">",
-    ">>",
-    "<",
-    "<<",
-    "2>",
-    "2>>",
-    "1>",
-    "1>>",
-    "&>",
-}
-_VALIDATION_ALLOWED_PREFIXES: tuple[tuple[str, ...], ...] = (
+_VAL_OPS = {"|", "||", "&", "&&", ";", ">", ">>", "<", "<<", "2>", "2>>", "1>", "1>>", "&>"}
+_VAL_PREFIXES = (
     ("pytest",),
     ("python", "-m", "pytest"),
     ("python3", "-m", "pytest"),
@@ -64,40 +45,26 @@ def _validation_command_error(command: str) -> dict[str, Any] | None:
     if not stripped:
         return {"code": "missing_validation_command", "reason": "validation command is empty"}
     if "\n" in stripped or "\r" in stripped:
-        return {
-            "code": "unsafe_validation_command",
-            "reason": "validation command contains a newline",
-        }
+        return {"code": "unsafe_validation_command", "reason": "validation command contains a newline"}
     try:
         argv = shlex.split(stripped)
     except ValueError as exc:
-        return {
-            "code": "invalid_validation_command",
-            "reason": f"validation command could not be parsed: {exc}",
-        }
+        return {"code": "invalid_validation_command", "reason": f"validation command could not be parsed: {exc}"}
     if not argv:
         return {"code": "missing_validation_command", "reason": "validation command is empty"}
     for token in argv:
-        if token in _VALIDATION_OPERATOR_TOKENS or any(ch in token for ch in "|&;<>`"):
-            return {
-                "code": "unsafe_validation_command",
-                "reason": "validation command contains shell injection operators",
-                "argv": argv,
-            }
+        if token in _VAL_OPS or any(ch in token for ch in "|&;<>`"):
+            return {"code": "unsafe_validation_command", "reason": "validation command contains shell injection operators", "argv": argv}
         if "$(" in token or "${" in token:
-            return {
-                "code": "unsafe_validation_command",
-                "reason": "validation command contains shell expansion syntax",
-                "argv": argv,
-            }
-    for prefix in _VALIDATION_ALLOWED_PREFIXES:
+            return {"code": "unsafe_validation_command", "reason": "validation command contains shell expansion syntax", "argv": argv}
+    for prefix in _VAL_PREFIXES:
         if tuple(argv[: len(prefix)]) == prefix:
             return None
     return {
         "code": "unsupported_validation_command",
         "reason": "validation command is not in the allowlisted validation set",
         "argv": argv,
-        "allowed_prefixes": [" ".join(prefix) for prefix in _VALIDATION_ALLOWED_PREFIXES],
+        "allowed_prefixes": [" ".join(prefix) for prefix in _VAL_PREFIXES],
     }
 
 
@@ -117,9 +84,7 @@ def build_agent_loop_execution_plan(
         "project_type": detect_project_type(resolved, project_root),
         "focus_target": focus_target,
         "inspect_targets": read_targets,
-        "proposed_patch_strategy": (
-            "make the smallest reversible change that tests the current hypothesis"
-        ),
+        "proposed_patch_strategy": "make the smallest reversible change that tests the current hypothesis",
         "validation_commands": validation_commands,
         "decision_rule": "continue only if validation yields clearer evidence or a narrower fix",
         "stop_if": [
@@ -143,99 +108,34 @@ async def run_agent_loop_step(
     json_response: Callable[..., str],
 ) -> str:
     if iteration < 1:
-        return json_response(
-            False,
-            "iteration must be at least 1",
-            code="invalid_iteration",
-            details={"iteration": iteration},
-        )
+        return json_response(False, "iteration must be at least 1", code="invalid_iteration", details={"iteration": iteration})
     if max_iterations < 1:
-        return json_response(
-            False,
-            "max_iterations must be at least 1",
-            code="invalid_max_iterations",
-            details={"max_iterations": max_iterations},
-        )
+        return json_response(False, "max_iterations must be at least 1", code="invalid_max_iterations", details={"max_iterations": max_iterations})
     if iteration > max_iterations:
-        return json_response(
-            False,
-            "iteration cannot exceed max_iterations",
-            code="invalid_iteration_budget",
-            details={"iteration": iteration, "max_iterations": max_iterations},
-        )
+        return json_response(False, "iteration cannot exceed max_iterations", code="invalid_iteration_budget", details={"iteration": iteration, "max_iterations": max_iterations})
     validation_error = _validation_command_error(validation_command)
     if validation_error is not None:
-        return json_response(
-            False,
-            validation_error["reason"],
-            code=validation_error["code"],
-            details={
-                "iteration": iteration,
-                "max_iterations": max_iterations,
-                "validation_command": validation_command,
-                "decision": "stop",
-                **validation_error,
-            },
-        )
+        return json_response(False, validation_error["reason"], code=validation_error["code"], details={"iteration": iteration, "max_iterations": max_iterations, "validation_command": validation_command, "decision": "stop", **validation_error})
 
     if not isinstance(search, str) or not isinstance(replace, str):
-        return json_response(
-            False,
-            "search and replace must be strings",
-            code="invalid_patch_params",
-            details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
-        )
+        return json_response(False, "search and replace must be strings", code="invalid_patch_params", details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"})
     for val, name in ((search, "search"), (replace, "replace")):
         if "$(" in val or "${" in val or "`" in val or "|" in val or "&" in val or ";" in val:
-            return json_response(
-                False,
-                f"{name} contains shell injection syntax",
-                code="unsafe_patch_param",
-                details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
-            )
+            return json_response(False, f"{name} contains shell injection syntax", code="unsafe_patch_param", details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"})
 
     try:
         patch_payload = json.loads(await patch_file(file=file, search=search, replace=replace))
     except (json.JSONDecodeError, TypeError):
-        return json_response(
-            False,
-            "Agent loop step failed: patch_file returned invalid JSON",
-            code="agent_loop_patch_failed",
-            details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
-        )
+        return json_response(False, "Agent loop step failed: patch_file returned invalid JSON", code="agent_loop_patch_failed", details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"})
     if not isinstance(patch_payload, dict) or not patch_payload.get("ok"):
-        return json_response(
-            False,
-            "Agent loop step failed during patch phase",
-            code="agent_loop_patch_failed",
-            details={
-                "iteration": iteration,
-                "max_iterations": max_iterations,
-                "patch_result": patch_payload,
-                "decision": "stop",
-            },
-        )
+        return json_response(False, "Agent loop step failed during patch phase", code="agent_loop_patch_failed", details={"iteration": iteration, "max_iterations": max_iterations, "patch_result": patch_payload, "decision": "stop"})
 
     try:
         validation_payload = json.loads(await run_shell(validation_command))
     except (json.JSONDecodeError, TypeError):
-        return json_response(
-            False,
-            "Agent loop step failed: validation command returned invalid JSON",
-            code="agent_loop_validation_failed",
-            details={
-                "iteration": iteration,
-                "max_iterations": max_iterations,
-                "validation_command": validation_command,
-                "decision": "stop",
-            },
-        )
+        return json_response(False, "Agent loop step failed: validation command returned invalid JSON", code="agent_loop_validation_failed", details={"iteration": iteration, "max_iterations": max_iterations, "validation_command": validation_command, "decision": "stop"})
     validation_ok = bool(validation_payload.get("ok", False))
-    decision = (
-        "stop_success"
-        if validation_ok
-        else ("continue" if iteration < max_iterations else "stop_failure")
-    )
+    decision = "stop_success" if validation_ok else ("continue" if iteration < max_iterations else "stop_failure")
 
     return json_response(
         True,
@@ -246,18 +146,13 @@ async def run_agent_loop_step(
             "patch_result": patch_payload,
             "validation_result": validation_payload,
             "decision": decision,
-            "next_action": (
-                "stop"
-                if decision == "stop_success"
-                else "inspect validation output and prepare the next smallest patch"
-            ),
+            "next_action": "stop" if decision == "stop_success" else "inspect validation output and prepare the next smallest patch",
             "self_check": _step_self_check(validation_ok, iteration, max_iterations),
         },
     )
 
 
 def _step_self_check(validation_ok: bool, iteration: int, max_iterations: int) -> dict[str, Any]:
-    """Run a self-check at critical milestones: validation failed or approaching iteration limit."""
     remaining = max_iterations - iteration
     near_limit = remaining <= 2
     critical = not validation_ok or near_limit
@@ -281,86 +176,7 @@ def _step_self_check(validation_ok: bool, iteration: int, max_iterations: int) -
         "milestone": "validation_failed" if not validation_ok else "iteration_limit_near",
         "concerns": concerns,
         "recommendation": recommendation,
-        "uncertainty_flags": (
-            ["missing_validation_evidence"] if not validation_ok else ["iteration_budget_exhausted"]
-        ),
-    }
-
-
-async def build_agent_loop_session_quality_advice_optimized(
-    *,
-    planned_steps: list[dict[str, Any]],
-    session_summary: dict[str, Any],
-    max_iterations: int,
-    results_compacted: bool,
-) -> dict[str, Any]:
-    """Build session-boundary advice with parallel advisor calls.
-
-    Original: 4 sequential synchronous calls
-    Optimized: Run independent calls concurrently via ThreadPoolExecutor
-    """
-    from concurrent.futures import ThreadPoolExecutor
-
-    goal = _agent_loop_session_goal(planned_steps)
-    target = ", ".join(_planned_step_files(planned_steps))
-    plan = _agent_loop_plan_text(planned_steps, max_iterations)
-    recent_context = {
-        "agent_loop_session": True,
-        "results_compacted": results_compacted,
-        "executed_steps": session_summary.get("executed_steps", 0),
-        "final_decision": session_summary.get("final_decision", "unknown"),
-    }
-
-    advice_req = AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
-    plan_req = PlanQualityReviewRequest(plan=plan, goal=goal, target=target)
-    result_req = ResultQualityReviewRequest(
-        goal=goal,
-        result_summary=str(session_summary.get("handoff_summary", "")),
-        changed_files=list(session_summary.get("files_touched", [])),
-        validation={
-            "last_validation_ok": session_summary.get("last_validation_ok"),
-            "last_validation_command": session_summary.get("last_validation_command"),
-            "failed": session_summary.get("last_validation_ok") is False,
-        },
-        recent_context=recent_context,
-        constraints={"advisory": True, "session-boundary-only": True},
-    )
-
-    def _run_sync_calls() -> tuple[
-        AgentAdviceResponse, ImprovedRequestResponse,
-        PlanQualityReviewResponse, ResultQualityReviewResponse
-    ]:
-        advice = advise_next_step(advice_req)
-        improved = improve_request(goal, target=target)
-        plan_review = plan_quality_review(plan_req)
-        result_review = review_result_quality(result_req)
-        return advice, improved, plan_review, result_review
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        future = pool.submit(_run_sync_calls)
-        advice, improved, plan_review, result_review = future.result()
-
-    return {
-        "schema_version": "agent_loop_session_quality.v1",
-        "boundary": {
-            "start": "improve_request + advise_next_step + plan_quality_review",
-            "finish": "review_result_quality + handoff next prompt",
-        },
-        "per_step_advisory": False,
-        "improved_request": improved.to_dict(),
-        "clarified_goal": improved.clarified_goal,
-        "plan_quality": plan_review.to_dict(),
-        "context_strategy": advice.needed_context,
-        "token_strategy": advice.token_strategy,
-        "session_risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
-        "result_quality": result_review.to_dict(),
-        "validation_gaps": result_review.validation_gaps,
-        "next_small_fixes": result_review.next_small_fixes,
-        "suggested_next_prompt": _agent_loop_next_prompt(
-            goal=goal,
-            session_summary=session_summary,
-        ),
-        "read_only": True,
+        "uncertainty_flags": ["missing_validation_evidence"] if not validation_ok else ["iteration_budget_exhausted"],
     }
 
 
@@ -403,22 +219,12 @@ def build_agent_loop_session_summary(
     if final_decision == "stop_success":
         next_recommended_action = "stop"
     elif final_decision == "stop_failure":
-        next_recommended_action = (
-            "inspect the last validation failure before planning another session"
-        )
+        next_recommended_action = "inspect the last validation failure before planning another session"
     else:
         next_recommended_action = "prepare the next smallest reversible patch"
 
-    validation_label = (
-        "passed" if last_validation_ok else ("failed" if last_validation_ok is False else "not run")
-    )
-    handoff_summary = (
-        f"Executed {len(session_results)} step(s); final decision: {final_decision}. "
-        f"Files touched: {', '.join(files_touched) if files_touched else 'none'}. "
-        f"Last validation {validation_label}"
-        f"{f' via {last_validation_command}' if last_validation_command else ''}. "
-        f"Next action: {next_recommended_action}."
-    )
+    validation_label = "passed" if last_validation_ok else ("failed" if last_validation_ok is False else "not run")
+    handoff_summary = f"{len(session_results)} step(s), decision={final_decision}, files={', '.join(files_touched) or 'none'}, last_val={validation_label}" + (f" via {last_validation_command}" if last_validation_command else "") + f", next={next_recommended_action}"
 
     return {
         "executed_steps": len(session_results),
@@ -498,36 +304,25 @@ def _agent_loop_plan_text(planned_steps: list[dict[str, Any]], max_iterations: i
     return " ".join(parts)
 
 
-def _agent_loop_next_prompt(
-    *,
+def _agent_loop_next_prompt_compact(
     goal: str,
     session_summary: dict[str, Any],
 ) -> str:
     final_decision = str(session_summary.get("final_decision", "stop_failure"))
     if final_decision == "stop_success":
-        return (
-            f"Review this completed agent-loop result against the original goal: {goal}. "
-            "Check changed files, validation evidence, docs drift, and remaining risks."
-        )
+        return f"Review completed agent-loop result against goal: {goal}. Check changed files, validation, docs drift, risks."
     if final_decision == "stop_failure":
-        return (
-            f"Inspect the last validation failure for this agent-loop goal: {goal}. "
-            "Identify the smallest next patch or stop if evidence is insufficient."
-        )
-    return (
-        f"Continue this bounded agent-loop goal with the next smallest patch: {goal}. "
-        "Use the last validation output as evidence before editing."
-    )
+        return f"Inspect last validation failure for agent-loop goal: {goal}. Identify smallest next patch or stop if evidence is insufficient."
+    return f"Continue bounded agent-loop goal with next smallest patch: {goal}. Use last validation output as evidence before editing."
 
 
-def build_agent_loop_session_quality_advice(
+def build_agent_loop_session_quality_advice_compact(
     *,
     planned_steps: list[dict[str, Any]],
     session_summary: dict[str, Any],
     max_iterations: int,
     results_compacted: bool,
 ) -> dict[str, Any]:
-    """Build deterministic session-boundary advice without touching per-step results."""
     goal = _agent_loop_session_goal(planned_steps)
     target = ", ".join(_planned_step_files(planned_steps))
     plan = _agent_loop_plan_text(planned_steps, max_iterations)
@@ -537,9 +332,7 @@ def build_agent_loop_session_quality_advice(
         "executed_steps": session_summary.get("executed_steps", 0),
         "final_decision": session_summary.get("final_decision", "unknown"),
     }
-    advice = advise_next_step(
-        AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
-    )
+    advice = advise_next_step(AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context))
     improved = improve_request(goal, target=target)
     plan_review = plan_quality_review(PlanQualityReviewRequest(plan=plan, goal=goal, target=target))
     validation = {
@@ -558,25 +351,16 @@ def build_agent_loop_session_quality_advice(
         )
     )
     return {
-        "schema_version": "agent_loop_session_quality.v1",
-        "boundary": {
-            "start": "improve_request + advise_next_step + plan_quality_review",
-            "finish": "review_result_quality + handoff next prompt",
-        },
-        "per_step_advisory": False,
-        "improved_request": improved.to_dict(),
-        "clarified_goal": improved.clarified_goal,
-        "plan_quality": plan_review.to_dict(),
+        "schema": "alq.v1",
+        "improved": improved.to_compact_dict(),
+        "plan_review": plan_review.to_compact_dict(),
         "context_strategy": advice.needed_context,
         "token_strategy": advice.token_strategy,
-        "session_risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
-        "result_quality": result_review.to_dict(),
+        "risks": advice.risks + plan_review.concerns + plan_review.scope_warnings,
+        "result_review": result_review.to_compact_dict(),
         "validation_gaps": result_review.validation_gaps,
-        "next_small_fixes": result_review.next_small_fixes,
-        "suggested_next_prompt": _agent_loop_next_prompt(
-            goal=goal,
-            session_summary=session_summary,
-        ),
+        "next_fixes": result_review.next_small_fixes,
+        "next_prompt": _agent_loop_next_prompt_compact(goal, session_summary),
         "read_only": True,
     }
 
@@ -592,53 +376,23 @@ async def run_agent_loop_session(
     json_response: Callable[..., str],
 ) -> str:
     if max_iterations < 1:
-        return json_response(
-            False,
-            "max_iterations must be at least 1",
-            code="invalid_max_iterations",
-            details={"max_iterations": max_iterations},
-        )
+        return json_response(False, "max_iterations must be at least 1", code="invalid_max_iterations", details={"max_iterations": max_iterations})
     if compact_threshold < 1:
-        return json_response(
-            False,
-            "compact_threshold must be at least 1",
-            code="invalid_compact_threshold",
-            details={"compact_threshold": compact_threshold},
-        )
+        return json_response(False, "compact_threshold must be at least 1", code="invalid_compact_threshold", details={"compact_threshold": compact_threshold})
     if keep_recent_results < 1:
-        return json_response(
-            False,
-            "keep_recent_results must be at least 1",
-            code="invalid_keep_recent_results",
-            details={"keep_recent_results": keep_recent_results},
-        )
+        return json_response(False, "keep_recent_results must be at least 1", code="invalid_keep_recent_results", details={"keep_recent_results": keep_recent_results})
 
     planned_input = steps
     if planned_input is None:
         if steps_json is None:
-            return json_response(
-                False,
-                "Either steps or steps_json must be provided",
-                code="missing_steps",
-                details={},
-            )
+            return json_response(False, "Either steps or steps_json must be provided", code="missing_steps", details={})
         try:
             planned_input = json.loads(steps_json)
         except json.JSONDecodeError as exc:
-            return json_response(
-                False,
-                f"Invalid steps_json: {exc}",
-                code="invalid_steps_json",
-                details={"steps_json": steps_json},
-            )
+            return json_response(False, f"Invalid steps_json: {exc}", code="invalid_steps_json", details={"steps_json": steps_json})
 
     if not isinstance(planned_input, list) or not planned_input:
-        return json_response(
-            False,
-            "steps must be a non-empty list",
-            code="invalid_steps_payload",
-            details={"steps_json": steps_json, "steps": planned_input},
-        )
+        return json_response(False, "steps must be a non-empty list", code="invalid_steps_payload", details={"steps_json": steps_json, "steps": planned_input})
 
     planned_steps = planned_input[:max_iterations]
     session_results: list[dict[str, Any]] = []
@@ -646,22 +400,12 @@ async def run_agent_loop_session(
 
     for iteration, step in enumerate(planned_steps, start=1):
         if not isinstance(step, dict):
-            return json_response(
-                False,
-                "Each step must be an object",
-                code="invalid_step_entry",
-                details={"step": step, "iteration": iteration},
-            )
+            return json_response(False, "Each step must be an object", code="invalid_step_entry", details={"step": step, "iteration": iteration})
 
         required = {"file", "search", "replace", "validation_command"}
         missing = sorted(required - set(step))
         if missing:
-            return json_response(
-                False,
-                "Step is missing required fields",
-                code="invalid_step_fields",
-                details={"iteration": iteration, "missing_fields": missing},
-            )
+            return json_response(False, "Step is missing required fields", code="invalid_step_fields", details={"iteration": iteration, "missing_fields": missing})
 
         try:
             step_result = json.loads(
@@ -675,16 +419,7 @@ async def run_agent_loop_session(
                 )
             )
         except (json.JSONDecodeError, TypeError) as exc:
-            return json_response(
-                False,
-                f"Agent loop step {iteration} returned invalid JSON: {exc}",
-                code="agent_loop_step_invalid_payload",
-                details={
-                    "iteration": iteration,
-                    "max_iterations": max_iterations,
-                    "decision": "stop",
-                },
-            )
+            return json_response(False, f"Agent loop step {iteration} returned invalid JSON: {exc}", code="agent_loop_step_invalid_payload", details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"})
         session_results.append(step_result)
 
         if not step_result["ok"]:
@@ -710,7 +445,7 @@ async def run_agent_loop_session(
         compacted_steps=len(compacted_history),
         retained_recent_steps=retained_recent_steps,
     )
-    agent_quality = build_agent_loop_session_quality_advice(
+    agent_quality = build_agent_loop_session_quality_advice_compact(
         planned_steps=planned_steps,
         session_summary=session_summary,
         max_iterations=max_iterations,
