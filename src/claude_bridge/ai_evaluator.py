@@ -30,6 +30,15 @@ _AI_PROVIDER_MAX_RESPONSE_BYTES = 65536
 _AI_LATENCY_SAMPLES_MS: deque[float] = deque(maxlen=100)
 
 
+class _ResponseTruncatedError(Exception):
+    """Raised when an AI provider response exceeds the max response bytes limit."""
+
+    pass
+_RATE_LIMIT_CALLS = 60
+_RATE_LIMIT_WINDOW_SEC = 60.0
+_RATE_LIMIT_TOKENS: deque[float] = deque(maxlen=_RATE_LIMIT_CALLS)
+
+
 class EvaluationAction(str, Enum):
     """The action recommended by the AI evaluation for a tool request."""
 
@@ -165,6 +174,17 @@ def _record_ai_latency(duration_ms: float) -> None:
 def reset_ai_latency_samples() -> None:
     """Clear in-memory AI evaluator latency samples."""
     _AI_LATENCY_SAMPLES_MS.clear()
+
+
+def _check_rate_limit() -> bool:
+    """Return True if under rate limit, False if limit exceeded."""
+    now = time.monotonic()
+    while _RATE_LIMIT_TOKENS and now - _RATE_LIMIT_TOKENS[0] >= _RATE_LIMIT_WINDOW_SEC:
+        _RATE_LIMIT_TOKENS.popleft()
+    if len(_RATE_LIMIT_TOKENS) < _RATE_LIMIT_CALLS:
+        _RATE_LIMIT_TOKENS.append(now)
+        return True
+    return False
 
 
 def ai_latency_summary() -> dict[str, Any]:
@@ -393,6 +413,10 @@ class AnthropicProvider(Provider):
         ).encode("utf-8")
         try:
             return self._call_api(body)
+        except _ResponseTruncatedError:
+            return EvaluationResponse.fail_closed(
+                reason="AI evaluator response truncated (exceeded 65536 bytes)"
+            )
         except Exception as exc:
             return EvaluationResponse.fail_closed(reason=_provider_error_reason("Anthropic", exc))
 
@@ -408,7 +432,12 @@ class AnthropicProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
+            raw_read = resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES)
+            if len(raw_read) >= _AI_PROVIDER_MAX_RESPONSE_BYTES:
+                raise _ResponseTruncatedError(
+                    f"Response exceeded {_AI_PROVIDER_MAX_RESPONSE_BYTES} bytes"
+                )
+            data = json.loads(raw_read.decode("utf-8"))
         content = data.get("content", [{}])[0].get("text", "{}")
         return _parse_json_response(content)
 
@@ -446,6 +475,10 @@ class OpenAIProvider(Provider):
         ).encode("utf-8")
         try:
             return self._call_api(body)
+        except _ResponseTruncatedError:
+            return EvaluationResponse.fail_closed(
+                reason="AI evaluator response truncated (exceeded 65536 bytes)"
+            )
         except Exception as exc:
             return EvaluationResponse.fail_closed(reason=_provider_error_reason("OpenAI", exc))
 
@@ -460,7 +493,12 @@ class OpenAIProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
+            raw_read = resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES)
+            if len(raw_read) >= _AI_PROVIDER_MAX_RESPONSE_BYTES:
+                raise _ResponseTruncatedError(
+                    f"Response exceeded {_AI_PROVIDER_MAX_RESPONSE_BYTES} bytes"
+                )
+            data = json.loads(raw_read.decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
 
@@ -511,6 +549,10 @@ class OllamaProvider(Provider):
         ).encode("utf-8")
         try:
             return self._call_api(body)
+        except _ResponseTruncatedError:
+            return EvaluationResponse.fail_closed(
+                reason="AI evaluator response truncated (exceeded 65536 bytes)"
+            )
         except Exception as exc:
             return EvaluationResponse.fail_closed(reason=_provider_error_reason("Ollama", exc))
 
@@ -522,7 +564,12 @@ class OllamaProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
+            raw_read = resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES)
+            if len(raw_read) >= _AI_PROVIDER_MAX_RESPONSE_BYTES:
+                raise _ResponseTruncatedError(
+                    f"Response exceeded {_AI_PROVIDER_MAX_RESPONSE_BYTES} bytes"
+                )
+            data = json.loads(raw_read.decode("utf-8"))
         content = data.get("response", "{}")
         return _parse_json_response(content)
 
@@ -560,6 +607,10 @@ class DeepSeekProvider(Provider):
         ).encode("utf-8")
         try:
             return self._call_api(body)
+        except _ResponseTruncatedError:
+            return EvaluationResponse.fail_closed(
+                reason="AI evaluator response truncated (exceeded 65536 bytes)"
+            )
         except Exception as exc:
             return EvaluationResponse.fail_closed(reason=_provider_error_reason("DeepSeek", exc))
 
@@ -574,7 +625,12 @@ class DeepSeekProvider(Provider):
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES).decode("utf-8"))
+            raw_read = resp.read(_AI_PROVIDER_MAX_RESPONSE_BYTES)
+            if len(raw_read) >= _AI_PROVIDER_MAX_RESPONSE_BYTES:
+                raise _ResponseTruncatedError(
+                    f"Response exceeded {_AI_PROVIDER_MAX_RESPONSE_BYTES} bytes"
+                )
+            data = json.loads(raw_read.decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
 
@@ -639,6 +695,10 @@ async def evaluate_with_timeout(
     """
     loop = asyncio.get_running_loop()
     started_at = time.perf_counter()
+    if not _check_rate_limit():
+        return EvaluationResponse.fail_closed(
+            reason="AI evaluator rate limit exceeded (60 calls/min)"
+        )
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = loop.run_in_executor(pool, provider.evaluate, request)
         try:

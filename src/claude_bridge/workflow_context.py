@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -28,6 +29,8 @@ from claude_bridge.workflow_project import (
     detect_project_type,
     suggest_validation_commands,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _build_context_pack_error(
@@ -360,7 +363,7 @@ def build_context_pack(
             try:
                 _write_disk_cached_response("context-pack", cache_key, response)
             except OSError:
-                pass
+                logger.warning("Failed to write disk cache for context pack: %s", target)
         return response
 
     return _inner()

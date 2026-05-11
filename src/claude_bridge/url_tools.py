@@ -250,7 +250,9 @@ async def read_url(url: str) -> str:
         )
 
     content_type = resp.headers.get_content_type()
-    if not content_type or not content_type.startswith("text/"):
+    allowed = {"text/plain", "text/css", "text/csv"}
+    ct_lower = content_type.lower() if content_type else ""
+    if ct_lower not in allowed:
         return json_response(
             False,
             "Blocked: non-text content type",
