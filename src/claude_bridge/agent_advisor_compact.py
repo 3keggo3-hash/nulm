@@ -22,6 +22,29 @@ _PROVIDER_TELEMETRY_PARSE_FAILURES = 0
 _PROVIDER_TELEMETRY_FALLBACK_COUNT = 0
 _PROVIDER_TELEMETRY_LAST_DURATION_MS = 0.0
 
+_S = "schema_version"
+_V = "verdict"
+_SUM = "summary"
+_INT = "intent_summary"
+_REC = "recommended_next_step"
+_WHY = "why_this_step"
+_CTX = "needed_context"
+_RSK = "risks"
+_VAL = "validation"
+_TOK = "token_strategy"
+_CFG = "config_suggestions"
+_ASK = "should_ask_user"
+_Q = "question"
+_NP = "next_prompt"
+_UN = "uncertainty_flag"
+_AMB = "ambiguity_triggers"
+_OK = "ok"
+_MSG = "message"
+_DET = "details"
+_TOT = "total_issues"
+_BY_CAT = "by_category"
+_BY_SEV = "by_severity"
+
 
 @dataclass
 class AgentAdviceRequest:
@@ -45,7 +68,6 @@ class ConfigSuggestion:
     requires_approval: bool = True
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the suggestion to a JSON-compatible dictionary."""
         return {
             "key": self.key,
             "value": self.value,
@@ -75,22 +97,39 @@ class AgentAdviceResponse:
     ambiguity_triggers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the advice to a JSON-compatible dictionary."""
         return {
-            "schema_version": self.schema_version,
-            "intent_summary": self.intent_summary,
-            "recommended_next_step": self.recommended_next_step,
-            "why_this_step": self.why_this_step,
-            "needed_context": list(self.needed_context),
-            "risks": list(self.risks),
-            "validation": list(self.validation),
-            "token_strategy": list(self.token_strategy),
-            "config_suggestions": [item.to_dict() for item in self.config_suggestions],
-            "should_ask_user": self.should_ask_user,
-            "question": self.question,
-            "next_prompt": self.next_prompt,
-            "uncertainty_flag": self.uncertainty_flag,
-            "ambiguity_triggers": list(self.ambiguity_triggers),
+            _S: self.schema_version,
+            _INT: self.intent_summary,
+            _REC: self.recommended_next_step,
+            _WHY: self.why_this_step,
+            _CTX: list(self.needed_context),
+            _RSK: list(self.risks),
+            _VAL: list(self.validation),
+            _TOK: list(self.token_strategy),
+            _CFG: [item.to_dict() for item in self.config_suggestions],
+            _ASK: self.should_ask_user,
+            _Q: self.question,
+            _NP: self.next_prompt,
+            _UN: self.uncertainty_flag,
+            _AMB: list(self.ambiguity_triggers),
+        }
+
+    def to_compact_dict(self) -> dict[str, Any]:
+        return {
+            _S: "adv.v1",
+            _INT: self.intent_summary,
+            _REC: self.recommended_next_step,
+            _WHY: self.why_this_step,
+            _CTX: list(self.needed_context),
+            _RSK: list(self.risks),
+            _VAL: list(self.validation),
+            _TOK: list(self.token_strategy),
+            _CFG: [{"k": s.key, "v": s.value, "r": s.reason} for s in self.config_suggestions],
+            _ASK: self.should_ask_user,
+            _Q: self.question,
+            _NP: self.next_prompt,
+            _UN: self.uncertainty_flag,
+            _AMB: list(self.ambiguity_triggers),
         }
 
 
@@ -106,7 +145,6 @@ class ProviderAdviceParseMeta:
     unsafe_config_keys: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize parser metadata to a JSON-compatible dictionary."""
         return {
             "ok": self.ok,
             "reason": self.reason,
@@ -125,7 +163,6 @@ class ProviderAdviceParseResult:
     metadata: ProviderAdviceParseMeta
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the parse result to a JSON-compatible dictionary."""
         return {
             "advice": self.advice.to_dict(),
             "metadata": self.metadata.to_dict(),
@@ -149,19 +186,33 @@ class ImprovedRequestResponse:
     ambiguity_triggers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the improved request to a JSON-compatible dictionary."""
         return {
-            "schema_version": self.schema_version,
+            _S: self.schema_version,
             "clarified_goal": self.clarified_goal,
             "assumptions": list(self.assumptions),
             "constraints": list(self.constraints),
             "acceptance_criteria": list(self.acceptance_criteria),
             "suggested_first_slice": self.suggested_first_slice,
             "improved_prompt": self.improved_prompt,
-            "should_ask_user": self.should_ask_user,
-            "question": self.question,
-            "uncertainty_flag": self.uncertainty_flag,
-            "ambiguity_triggers": list(self.ambiguity_triggers),
+            _ASK: self.should_ask_user,
+            _Q: self.question,
+            _UN: self.uncertainty_flag,
+            _AMB: list(self.ambiguity_triggers),
+        }
+
+    def to_compact_dict(self) -> dict[str, Any]:
+        return {
+            _S: "imp.v1",
+            "clarified_goal": self.clarified_goal,
+            "assumptions": list(self.assumptions),
+            "constraints": list(self.constraints),
+            "acceptance_criteria": list(self.acceptance_criteria),
+            "suggested_first_slice": self.suggested_first_slice,
+            "improved_prompt": self.improved_prompt,
+            _ASK: self.should_ask_user,
+            _Q: self.question,
+            _UN: self.uncertainty_flag,
+            _AMB: list(self.ambiguity_triggers),
         }
 
 
@@ -194,11 +245,26 @@ class PlanQualityReviewResponse:
     safer_plan: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the review to a JSON-compatible dictionary."""
         return {
-            "schema_version": self.schema_version,
-            "verdict": self.verdict,
-            "summary": self.summary,
+            _S: self.schema_version,
+            _V: self.verdict,
+            _SUM: self.summary,
+            "strengths": list(self.strengths),
+            "concerns": list(self.concerns),
+            "missing_context": list(self.missing_context),
+            "missing_tests": list(self.missing_tests),
+            "scope_warnings": list(self.scope_warnings),
+            "security_warnings": list(self.security_warnings),
+            "token_warnings": list(self.token_warnings),
+            "recommended_changes": list(self.recommended_changes),
+            "safer_plan": list(self.safer_plan),
+        }
+
+    def to_compact_dict(self) -> dict[str, Any]:
+        return {
+            _S: "pqr.v1",
+            _V: self.verdict,
+            _SUM: self.summary,
             "strengths": list(self.strengths),
             "concerns": list(self.concerns),
             "missing_context": list(self.missing_context),
@@ -243,12 +309,28 @@ class ResultQualityReviewResponse:
     next_small_fixes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the result review to a JSON-compatible dictionary."""
         return {
-            "schema_version": self.schema_version,
-            "verdict": self.verdict,
+            _S: self.schema_version,
+            _V: self.verdict,
             "evidence_level": self.evidence_level,
-            "summary": self.summary,
+            _SUM: self.summary,
+            "goal_alignment": list(self.goal_alignment),
+            "scope_drift": list(self.scope_drift),
+            "validation_gaps": list(self.validation_gaps),
+            "docs_drift_risks": list(self.docs_drift_risks),
+            "security_config_risks": list(self.security_config_risks),
+            "token_context_waste": list(self.token_context_waste),
+            "self_critique_findings": list(self.self_critique_findings),
+            "strengths": list(self.strengths),
+            "next_small_fixes": list(self.next_small_fixes),
+        }
+
+    def to_compact_dict(self) -> dict[str, Any]:
+        return {
+            _S: "rqr.v1",
+            _V: self.verdict,
+            "evidence_level": self.evidence_level,
+            _SUM: self.summary,
             "goal_alignment": list(self.goal_alignment),
             "scope_drift": list(self.scope_drift),
             "validation_gaps": list(self.validation_gaps),
@@ -262,7 +344,6 @@ class ResultQualityReviewResponse:
 
 
 def parse_optional_json_object(raw: str | None, *, field_name: str) -> dict[str, Any]:
-    """Parse an optional JSON object and raise a clear ValueError on invalid input."""
     if raw is None or not raw.strip():
         return {}
     try:
@@ -279,7 +360,6 @@ def parse_provider_agent_advice(
     *,
     fallback_request: AgentAdviceRequest | None = None,
 ) -> ProviderAdviceParseResult:
-    """Parse provider-backed Agent Quality advice with deterministic fail-safe fallback."""
     started_at = time.perf_counter()
     request = fallback_request or AgentAdviceRequest(goal="Review provider advice")
     schema_version = ""
@@ -337,7 +417,6 @@ def parse_provider_agent_advice(
 
 
 def agent_quality_telemetry_summary() -> dict[str, Any]:
-    """Return in-memory Agent Quality parser telemetry."""
     return {
         "sample_count": _PROVIDER_TELEMETRY_SAMPLE_COUNT,
         "parse_failures": _PROVIDER_TELEMETRY_PARSE_FAILURES,
@@ -347,7 +426,6 @@ def agent_quality_telemetry_summary() -> dict[str, Any]:
 
 
 def reset_agent_quality_telemetry() -> None:
-    """Reset parser telemetry for focused tests."""
     global _PROVIDER_TELEMETRY_FALLBACK_COUNT
     global _PROVIDER_TELEMETRY_LAST_DURATION_MS
     global _PROVIDER_TELEMETRY_PARSE_FAILURES
@@ -360,38 +438,33 @@ def reset_agent_quality_telemetry() -> None:
 
 
 def advise_next_step(request: AgentAdviceRequest) -> AgentAdviceResponse:
-    """Return deterministic next-step advice for a rough user goal."""
     goal = _compact_text(request.goal)
     target = _compact_text(request.target)
     lowered = f"{goal} {target}".lower()
 
     if not goal:
         return AgentAdviceResponse(
-            intent_summary="No clear user goal was provided.",
-            recommended_next_step="Ask the user for the desired outcome before reading files.",
-            why_this_step="A missing goal would make context selection and validation arbitrary.",
+            intent_summary="No clear user goal.",
+            recommended_next_step="Ask user for desired outcome before reading files.",
+            why_this_step="Missing goal makes context selection arbitrary.",
             should_ask_user=True,
             question="What outcome should Claude Bridge help you achieve?",
-            next_prompt=(
-                "State the product or code outcome you want, plus any important constraints."
-            ),
+            next_prompt="State the product or code outcome you want, plus constraints.",
         )
 
     advice = AgentAdviceResponse(
         intent_summary=_intent_summary(goal, target),
-        recommended_next_step="Create a scoped first slice before editing files.",
-        why_this_step=(
-            "A small first slice keeps the work reviewable and avoids broad context reads."
-        ),
+        recommended_next_step="Create a scoped first slice before editing.",
+        why_this_step="Small slice keeps work reviewable.",
         needed_context=_base_context(target),
         risks=[
-            "The request may be broader than one safe implementation slice.",
-            "Validation can be missed if acceptance criteria are not stated up front.",
+            "Request may be broader than one safe slice.",
+            "Validation can be missed if acceptance criteria are not stated.",
         ],
-        validation=["Run the smallest focused tests for touched behavior."],
+        validation=["Run smallest focused tests for touched behavior."],
         token_strategy=[
             "Use rg or relevance search before opening many files.",
-            "Read narrow file ranges instead of whole large modules.",
+            "Read narrow file ranges instead of whole modules.",
         ],
         next_prompt=_next_prompt(goal, target),
     )
@@ -410,7 +483,6 @@ def improve_request(
     target: str = "",
     constraints: dict[str, Any] | None = None,
 ) -> ImprovedRequestResponse:
-    """Convert a rough user request into a scoped task prompt."""
     compact_goal = _compact_text(goal)
     compact_target = _compact_text(target)
     lowered = f"{compact_goal} {compact_target}".lower()
@@ -421,15 +493,13 @@ def improve_request(
             clarified_goal="No clear user goal was provided.",
             should_ask_user=True,
             question="What outcome should Claude Bridge help you achieve?",
-            improved_prompt=(
-                "State the desired outcome, the target project area, and any constraints."
-            ),
+            improved_prompt="State the desired outcome, target area, and constraints.",
         )
 
     response = ImprovedRequestResponse(
         clarified_goal=_intent_summary(compact_goal, compact_target),
         assumptions=[
-            "Prefer the smallest useful implementation slice.",
+            "Prefer smallest useful implementation slice.",
             "Preserve existing module boundaries and project style.",
         ],
         constraints=[
@@ -438,18 +508,18 @@ def improve_request(
             *constraint_values,
         ],
         acceptance_criteria=[
-            "Relevant files are identified before editing.",
-            "Changes are limited to the stated goal.",
-            "Focused validation is run or explicitly recommended.",
+            "Relevant files identified before editing.",
+            "Changes limited to stated goal.",
+            "Focused validation run or recommended.",
         ],
-        suggested_first_slice="Inspect the target and draft a narrow plan before editing.",
+        suggested_first_slice="Inspect target and draft narrow plan before editing.",
         improved_prompt=_next_prompt(compact_goal, compact_target),
     )
 
     if _contains_any(lowered, {"quality", "professional", "clean", "refactor", "polish"}):
         response.acceptance_criteria.extend(
             [
-                "The patch improves one named quality dimension.",
+                "Patch improves one named quality dimension.",
                 "Behavior remains covered by existing or added focused tests.",
             ]
         )
@@ -457,9 +527,7 @@ def improve_request(
 
     if _contains_any(lowered, {"bug", "fix", "failing", "failure", "test pass"}):
         response.assumptions.append("A failing test, traceback, or reproduction may exist.")
-        response.acceptance_criteria.append(
-            "The failure is reproduced or inspected before the fix."
-        )
+        response.acceptance_criteria.append("The failure is reproduced or inspected before the fix.")
         response.suggested_first_slice = "Find the reproduction or failing test before editing."
 
     if _contains_any(lowered, {"public", "publish", "release", "pypi", "alpha"}):
@@ -472,8 +540,8 @@ def improve_request(
         response.suggested_first_slice = "Run a release-readiness doc and metadata pass first."
 
     if _contains_any(lowered, {"token", "context", "cost", "cheap", "budget"}):
-        response.acceptance_criteria.append("The plan names a minimal context strategy.")
-        response.suggested_first_slice = "Reduce context/tool surface before implementation work."
+        response.acceptance_criteria.append("Plan names a minimal context strategy.")
+        response.suggested_first_slice = "Reduce context/tool surface before implementation."
 
     _apply_request_ambiguity_triggers(response, compact_goal, compact_target, constraints)
     _dedupe_improved_request(response)
@@ -481,7 +549,6 @@ def improve_request(
 
 
 def plan_quality_review(request: PlanQualityReviewRequest) -> PlanQualityReviewResponse:
-    """Critique an implementation plan before execution."""
     plan = _compact_text(request.plan)
     goal = _compact_text(request.goal)
     target = _compact_text(request.target)
@@ -502,8 +569,8 @@ def plan_quality_review(request: PlanQualityReviewRequest) -> PlanQualityReviewR
 
     review = PlanQualityReviewResponse(
         verdict="proceed_with_caution",
-        summary="The plan is reviewable but should stay narrow and validated.",
-        strengths=["The plan can be assessed before execution."],
+        summary="Plan is reviewable but should stay narrow and validated.",
+        strengths=["Plan can be assessed before execution."],
         missing_context=[
             "Relevant source files near the target.",
             "Existing tests for touched behavior.",
@@ -525,31 +592,25 @@ def plan_quality_review(request: PlanQualityReviewRequest) -> PlanQualityReviewR
 
     if _contains_any(lowered, {"all files", "entire codebase", "everything", "whole project"}):
         review.verdict = "revise"
-        review.scope_warnings.append("The plan appears broader than one safe implementation slice.")
-        review.recommended_changes.append(
-            "Split the work into one target area and one validation path."
-        )
+        review.scope_warnings.append("Plan appears broader than one safe slice.")
+        review.recommended_changes.append("Split work into one target area and one validation path.")
 
     if _contains_any(lowered, {"refactor", "rewrite", "restructure", "move modules"}):
-        review.scope_warnings.append(
-            "Refactor-heavy work should name module boundaries and rollback risk."
-        )
+        review.scope_warnings.append("Refactor-heavy work should name module boundaries and rollback risk.")
         review.recommended_changes.append("Separate behavior changes from structural cleanup.")
 
     if not _contains_any(lowered, {"test", "pytest", "ruff", "mypy", "validation", "check"}):
         review.verdict = "revise"
-        review.concerns.append("The plan does not name validation.")
+        review.concerns.append("Plan does not name validation.")
         review.missing_tests.append("At least one relevant test, lint, or type-check command.")
 
     if _contains_any(lowered, {"rm -r", "rm -rf", "sudo", "curl |", "wget |", "auto_approve"}):
         review.verdict = "revise"
-        review.security_warnings.append("The plan mentions risky shell or approval behavior.")
-        review.recommended_changes.append(
-            "Use guarded tools and keep destructive actions explicit."
-        )
+        review.security_warnings.append("Plan mentions risky shell or approval behavior.")
+        review.recommended_changes.append("Use guarded tools and keep destructive actions explicit.")
 
     if _contains_any(lowered, {"read all", "open all", "dump", "full logs", "entire log"}):
-        review.token_warnings.append("The context plan may waste tokens with broad reads.")
+        review.token_warnings.append("Context plan may waste tokens with broad reads.")
         review.recommended_changes.append("Use rg, relevance search, and narrow file ranges first.")
 
     if request.constraints:
@@ -564,7 +625,6 @@ def plan_quality_review(request: PlanQualityReviewRequest) -> PlanQualityReviewR
 def review_result_quality(
     request: ResultQualityReviewRequest,
 ) -> ResultQualityReviewResponse:
-    """Review completed work for product-quality risks using local heuristics."""
     goal = _compact_text(request.goal)
     result_summary = _compact_text(request.result_summary)
     changed_files = [_compact_text(path) for path in request.changed_files if _compact_text(path)]
@@ -579,32 +639,27 @@ def review_result_quality(
     if not goal or not result_summary:
         return ResultQualityReviewResponse(
             verdict="needs_clarification",
-            summary="The review needs both the original goal and a result summary.",
-            goal_alignment=["Provide the intended outcome and what changed."],
+            summary="Review needs both original goal and result summary.",
+            goal_alignment=["Provide intended outcome and what changed."],
             validation_gaps=["Validation cannot be assessed without a completed-work summary."],
             next_small_fixes=[
-                "Call review_result_quality again with goal and result_summary filled in."
+                "Call review_result_quality again with goal and result_summary filled in.",
             ],
         )
 
     review = ResultQualityReviewResponse(
         verdict="pass_with_notes",
         evidence_level="missing",
-        summary=(
-            "The result appears reviewable; validation is based on reported evidence, not an "
-            "independent rerun."
-        ),
+        summary="Result appears reviewable; validation is based on reported evidence, not independent rerun.",
         goal_alignment=["Result summary is present and can be compared with the stated goal."],
-        strengths=["The work has an explicit goal and completion summary."],
-        next_small_fixes=["Address the highest-risk remaining gap before broad follow-up work."],
+        strengths=["Work has an explicit goal and completion summary."],
+        next_small_fixes=["Address highest-risk remaining gap before broad follow-up work."],
     )
 
     if changed_files:
         review.strengths.append("Changed files were supplied for review.")
     else:
-        review.validation_gaps.append(
-            "Changed files were not supplied, so scope is hard to verify."
-        )
+        review.validation_gaps.append("Changed files were not supplied, so scope is hard to verify.")
         review.next_small_fixes.append("List the changed files in a compact summary.")
 
     if _has_validation_evidence(request.validation, validation_text):
@@ -638,7 +693,6 @@ def suggest_bridge_config(
     *,
     current_config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Suggest safe Bridge config changes for a user goal."""
     advice = advise_next_step(AgentAdviceRequest(goal=goal, current_config=current_config))
     suggestions = [item.to_dict() for item in advice.config_suggestions]
     lowered = _compact_text(goal).lower()
@@ -671,7 +725,7 @@ def suggest_bridge_config(
         )
 
     return {
-        "schema_version": "bridge_config_suggestions.v1",
+        _S: "bridge_config_suggestions.v1",
         "goal": _compact_text(goal),
         "suggestions": _dedupe_config_dicts(suggestions),
         "safe_keys": [
@@ -727,23 +781,23 @@ def _provider_parse_fallback(
 
 def _provider_advice_from_dict(payload: dict[str, Any]) -> tuple[AgentAdviceResponse, list[str]]:
     unsafe_config_keys: list[str] = []
-    should_ask_user = payload.get("should_ask_user", False)
+    should_ask_user = payload.get(_ASK, False)
     if not isinstance(should_ask_user, bool):
         raise ValueError("should_ask_user must be a boolean")
 
     advice = AgentAdviceResponse(
         schema_version="agent_advice.v1",
-        intent_summary=_string_field(payload, "intent_summary"),
-        recommended_next_step=_string_field(payload, "recommended_next_step"),
-        why_this_step=_string_field(payload, "why_this_step"),
-        needed_context=_string_list_field(payload, "needed_context"),
-        risks=_string_list_field(payload, "risks"),
-        validation=_string_list_field(payload, "validation"),
-        token_strategy=_string_list_field(payload, "token_strategy"),
+        intent_summary=_string_field(payload, _INT),
+        recommended_next_step=_string_field(payload, _REC),
+        why_this_step=_string_field(payload, _WHY),
+        needed_context=_string_list_field(payload, _CTX),
+        risks=_string_list_field(payload, _RSK),
+        validation=_string_list_field(payload, _VAL),
+        token_strategy=_string_list_field(payload, _TOK),
         config_suggestions=_provider_config_suggestions(payload, unsafe_config_keys),
         should_ask_user=should_ask_user,
-        question=_string_field(payload, "question"),
-        next_prompt=_string_field(payload, "next_prompt"),
+        question=_string_field(payload, _Q),
+        next_prompt=_string_field(payload, _NP),
     )
     if not advice.intent_summary or not advice.recommended_next_step:
         raise ValueError("provider advice is missing required summary or next step")
@@ -755,7 +809,7 @@ def _provider_config_suggestions(
     payload: dict[str, Any],
     unsafe_config_keys: list[str],
 ) -> list[ConfigSuggestion]:
-    raw_items = payload.get("config_suggestions", [])
+    raw_items = payload.get(_CFG, [])
     if raw_items is None:
         return []
     if not isinstance(raw_items, list):
@@ -861,7 +915,7 @@ def _intent_summary(goal: str, target: str) -> str:
 def _base_context(target: str) -> list[str]:
     context = [
         "Project docs that define current behavior and constraints.",
-        "The smallest relevant source files for the requested change.",
+        "Smallest relevant source files for the requested change.",
         "Existing tests around the touched behavior.",
     ]
     if target:
@@ -1055,7 +1109,7 @@ def _review_scope(
         review.next_small_fixes.append("Separate behavior changes from cleanup in the summary.")
     if _contains_any(lowered, {"unrelated", "while there", "also changed", "drive-by"}):
         review.verdict = "needs_followup"
-        review.scope_drift.append("The summary suggests unrelated changes may have been included.")
+        review.scope_drift.append("Summary suggests unrelated changes may have been included.")
 
 
 def _review_docs_drift(
@@ -1090,7 +1144,7 @@ def _review_security_config(lowered: str, review: ResultQualityReviewResponse) -
     if _contains_any(lowered, risky_terms):
         review.verdict = "needs_followup"
         review.security_config_risks.append(
-            "The result mentions sensitive config, shell, or secret-adjacent behavior."
+            "Result mentions sensitive config, shell, or secret-adjacent behavior."
         )
         review.next_small_fixes.append(
             "Verify the change did not weaken hard denies, path bounds, or secret handling."
@@ -1122,40 +1176,36 @@ def _review_self_critique(
         )
         return
 
-    if self_critique.get("ok") is False:
-        message = _compact_text(str(self_critique.get("message", "self_critique warning")))
+    if self_critique.get(_OK) is False:
+        message = _compact_text(str(self_critique.get(_MSG, "self_critique warning")))
         review.self_critique_findings.append(f"self_critique warning: {message}")
         review.next_small_fixes.append("Resolve or explain deterministic self_critique warnings.")
         if review.verdict == "pass_with_notes":
             review.verdict = "needs_followup"
         return
 
-    details = self_critique.get("details", {})
+    details = self_critique.get(_DET, {})
     if not isinstance(details, dict):
         review.self_critique_findings.append("self_critique payload did not include details.")
         return
 
-    summary = details.get("summary", {})
+    summary = details.get(_SUM, {})
     if not isinstance(summary, dict):
         review.self_critique_findings.append("self_critique details did not include a summary.")
         return
 
-    total_issues = _int_field(summary, "total_issues")
+    total_issues = _int_field(summary, _TOT)
     if total_issues <= 0:
         review.strengths.append("Deterministic self_critique reported no issues.")
         return
 
-    review.self_critique_findings.append(
-        f"Deterministic self_critique reported {total_issues} issue(s)."
-    )
-    by_severity = summary.get("by_severity", {})
+    review.self_critique_findings.append(f"Deterministic self_critique reported {total_issues} issue(s).")
+    by_severity = summary.get(_BY_SEV, {})
     if isinstance(by_severity, dict):
         severe = sum(_coerce_int(by_severity.get(key, 0)) for key in ("critical", "high"))
         if severe > 0:
             review.verdict = "needs_followup"
-            review.self_critique_findings.append(
-                f"self_critique includes {severe} high-severity issue(s)."
-            )
+            review.self_critique_findings.append(f"self_critique includes {severe} high-severity issue(s).")
     review.next_small_fixes.append("Review self_critique findings before broad follow-up work.")
 
 
@@ -1223,134 +1273,6 @@ def _contains_any(text: str, needles: set[str]) -> bool:
     return any(needle in text for needle in needles)
 
 
-def _contains_any_compiled(text: str, pattern_groups: tuple[set[str], ...]) -> bool:
-    """Check multiple needle groups efficiently using set intersection."""
-    return any(needle in text for group in pattern_groups for needle in group)
-
-
-_pattern_cache: dict[frozenset[str], tuple[str, ...]] = {}
-
-
-def _get_cached_patterns(needles: frozenset[str]) -> tuple[str, ...]:
-    if needles not in _pattern_cache:
-        _pattern_cache[needles] = tuple(sorted(needles))
-    return _pattern_cache[needles]
-
-
-def advise_next_step_optimized(request: AgentAdviceRequest) -> AgentAdviceResponse:
-    """Optimized version using pre-compiled patterns and reduced string operations."""
-    compact_goal = _compact_text(request.goal)
-    compact_target = _compact_text(request.target)
-    lowered = f"{compact_goal} {compact_target}".lower()
-
-    if not compact_goal:
-        return AgentAdviceResponse(
-            intent_summary="No clear user goal was provided.",
-            recommended_next_step="Ask the user for the desired outcome before reading files.",
-            why_this_step="A missing goal would make context selection and validation arbitrary.",
-            should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
-            next_prompt="State the product or code outcome you want, plus any important constraints.",
-        )
-
-    advice = AgentAdviceResponse(
-        intent_summary=_intent_summary(compact_goal, compact_target),
-        recommended_next_step="Create a scoped first slice before editing files.",
-        why_this_step="A small first slice keeps the work reviewable and avoids broad context reads.",
-        needed_context=_base_context(compact_target),
-        risks=[
-            "The request may be broader than one safe implementation slice.",
-            "Validation can be missed if acceptance criteria are not stated up front.",
-        ],
-        validation=["Run the smallest focused tests for touched behavior."],
-        token_strategy=[
-            "Use rg or relevance search before opening many files.",
-            "Read narrow file ranges instead of whole large modules.",
-        ],
-        next_prompt=_next_prompt(compact_goal, compact_target),
-    )
-
-    _apply_goal_patterns(advice, lowered)
-    _apply_context_inputs(advice, request.recent_context, request.constraints)
-    _apply_config_suggestions(advice, lowered, request.current_config)
-    _apply_ambiguity_triggers(advice, compact_goal, compact_target,
-                              request.recent_context, request.constraints)
-    _dedupe_response(advice)
-    return advice
-
-
-def improve_request_optimized(
-    goal: str,
-    *,
-    target: str = "",
-    constraints: dict[str, Any] | None = None,
-) -> ImprovedRequestResponse:
-    """Optimized version with reduced redundant string operations."""
-    compact_goal = _compact_text(goal)
-    compact_target = _compact_text(target)
-    lowered = f"{compact_goal} {compact_target}".lower()
-    constraint_values = _constraint_texts(constraints or {})
-
-    if not compact_goal:
-        return ImprovedRequestResponse(
-            clarified_goal="No clear user goal was provided.",
-            should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
-            improved_prompt="State the desired outcome, the target project area, and any constraints.",
-        )
-
-    response = ImprovedRequestResponse(
-        clarified_goal=_intent_summary(compact_goal, compact_target),
-        assumptions=[
-            "Prefer the smallest useful implementation slice.",
-            "Preserve existing module boundaries and project style.",
-        ],
-        constraints=[
-            "Do not weaken shell, path, approval, or secret-handling safeguards.",
-            "Avoid unrelated refactors.",
-            *constraint_values,
-        ],
-        acceptance_criteria=[
-            "Relevant files are identified before editing.",
-            "Changes are limited to the stated goal.",
-            "Focused validation is run or explicitly recommended.",
-        ],
-        suggested_first_slice="Inspect the target and draft a narrow plan before editing.",
-        improved_prompt=_next_prompt(compact_goal, compact_target),
-    )
-
-    _apply_improved_request_patterns(response, lowered)
-    _apply_request_ambiguity_triggers(response, compact_goal, compact_target, constraints)
-    _dedupe_improved_request(response)
-    return response
-
-
-def _apply_improved_request_patterns(response: ImprovedRequestResponse, lowered: str) -> None:
-    """Apply goal patterns to improved request - consolidated pattern matching."""
-    if _contains_any(lowered, {"quality", "professional", "clean", "refactor", "polish"}):
-        response.acceptance_criteria.extend([
-            "The patch improves one named quality dimension.",
-            "Behavior remains covered by existing or added focused tests.",
-        ])
-        response.suggested_first_slice = "Choose one concrete quality issue and fix it end to end."
-
-    if _contains_any(lowered, {"bug", "fix", "failing", "failure", "test pass"}):
-        response.assumptions.append("A failing test, traceback, or reproduction may exist.")
-        response.acceptance_criteria.append("The failure is reproduced or inspected before the fix.")
-        response.suggested_first_slice = "Find the reproduction or failing test before editing."
-
-    if _contains_any(lowered, {"public", "publish", "release", "pypi", "alpha"}):
-        response.acceptance_criteria.extend([
-            "Public docs avoid overclaiming planned features.",
-            "Release validation commands are identified.",
-        ])
-        response.suggested_first_slice = "Run a release-readiness doc and metadata pass first."
-
-    if _contains_any(lowered, {"token", "context", "cost", "cheap", "budget"}):
-        response.acceptance_criteria.append("The plan names a minimal context strategy.")
-        response.suggested_first_slice = "Reduce context/tool surface before implementation work."
-
-
 def _int_field(data: dict[str, Any], key: str) -> int:
     return _coerce_int(data.get(key, 0))
 
@@ -1392,14 +1314,13 @@ def _apply_ambiguity_triggers(
     if len(target) > 80:
         triggers.append("broad_target")
 
-    ambiguity_triggers = [t for t in triggers if t not in ("missing_validation_evidence", "broad_target")]
-    advice.ambiguity_triggers = triggers
-    if ambiguity_triggers:
+    if triggers:
         advice.uncertainty_flag = True
+        advice.ambiguity_triggers = triggers
         advice.should_ask_user = True
         advice.question = (
             "Multiple paths or ambiguous constraints detected. "
-            "Which direction should take priority: " + ", ".join(ambiguity_triggers) + "?"
+            "Which direction should take priority: " + ", ".join(triggers) + "?"
         )
 
 
@@ -1439,9 +1360,33 @@ def _apply_request_ambiguity_triggers(
     ambiguity_triggers = [t for t in triggers if t not in ("missing_validation_evidence", "broad_target")]
     response.ambiguity_triggers = triggers
     if ambiguity_triggers:
-        response.uncertainty_flag = True
         response.should_ask_user = True
         response.question = (
-            "Ambiguous or competing goals detected. "
-            "Clarify priorities: " + ", ".join(ambiguity_triggers) + "?"
+            f"Ambiguity detected: {', '.join(ambiguity_triggers)}. "
+            "Which direction should take priority?"
         )
+
+
+def advise_next_step_compact(request: AgentAdviceRequest) -> dict[str, Any]:
+    advice = advise_next_step(request)
+    return advice.to_compact_dict()
+
+
+def improve_request_compact(
+    goal: str,
+    *,
+    target: str = "",
+    constraints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    response = improve_request(goal, target=target, constraints=constraints)
+    return response.to_compact_dict()
+
+
+def plan_quality_review_compact(request: PlanQualityReviewRequest) -> dict[str, Any]:
+    review = plan_quality_review(request)
+    return review.to_compact_dict()
+
+
+def review_result_quality_compact(request: ResultQualityReviewRequest) -> dict[str, Any]:
+    review = review_result_quality(request)
+    return review.to_compact_dict()

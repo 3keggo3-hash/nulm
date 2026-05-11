@@ -29,9 +29,32 @@ _ALTERNATION_QUANTIFIER_PATTERN = re.compile(
     rf"\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
 )
 _DEEPLY_NESTED_PATTERN = re.compile(r"\([^)]*\([^)]*\)[^)]*\)")
-_REPEATED_NESTED_QUANTIFIER_PATTERN = re.compile(
-    rf"\({_REGEX_QUANTIFIER}[^)]*\([^)]*\{_REGEX_QUANTIFIER}[^)]*\)"
-)
+
+
+def _is_repeated_nested_quantifier(pattern: str) -> bool:
+    """Check for repeated nested quantifiers like (a+)+ or ((a+)+)+."""
+    depth = 0
+    last_was_quantifier = False
+    for i, ch in enumerate(pattern):
+        if ch == "(":
+            depth += 1
+            last_was_quantifier = False
+        elif ch == ")":
+            if last_was_quantifier and depth > 1:
+                return True
+            depth = max(0, depth - 1)
+            last_was_quantifier = False
+        elif ch in "*+?":
+            last_was_quantifier = True
+        elif ch.isdigit() and last_was_quantifier:
+            j = i
+            while j < len(pattern) and pattern[j].isdigit():
+                j += 1
+            if j < len(pattern) and pattern[j] == "}":
+                last_was_quantifier = True
+            else:
+                last_was_quantifier = False
+    return False
 
 
 def _policy_path() -> Path:
@@ -87,7 +110,7 @@ def regex_safety_reason(pattern: str) -> str | None:
         return "regex pattern contains alternation with outer quantifier (ReDoS risk)"
     if _DEEPLY_NESTED_PATTERN.search(pattern):
         return "regex pattern contains deep nesting with ReDoS risk"
-    if _REPEATED_NESTED_QUANTIFIER_PATTERN.search(pattern):
+    if _is_repeated_nested_quantifier(pattern):
         return "regex pattern contains repeated nested quantifiers with ReDoS risk"
     return None
 
