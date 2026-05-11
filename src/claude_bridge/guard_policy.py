@@ -561,6 +561,22 @@ _POLICY_CACHE_MTIME: float = 0.0
 _POLICY_CACHE_LOCK = threading.RLock()
 
 
+def _compute_policy_cache_key(policy_files: list[tuple[Path, str]]) -> str:
+    """Compute a stable cache key from policy file paths and mtimes.
+
+    Using mtime strings (not hash) avoids Python's process-level hash
+    randomization which makes hash() non-deterministic across invocations.
+    """
+    parts = []
+    for path, _ in policy_files:
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        parts.append(f"{path}:{mtime:.6f}")
+    return "|".join(parts)
+
+
 def _read_file_with_fallback(path: Path) -> str | None:
     """Read file contents or return None on any error."""
     try:
@@ -706,12 +722,11 @@ def load_guard_policy() -> dict[str, Any]:
 
     primary_path = _policy_path()
     policy_files = _resolve_policy_files()
-    current_mtime_key = tuple((str(path), _policy_mtime(path)) for path, _ in policy_files)
-    current_mtime_hash = hash(current_mtime_key)
+    cache_key = _compute_policy_cache_key(policy_files)
 
     with _POLICY_CACHE_LOCK:
         # Use cache if none of the policy files have changed
-        if _POLICY_CACHE and current_mtime_hash == _POLICY_CACHE_MTIME and current_mtime_hash != 0:
+        if _POLICY_CACHE and cache_key == _POLICY_CACHE_MTIME and cache_key != "":
             return dict(_POLICY_CACHE)
 
         merged = _load_policy_files()
@@ -736,7 +751,7 @@ def load_guard_policy() -> dict[str, Any]:
 
         _POLICY_CACHE.clear()
         _POLICY_CACHE.update(result)
-        _POLICY_CACHE_MTIME = current_mtime_hash
+        _POLICY_CACHE_MTIME = cache_key
 
         return result
 

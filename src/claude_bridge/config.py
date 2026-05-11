@@ -462,7 +462,8 @@ def project_dir() -> Path:
 
 
 def allowed_roots() -> tuple[Path, ...]:
-    return _ALLOWED_ROOTS_SNAPSHOT
+    with _CONFIG_LOCK:
+        return tuple(_CONFIG["allowed_roots"])
 
 
 def shell_timeout() -> int:
