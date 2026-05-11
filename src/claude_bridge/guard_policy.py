@@ -20,13 +20,17 @@ _RULES_YAML_FILENAME = ".claude-bridge/rules.yaml"
 _MAX_ITEMS = 100
 _MAX_PATTERN_LENGTH = 500
 _MAX_REGEX_PATTERN_LENGTH = 256
-_MAX_POLICY_FILE_BYTES = 2 * 1024 * 1024  # FIX: stricter limit for user-defined regexes
+_MAX_POLICY_FILE_BYTES = 2 * 1024 * 1024
 _REGEX_QUANTIFIER = r"(?:[*+?]|\{\d+(?:,\d*)?\})"
 _NESTED_QUANTIFIER_PATTERN = re.compile(
     rf"\((?:[^()\\]|\\.)*{_REGEX_QUANTIFIER}(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
 )
-_ALTERNATION_QUANTIFIER_PATTERN = re.compile(  # FIX: catch (a|aa)* style ReDoS
+_ALTERNATION_QUANTIFIER_PATTERN = re.compile(
     rf"\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)\s*{_REGEX_QUANTIFIER}"
+)
+_DEEPLY_NESTED_PATTERN = re.compile(r"\([^)]*\([^)]*\)[^)]*\)")
+_REPEATED_NESTED_QUANTIFIER_PATTERN = re.compile(
+    rf"\({_REGEX_QUANTIFIER}[^)]*\([^)]*\{_REGEX_QUANTIFIER}[^)]*\)"
 )
 
 
@@ -75,12 +79,16 @@ def _regex_map(value: Any) -> dict[str, str]:
 
 def regex_safety_reason(pattern: str) -> str | None:
     """Return a rejection reason for regex patterns with obvious ReDoS risk."""
-    if len(pattern) > _MAX_REGEX_PATTERN_LENGTH:  # FIX: 256 char limit for user-defined regexes
+    if len(pattern) > _MAX_REGEX_PATTERN_LENGTH:
         return "regex pattern exceeds maximum length"
     if _NESTED_QUANTIFIER_PATTERN.search(pattern):
         return "regex pattern contains nested quantifiers with ReDoS risk"
-    if _ALTERNATION_QUANTIFIER_PATTERN.search(pattern):  # FIX: catch (a|aa)* style ReDoS
+    if _ALTERNATION_QUANTIFIER_PATTERN.search(pattern):
         return "regex pattern contains alternation with outer quantifier (ReDoS risk)"
+    if _DEEPLY_NESTED_PATTERN.search(pattern):
+        return "regex pattern contains deep nesting with ReDoS risk"
+    if _REPEATED_NESTED_QUANTIFIER_PATTERN.search(pattern):
+        return "regex pattern contains repeated nested quantifiers with ReDoS risk"
     return None
 
 

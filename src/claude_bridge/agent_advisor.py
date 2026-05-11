@@ -71,6 +71,8 @@ class AgentAdviceResponse:
     should_ask_user: bool = False
     question: str = ""
     next_prompt: str = ""
+    uncertainty_flag: bool = False
+    ambiguity_triggers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the advice to a JSON-compatible dictionary."""
@@ -87,6 +89,8 @@ class AgentAdviceResponse:
             "should_ask_user": self.should_ask_user,
             "question": self.question,
             "next_prompt": self.next_prompt,
+            "uncertainty_flag": self.uncertainty_flag,
+            "ambiguity_triggers": list(self.ambiguity_triggers),
         }
 
 
@@ -141,6 +145,8 @@ class ImprovedRequestResponse:
     improved_prompt: str = ""
     should_ask_user: bool = False
     question: str = ""
+    uncertainty_flag: bool = False
+    ambiguity_triggers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the improved request to a JSON-compatible dictionary."""
@@ -154,6 +160,8 @@ class ImprovedRequestResponse:
             "improved_prompt": self.improved_prompt,
             "should_ask_user": self.should_ask_user,
             "question": self.question,
+            "uncertainty_flag": self.uncertainty_flag,
+            "ambiguity_triggers": list(self.ambiguity_triggers),
         }
 
 
@@ -391,6 +399,7 @@ def advise_next_step(request: AgentAdviceRequest) -> AgentAdviceResponse:
     _apply_goal_patterns(advice, lowered)
     _apply_context_inputs(advice, request.recent_context, request.constraints)
     _apply_config_suggestions(advice, lowered, request.current_config)
+    _apply_ambiguity_triggers(advice, goal, target, request.recent_context, request.constraints)
     _dedupe_response(advice)
     return advice
 
@@ -466,6 +475,7 @@ def improve_request(
         response.acceptance_criteria.append("The plan names a minimal context strategy.")
         response.suggested_first_slice = "Reduce context/tool surface before implementation work."
 
+    _apply_request_ambiguity_triggers(response, compact_goal, compact_target, constraints)
     _dedupe_improved_request(response)
     return response
 
@@ -1222,3 +1232,86 @@ def _coerce_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _apply_ambiguity_triggers(
+    advice: AgentAdviceResponse,
+    goal: str,
+    target: str,
+    recent_context: dict[str, Any],
+    constraints: dict[str, Any],
+) -> None:
+    triggers: list[str] = []
+    goal_lower = goal.lower()
+    target_lower = target.lower()
+
+    competing_goals = ["and", "but also", "simultaneously", "both"]
+    if any(cg in goal_lower for cg in competing_goals):
+        triggers.append("competing_goals")
+    if any(cg in target_lower for cg in competing_goals):
+        triggers.append("competing_goals")
+
+    conflicting_terms = ["but not", "avoid", "never", "must not", "don't"]
+    if any(ct in goal_lower for ct in conflicting_terms):
+        triggers.append("conflicting_constraints")
+
+    validation_terms = {"verify", "check", "test", "validate", "ensure"}
+    missing_validation = not any(vt in goal_lower for vt in validation_terms)
+    context_has_validation = recent_context.get("validation_failed") or recent_context.get("validation_passed")
+    if missing_validation and not context_has_validation:
+        triggers.append("missing_validation_evidence")
+
+    if len(target) > 80:
+        triggers.append("broad_target")
+
+    if triggers:
+        advice.uncertainty_flag = True
+        advice.ambiguity_triggers = triggers
+        advice.should_ask_user = True
+        advice.question = (
+            "Multiple paths or ambiguous constraints detected. "
+            "Which direction should take priority: " + ", ".join(triggers) + "?"
+        )
+
+
+def _apply_request_ambiguity_triggers(
+    response: ImprovedRequestResponse,
+    goal: str,
+    target: str,
+    constraints: dict[str, Any] | None,
+) -> None:
+    triggers: list[str] = []
+    goal_lower = goal.lower()
+    target_lower = target.lower()
+
+    competing_goals = ["and", "but also", "simultaneously", "both"]
+    if any(cg in goal_lower for cg in competing_goals):
+        triggers.append("competing_goals")
+    if any(cg in target_lower for cg in competing_goals):
+        triggers.append("competing_goals")
+
+    conflicting_terms = ["but not", "avoid", "never", "must not", "don't"]
+    if any(ct in goal_lower for ct in conflicting_terms):
+        triggers.append("conflicting_constraints")
+
+    validation_terms = {"verify", "check", "test", "validate", "ensure"}
+    missing_validation = not any(vt in goal_lower for vt in validation_terms)
+    if missing_validation:
+        triggers.append("missing_validation_evidence")
+
+    if len(target) > 80:
+        triggers.append("broad_target")
+
+    if constraints:
+        constraint_keys = list(constraints.keys()) if constraints else []
+        if len(constraint_keys) > 4:
+            triggers.append("multiple_constraints")
+
+    if triggers:
+        response.uncertainty_flag = True
+        response.ambiguity_triggers = triggers
+        response.should_ask_user = True
+        response.question = (
+            "Ambiguous or competing goals detected. "
+            "Clarify priorities: " + ", ".join(triggers) + "?"
+        )

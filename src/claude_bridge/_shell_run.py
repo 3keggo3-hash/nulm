@@ -46,14 +46,30 @@ _ENV_BLOCK_KEYS = frozenset(
     {
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
+        "AZURE_CLIENT_ID",
         "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID",
+        "AZURE_SUBSCRIPTION_ID",
+        "GITHUB_TOKEN",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "GITLAB_TOKEN",
+        "GITLAB_API_TOKEN",
         "GOOGLE_APPLICATION_CREDENTIALS",
+        "HEROKU_API_KEY",
+        "HEROKU_API_TOKEN",
+        "HEROKU_PASSWORD",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "DEEPSEEK_API_KEY",
         "CLAUDE_BRIDGE_AI_EVALUATOR_API_KEY",
         "DATABASE_URL",
         "PGPASSWORD",
+        "STRIPE_SECRET_KEY",
+        "TWILIO_AUTH_TOKEN",
+        "SENDGRID_API_KEY",
+        "SLACK_BOT_TOKEN",
+        "PRIVATE_KEY",
+        "SSH_PRIVATE_KEY",
     }
 )
 
@@ -157,17 +173,11 @@ async def run_shell(
             decision_in_details=True,
         )
     if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            ai_decision.reason,
-            code="approval_rejected",
-            details={
-                "command": _mask_secrets(command),
-                "risk_level": analysis["details"]["risk_level"],
-                "risk_reasons": analysis["details"]["risk_reasons"],
-            },
-            decision=ai_decision,
-            decision_in_details=True,
+        ask_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ASK,
+            source=DecisionSource.AI,
+            reason=ai_decision.reason,
         )
     if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision

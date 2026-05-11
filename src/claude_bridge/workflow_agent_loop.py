@@ -174,6 +174,22 @@ async def run_agent_loop_step(
             },
         )
 
+    if not isinstance(search, str) or not isinstance(replace, str):
+        return json_response(
+            False,
+            "search and replace must be strings",
+            code="invalid_patch_params",
+            details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
+        )
+    for val, name in ((search, "search"), (replace, "replace")):
+        if "$(" in val or "${" in val or "`" in val or "|" in val or "&" in val or ";" in val:
+            return json_response(
+                False,
+                f"{name} contains shell injection syntax",
+                code="unsafe_patch_param",
+                details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
+            )
+
     try:
         patch_payload = json.loads(await patch_file(file=file, search=search, replace=replace))
     except (json.JSONDecodeError, TypeError):
@@ -231,8 +247,40 @@ async def run_agent_loop_step(
                 if decision == "stop_success"
                 else "inspect validation output and prepare the next smallest patch"
             ),
+            "self_check": _step_self_check(validation_ok, iteration, max_iterations),
         },
     )
+
+
+def _step_self_check(validation_ok: bool, iteration: int, max_iterations: int) -> dict[str, Any]:
+    """Run a self-check at critical milestones: validation failed or approaching iteration limit."""
+    remaining = max_iterations - iteration
+    near_limit = remaining <= 2
+    critical = not validation_ok or near_limit
+
+    if not critical:
+        return {"triggered": False}
+
+    concerns: list[str] = []
+    recommendation: str = ""
+
+    if not validation_ok:
+        concerns.append("validation failed at this step")
+        recommendation = "inspect validation output before continuing"
+
+    if near_limit:
+        concerns.append(f"approaching iteration limit ({remaining} remaining)")
+        recommendation = recommendation or "consider stopping or seeking user guidance"
+
+    return {
+        "triggered": True,
+        "milestone": "validation_failed" if not validation_ok else "iteration_limit_near",
+        "concerns": concerns,
+        "recommendation": recommendation,
+        "uncertainty_flags": (
+            ["missing_validation_evidence"] if not validation_ok else ["iteration_budget_exhausted"]
+        ),
+    }
 
 
 def build_agent_loop_session_summary(
