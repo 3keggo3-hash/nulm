@@ -58,7 +58,7 @@ def assert_decision(
     return decision
 
 
-async def reject_approval(_tool_name: str, _params: dict[str, Any]) -> bool:
+async def reject_approval(_tool_name: str, _params: dict[str, Any], **_kwargs: Any) -> bool:
     return False
 
 
