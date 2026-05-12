@@ -1,6 +1,5 @@
 """Tests for skill_executor module."""
 
-import pytest
 
 from claude_bridge.skill_executor import (
     SkillExecutor,

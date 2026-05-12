@@ -1,10 +1,8 @@
 """Tests for skill_schema module."""
 
 import json
-import tempfile
 from pathlib import Path
 
-import pytest
 
 from claude_bridge.skill_schema import (
     SkillMeta,
