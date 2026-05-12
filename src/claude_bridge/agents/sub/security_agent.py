@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult, AgentStatus
+
+if TYPE_CHECKING:
+    from claude_bridge.permissions import PermissionMatrix
 
 
 class SecurityAgent(BaseAgent):
@@ -49,12 +51,6 @@ class SecurityAgent(BaseAgent):
         findings: list[str] = []
         artifacts: dict[str, Any] = {"vulnerabilities": []}
 
-        shared_memory = None
-        try:
-            shared_memory = __import__("contextlib").nullcontext(None)
-        except Exception:
-            pass
-
         findings.append("Security scan complete")
         artifacts["vulnerabilities"] = []
 
@@ -73,14 +69,6 @@ class SecurityAgent(BaseAgent):
         """
         findings: list[str] = []
         artifacts: dict[str, Any] = {"secrets_found": []}
-
-        secret_patterns = [
-            (r"(?i)api[_-]?key\s*[:=]\s*['\"][^'\"]{8,}['\"]", "API key"),
-            (r"(?i)secret\s*[:=]\s*['\"][^'\"]{8,}['\"]", "Secret"),
-            (r"(?i)password\s*[:=]\s*['\"][^'\"]{8,}['\"]", "Password"),
-            (r"ghp_[A-Za-z0-9]{20,}", "GitHub token"),
-            (r"AKIA[0-9A-Z]{16}", "AWS access key"),
-        ]
 
         findings.append("Secret check complete")
         artifacts["secrets_found"] = []

@@ -1,7 +1,6 @@
 """Tests for base agent."""
 
 import pytest
-from unittest.mock import Mock
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult

@@ -1,6 +1,5 @@
 """Tests for shared memory space."""
 
-import pytest
 import threading
 
 from claude_bridge.agents.shared_memory import SharedMemorySpace
