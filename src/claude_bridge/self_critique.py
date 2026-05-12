@@ -103,7 +103,7 @@ def _collect_files(scope: str) -> tuple[list[Path], str | None]:
             if not entry.is_file() or entry.suffix not in _SUPPORTED_EXTENSIONS:
                 continue
             if len(files) >= _MAX_FILES:
-                warning = f"Reached file limit ({_MAX_FILES}); " "results may be incomplete"
+                warning = f"Reached file limit ({_MAX_FILES}); results may be incomplete"
                 break
             files.append(entry)
         return files, warning

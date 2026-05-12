@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import errno
+import os
 import shutil
+import tempfile
+from pathlib import Path
 from typing import Any, Callable
 
 from claude_bridge.git_ops import git_commit as _git_commit
@@ -74,13 +78,6 @@ async def move_file(
             code="same_path",
             details={"source": source, "destination": destination},
         )
-    if destination_path.exists() and not overwrite:
-        return json_response(
-            False,
-            f"Destination already exists: {destination}",
-            code="destination_exists",
-            details={"destination": destination},
-        )
     if not destination_path.parent.exists() and not create_parents:
         return json_response(
             False,
@@ -101,19 +98,36 @@ async def move_file(
     if create_parents:
         destination_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        if destination_path.exists() and overwrite:
-            if destination_path.is_dir():
-                if destination_path.is_symlink():
+        if overwrite:
+            os.replace(str(source_path), str(destination_path))
+        else:
+            if source_path.is_dir():
+                if destination_path.exists():
                     return json_response(
                         False,
-                        "Refusing to rmtree on a symlink directory",
-                        code="symlink_rmtree_blocked",
+                        f"Destination already exists: {destination}",
+                        code="destination_exists",
                         details={"destination": destination},
                     )
-                shutil.rmtree(destination_path)
+                os.rename(str(source_path), str(destination_path))
             else:
-                destination_path.unlink()
-        shutil.move(str(source_path), str(destination_path))
+                try:
+                    os.link(str(source_path), str(destination_path))
+                except FileExistsError:
+                    return json_response(
+                        False,
+                        f"Destination already exists: {destination}",
+                        code="destination_exists",
+                        details={"destination": destination},
+                    )
+                try:
+                    os.unlink(str(source_path))
+                except OSError:
+                    try:
+                        os.unlink(str(destination_path))
+                    except OSError:
+                        pass
+                    raise
     except OSError as exc:
         return json_response(
             False,
@@ -210,13 +224,6 @@ async def copy_path(
             code="same_path",
             details={"source": source, "destination": destination},
         )
-    if destination_path.exists() and not overwrite:
-        return json_response(
-            False,
-            f"Destination already exists: {destination}",
-            code="destination_exists",
-            details={"destination": destination},
-        )
     if not destination_path.parent.exists() and not create_parents:
         return json_response(
             False,
@@ -238,18 +245,6 @@ async def copy_path(
         destination_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         if source_path.is_dir():
-            if destination_path.exists() and overwrite:
-                if destination_path.is_dir():
-                    if destination_path.is_symlink():
-                        return json_response(
-                            False,
-                            "Refusing to rmtree on a symlink directory",
-                            code="symlink_rmtree_blocked",
-                            details={"destination": destination},
-                        )
-                    shutil.rmtree(destination_path)
-                else:
-                    destination_path.unlink()
             total_size = 0
             roots = allowed_roots()
             for f in source_path.rglob("*"):
@@ -276,16 +271,95 @@ async def copy_path(
                         "limit_bytes": 500 * 1024 * 1024,
                     },
                 )
-            shutil.copytree(source_path, destination_path, symlinks=True)
-        else:
-            if destination_path.exists() and destination_path.is_dir():
+
+            tmp_parent = Path(tempfile.mkdtemp(dir=str(destination_path.parent)))
+            tmp_dst = tmp_parent / "dst"
+            backup = None
+            try:
+                shutil.copytree(source_path, tmp_dst, symlinks=True)
+                if overwrite and destination_path.exists():
+                    backup = destination_path.with_name(
+                        destination_path.name + f".backup.{os.getpid()}"
+                    )
+                    os.rename(str(destination_path), str(backup))
+                os.rename(str(tmp_dst), str(destination_path))
+            except OSError as exc:
+                if exc.errno in (
+                    errno.EEXIST,
+                    errno.ENOTEMPTY,
+                    errno.ENOTDIR,
+                    errno.EISDIR,
+                ):
+                    return json_response(
+                        False,
+                        f"Destination already exists: {destination}",
+                        code="destination_exists",
+                        details={"destination": destination},
+                    )
                 return json_response(
                     False,
-                    f"Destination is a directory: {destination}",
-                    code="destination_is_directory",
-                    details={"destination": destination},
+                    f"Failed to copy path: {exc}",
+                    code="copy_failed",
+                    details={"source": source, "destination": destination},
                 )
-            shutil.copy2(source_path, destination_path)
+            finally:
+                if backup is not None:
+                    try:
+                        if Path(backup).exists():
+                            shutil.rmtree(backup)
+                    except OSError:
+                        pass
+                try:
+                    if tmp_parent.exists():
+                        shutil.rmtree(tmp_parent)
+                except OSError:
+                    pass
+        else:
+            tmp_fd, tmp_path_str = tempfile.mkstemp(dir=str(destination_path.parent))
+            os.close(tmp_fd)
+            tmp_path = Path(tmp_path_str)
+            try:
+                shutil.copy2(source_path, tmp_path)
+                if overwrite:
+                    os.replace(str(tmp_path), str(destination_path))
+                else:
+                    try:
+                        os.link(str(tmp_path), str(destination_path))
+                    except FileExistsError:
+                        return json_response(
+                            False,
+                            f"Destination already exists: {destination}",
+                            code="destination_exists",
+                            details={"destination": destination},
+                        )
+                    try:
+                        os.unlink(str(tmp_path))
+                    except OSError:
+                        try:
+                            os.unlink(str(destination_path))
+                        except OSError:
+                            pass
+                        raise
+            except OSError as exc:
+                if exc.errno == errno.EEXIST:
+                    return json_response(
+                        False,
+                        f"Destination already exists: {destination}",
+                        code="destination_exists",
+                        details={"destination": destination},
+                    )
+                return json_response(
+                    False,
+                    f"Failed to copy path: {exc}",
+                    code="copy_failed",
+                    details={"source": source, "destination": destination},
+                )
+            finally:
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except OSError:
+                    pass
     except OSError as exc:
         return json_response(
             False,

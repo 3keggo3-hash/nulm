@@ -151,14 +151,14 @@ def custom_secret_pattern_matches(content: str) -> list[str]:
     import concurrent.futures
 
     matches: list[str] = []
-    patterns = load_guard_policy()["secret_patterns"]
-    for name, pattern in patterns.items():
-        try:
-            compiled = re.compile(pattern)
-        except re.error:
-            continue
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(compiled.search, content)
+    compiled = _get_compiled_secret_patterns()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        futures = {
+            executor.submit(compiled[name].search, content): name
+            for name in compiled
+        }
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
             try:
                 if future.result(timeout=2):
                     matches.append(f"custom:{name}")
@@ -588,8 +588,28 @@ def validate_rules_dict(data: dict[str, Any]) -> list[ValidationError]:
 
 
 _POLICY_CACHE: dict[str, Any] = {}
-_POLICY_CACHE_MTIME: float = 0.0
+_POLICY_CACHE_MTIME: str | float = 0.0
 _POLICY_CACHE_LOCK = threading.RLock()
+
+_COMPILED_SECRET_PATTERNS: dict[str, re.Pattern] = {}
+_COMPILED_SECRET_LOCK = threading.Lock()
+
+
+def _get_compiled_secret_patterns() -> dict[str, re.Pattern]:
+    with _COMPILED_SECRET_LOCK:
+        patterns = load_guard_policy()["secret_patterns"]
+        stale = [
+            name for name in _COMPILED_SECRET_PATTERNS if name not in patterns
+        ]
+        for name in stale:
+            del _COMPILED_SECRET_PATTERNS[name]
+        for name, pattern in patterns.items():
+            if name not in _COMPILED_SECRET_PATTERNS:
+                try:
+                    _COMPILED_SECRET_PATTERNS[name] = re.compile(pattern)
+                except re.error:
+                    continue
+        return dict(_COMPILED_SECRET_PATTERNS)
 
 
 def _compute_policy_cache_key(policy_files: list[tuple[Path, str]]) -> str:
@@ -689,7 +709,10 @@ def _load_policy_files() -> dict[str, Any]:
         if raw is None:
             continue
         if fmt == "yaml":
-            parsed = _parse_yaml_safe(raw)
+            try:
+                parsed = _parse_yaml_safe(raw)
+            except ValueError:
+                continue
             if parsed is None:
                 # YAML validation details are reported by the CLI validator.
                 continue

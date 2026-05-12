@@ -264,3 +264,207 @@ class TestPathGuardDecision:
             pytest.skip("guard_policy not available")
         decision = tu.path_guard_decision("secret", "read", outside_workspace=True)
         assert decision.action == DecisionAction.DENY
+
+
+# ---------------------------------------------------------------------------
+# PermissionCard
+# ---------------------------------------------------------------------------
+
+
+class TestPermissionCard:
+    def test_basic_card_creation(self):
+        card = tu.PermissionCard(
+            agent="test_agent",
+            action="Test action",
+            reason="Testing permission card",
+            risk=25,
+        )
+        assert card.agent == "test_agent"
+        assert card.action == "Test action"
+        assert card.reason == "Testing permission card"
+        assert card.risk == 25
+        assert card.files == []
+
+    def test_card_with_files(self):
+        card = tu.PermissionCard(
+            agent="shell_agent",
+            action="Read files",
+            reason="Reading config",
+            risk=10,
+            files=["/etc/config", "/home/user/.config"],
+        )
+        assert len(card.files) == 2
+        assert "/etc/config" in card.files
+
+    def test_risk_category_safe(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=15
+        )
+        assert card.risk_category == "Safe"
+        assert card.risk_emoji == "🔒"
+
+    def test_risk_category_low(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=35
+        )
+        assert card.risk_category == "Low Risk"
+        assert card.risk_emoji == "🔓"
+
+    def test_risk_category_medium(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=55
+        )
+        assert card.risk_category == "Medium"
+        assert card.risk_emoji == "⚠️"
+
+    def test_risk_category_high(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=75
+        )
+        assert card.risk_category == "High"
+        assert card.risk_emoji == "🚨"
+
+    def test_risk_category_critical(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=95
+        )
+        assert card.risk_category == "Critical"
+        assert card.risk_emoji == "🚨"
+
+    def test_risk_category_blocked(self):
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=100
+        )
+        assert card.risk_category == "Blocked"
+        assert card.risk_emoji == "🚫"
+
+    def test_format_card(self):
+        card = tu.PermissionCard(
+            agent="shell_agent",
+            action="Run command",
+            reason="Testing format",
+            risk=30,
+            files=["/tmp/test"],
+        )
+        formatted = card.format_card()
+        assert "Permission Card" in formatted
+        assert "shell_agent" in formatted
+        assert "Run command" in formatted
+        assert "30/100" in formatted
+
+    def test_to_dict(self):
+        card = tu.PermissionCard(
+            agent="test_agent",
+            action="Test",
+            reason="Reason",
+            risk=20,
+            files=["/path/file.txt"],
+            tool_name="run_shell",
+            params={"key": "value"},
+        )
+        d = card.to_dict()
+        assert d["agent"] == "test_agent"
+        assert d["action"] == "Test"
+        assert d["risk"] == 20
+        assert d["risk_category"] == "Safe"
+        assert d["files"] == ["/path/file.txt"]
+        assert d["tool_name"] == "run_shell"
+        assert d["params"] == {"key": "value"}
+
+
+# ---------------------------------------------------------------------------
+# Turkish labels
+# ---------------------------------------------------------------------------
+
+
+class TestTurkishLabels:
+    def test_tr_labels_exist(self):
+        assert "permission_card_title" in tu._TR_LABELS
+        assert "agent" in tu._TR_LABELS
+        assert tu._TR_LABELS["permission_card_title"] == "İzin Kartı"
+
+    def test_risk_categories_exist(self):
+        assert "Safe" in tu._RISK_CATEGORIES
+        assert "Low Risk" in tu._RISK_CATEGORIES
+        assert tu._RISK_CATEGORIES["Safe"] == "Güvenli"
+        assert tu._RISK_CATEGORIES["High"] == "Yüksek"
+
+
+# ---------------------------------------------------------------------------
+# _extract_files_from_command (in _shell_run)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractFilesFromCommand:
+    def test_extract_absolute_paths(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("cat /etc/config /home/user/file.txt")
+        assert "/etc/config" in files
+        assert "/home/user/file.txt" in files
+
+    def test_extract_relative_paths(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("python src/main.py tests/test.py")
+        assert "src/main.py" in files
+        assert "tests/test.py" in files
+
+    def test_extract_tilde_paths(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("cat ~/Documents/file.txt")
+        assert "~/Documents/file.txt" in files
+
+    def test_ignores_flags(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("rm -rf /tmp/old_files --force")
+        assert "-rf" not in files
+        assert "--force" not in files
+
+    def test_empty_command(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("")
+        assert files == []
+
+    def test_no_paths(self):
+        from claude_bridge._shell_run import _extract_files_from_command
+
+        files = _extract_files_from_command("git status")
+        assert files == []
+
+
+# ---------------------------------------------------------------------------
+# request_approval with card
+# ---------------------------------------------------------------------------
+
+
+class TestRequestApprovalWithCard:
+    @pytest.mark.asyncio
+    async def test_request_approval_with_card_auto_approve(self, temp_project):
+        tu.approval_mode = lambda: (True, False)
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=10
+        )
+        result = await tu.request_approval("test_tool", {"key": "val"}, card=card)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_request_approval_without_card(self, temp_project):
+        tu.approval_mode = lambda: (False, False)
+        import sys
+        from io import StringIO
+
+        old_stderr = sys.stderr
+        sys.stderr = StringIO()
+        card = tu.PermissionCard(
+            agent="test", action="test", reason="test", risk=10
+        )
+        result = await tu.request_approval("test_tool", {"key": "val"}, card=card)
+        assert result is False
+        stderr_output = sys.stderr.getvalue()
+        assert "Permission Card" in stderr_output
+        sys.stderr = old_stderr
+

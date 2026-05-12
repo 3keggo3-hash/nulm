@@ -261,8 +261,7 @@ def validate_role_inheritance(bundle: PolicyBundle) -> list[ValidationError]:
                 ValidationError(
                     path=f"roles.{role_name}.extends",
                     message=(
-                        f"Circular inheritance detected: "
-                        f"role '{role_name}' is in its own ancestry"
+                        f"Circular inheritance detected: role '{role_name}' is in its own ancestry"
                     ),
                     code="circular_inheritance",
                 )
@@ -357,7 +356,7 @@ def validate_policy_bundle(bundle: PolicyBundle) -> list[ValidationError]:
             errors.append(
                 ValidationError(
                     path=f"roles.{role_name}",
-                    message=(f"Role key '{role_name}' does not match role name " f"'{role.name}'"),
+                    message=(f"Role key '{role_name}' does not match role name '{role.name}'"),
                     code="role_key_mismatch",
                 )
             )
@@ -665,8 +664,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.CRITICAL,
-                f"Role restriction ({role_name}): production environment "
-                "changes are not allowed",
+                f"Role restriction ({role_name}): production environment changes are not allowed",
                 [f"role restriction: {restriction}"],
                 {"role": role_name, "restriction": restriction},
             )
@@ -675,7 +673,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.CRITICAL,
-                f"Role restriction ({role_name}): infrastructure changes " "are not allowed",
+                f"Role restriction ({role_name}): infrastructure changes are not allowed",
                 [f"role restriction: {restriction}"],
                 {"role": role_name, "restriction": restriction},
             )
@@ -687,7 +685,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.HIGH,
-                "Contractor workspace restriction: path is outside the " "contractor/ subdirectory",
+                "Contractor workspace restriction: path is outside the contractor/ subdirectory",
                 ["role restriction: contractor_workspace"],
                 {"role": role_name, "restriction": "contractor_workspace"},
             )
@@ -696,8 +694,7 @@ def evaluate_role_pre_restrictions(
                 DecisionAction.DENY,
                 DecisionSource.BUILTIN_GUARD,
                 RiskLevel.HIGH,
-                "Contractor time restriction: operations are only allowed "
-                "Mon-Fri 06:00-20:00 UTC",
+                "Contractor time restriction: operations are only allowed Mon-Fri 06:00-20:00 UTC",
                 ["role restriction: contractor_time"],
                 {"role": role_name, "restriction": "contractor_time"},
             )
@@ -741,7 +738,7 @@ def evaluate_role_post_restrictions(
                     DecisionAction.ASK,
                     DecisionSource.APPROVAL,
                     RiskLevel.MEDIUM,
-                    f"Role restriction ({role_name}): write operations " "require approval",
+                    f"Role restriction ({role_name}): write operations require approval",
                     [f"role restriction: {restriction}"],
                     {"role": role_name, "restriction": restriction},
                 )

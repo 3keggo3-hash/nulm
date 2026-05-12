@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -17,7 +18,7 @@ from claude_bridge.guard_policy import (
     ToolRequestContext,
 )
 from claude_bridge.rules_engine import evaluate_runtime_policy_chain
-from claude_bridge.tool_utils import _mask_secrets, json_response, require_approval
+from claude_bridge.tool_utils import _mask_secrets, json_response, require_approval, PermissionCard
 
 from claude_bridge._process_session import (
     _ProcessSession,
@@ -70,8 +71,41 @@ _ENV_BLOCK_KEYS = frozenset(
         "SLACK_BOT_TOKEN",
         "PRIVATE_KEY",
         "SSH_PRIVATE_KEY",
+        "PYTHONSTARTUP",
+        "PYTHONOPT",
+        "PYTHONPATH",
+        "BASH_ENV",
+        "ENV",
+        "PROMPT_COMMAND",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "PERL5OPT",
+        "PERL5LIB",
+        "RUBYOPT",
+        "RUBYLIB",
+        "GEM_PATH",
+        "GEM_HOME",
+        "DOTNET_CLI_HOME",
+        "KUBECONFIG",
+        "DOCKER_CONFIG",
+        "DOCKER_HOST",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
     }
 )
+
+_PATH_PATTERN = re.compile(r"(?:/[\w\.\-\_]+)+|~/[\w\.\-\_]+|[\w\.\-\_]+/[\w\.\-\_]+")
+
+
+def _extract_files_from_command(command: str) -> list[str]:
+    """Extract potential file paths from a shell command string."""
+    matches = _PATH_PATTERN.findall(command)
+    return [m for m in matches if not m.startswith("-")]
 
 
 def _sanitized_env() -> dict[str, str]:
@@ -179,9 +213,72 @@ async def run_shell(
             source=DecisionSource.AI,
             reason=ai_decision.reason,
         )
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="approval_rejected",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ask_decision,
+            decision_in_details=True,
+        )
+    analysis_risk = analysis["details"].get("risk_level", "low")
     if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        if analysis_risk in ("medium", "high", "critical"):
+            allow_decision = _shell_analysis_decision(
+                analysis,
+                action=DecisionAction.ASK,
+                source=DecisionSource.BUILTIN_GUARD,
+                reason=f"Shell command risk level {analysis_risk} requires approval",
+            )
+            return json_response(
+                False,
+                f"Shell command requires approval (risk: {analysis_risk})",
+                code="approval_required",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis_risk,
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=allow_decision,
+                decision_in_details=True,
+            )
         allow_decision = rule_decision
+    elif analysis_risk in ("medium", "high", "critical"):
+        allow_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ASK,
+            source=DecisionSource.BUILTIN_GUARD,
+            reason=f"Shell command risk level {analysis_risk} requires approval",
+        )
+        return json_response(
+            False,
+            f"Shell command requires approval (risk: {analysis_risk})",
+            code="approval_required",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis_risk,
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=allow_decision,
+            decision_in_details=True,
+        )
     else:
+        risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+            analysis["details"].get("risk_level", "low"), 20
+        )
+        shell_card = PermissionCard(
+            agent="shell_agent",
+            action="Run shell command",
+            reason=f"Shell command requires approval (risk: {analysis_risk})",
+            risk=risk_score,
+            files=_extract_files_from_command(stripped),
+            tool_name="run_shell",
+            params={"command": _mask_secrets(stripped)},
+        )
         rejection = await require_approval(
             "run_shell",
             {"command": stripped},
@@ -192,6 +289,7 @@ async def run_shell(
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
             request_approval_fn=request_approval,
+            card=shell_card,
         )
         if rejection is not None:
             ask_decision = _shell_analysis_decision(
@@ -278,6 +376,7 @@ async def run_shell(
         "output_char_limit": _MAX_SHELL_OUTPUT_CHARS,
     }
     if result.returncode != 0:
+        await _maybe_detective_hook(stderr, stripped, project_dir=project_dir)
         return json_response(
             False,
             "Shell command failed",
@@ -294,6 +393,22 @@ async def run_shell(
         decision=allow_decision,
         decision_in_details=True,
     )
+
+
+async def _maybe_detective_hook(
+    error_output: str,
+    command: str,
+    *,
+    project_dir: Callable[[], Path],
+) -> None:
+    """Invoke Bridge Detective if an error pattern is detected."""
+    try:
+        from claude_bridge.detective import BridgeDetective
+
+        detector = BridgeDetective(error_output, command=command)
+        await detector.investigate()
+    except Exception:
+        pass
 
 
 async def start_process(
@@ -399,9 +514,60 @@ async def start_process(
             decision=ai_decision,
             decision_in_details=True,
         )
+    analysis_risk = analysis["details"].get("risk_level", "low")
     if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        if analysis_risk in ("medium", "high", "critical"):
+            allow_decision = _shell_analysis_decision(
+                analysis,
+                action=DecisionAction.ASK,
+                source=DecisionSource.BUILTIN_GUARD,
+                reason=f"Process risk level {analysis_risk} requires approval",
+            )
+            return json_response(
+                False,
+                f"Process start requires approval (risk: {analysis_risk})",
+                code="approval_required",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis_risk,
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=allow_decision,
+                decision_in_details=True,
+            )
         allow_decision = rule_decision
+    elif analysis_risk in ("medium", "high", "critical"):
+        allow_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ASK,
+            source=DecisionSource.BUILTIN_GUARD,
+            reason=f"Process risk level {analysis_risk} requires approval",
+        )
+        return json_response(
+            False,
+            f"Process start requires approval (risk: {analysis_risk})",
+            code="approval_required",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis_risk,
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=allow_decision,
+            decision_in_details=True,
+        )
     else:
+        risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+            analysis["details"].get("risk_level", "low"), 20
+        )
+        process_card = PermissionCard(
+            agent="process_agent",
+            action="Start background process",
+            reason=f"Process start requires approval (risk: {analysis_risk})",
+            risk=risk_score,
+            files=_extract_files_from_command(stripped),
+            tool_name="start_process",
+            params={"command": _mask_secrets(stripped)},
+        )
         rejection = await require_approval(
             "start_process",
             {"command": stripped},
@@ -412,6 +578,7 @@ async def start_process(
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
             request_approval_fn=request_approval,
+            card=process_card,
         )
         if rejection is not None:
             ask_decision = _shell_analysis_decision(
@@ -582,12 +749,23 @@ async def kill_process(
             details={"session_id": session_id},
         )
 
+    risk_score = 60 if force else 40
+    kill_card = PermissionCard(
+        agent="process_agent",
+        action="Terminate process",
+        reason=f"Process termination requires approval (force={force})",
+        risk=risk_score,
+        files=_extract_files_from_command(session.command),
+        tool_name="kill_process",
+        params={"session_id": session_id, "command": _mask_secrets(session.command), "force": force},
+    )
     rejection = await require_approval(
         "kill_process",
         {"session_id": session_id, "command": session.command, "force": force},
         rejection_message="Process termination rejected by user",
         rejection_details={"session_id": session_id, "command": session.command, "force": force},
         request_approval_fn=request_approval,
+        card=kill_card,
     )
     if rejection is not None:
         return rejection
@@ -646,6 +824,21 @@ async def interact_with_process(
             details={"session_id": session_id, "exit_code": session.exit_code},
         )
 
+    risk_score = 45 if close_stdin else 30
+    interact_card = PermissionCard(
+        agent="process_agent",
+        action="Send input to process",
+        reason=f"Process interaction requires approval (close_stdin={close_stdin})",
+        risk=risk_score,
+        files=_extract_files_from_command(session.command),
+        tool_name="interact_with_process",
+        params={
+            "session_id": session_id,
+            "command": _mask_secrets(session.command),
+            "input_length": len(input),
+            "close_stdin": close_stdin,
+        },
+    )
     rejection = await require_approval(
         "interact_with_process",
         {
@@ -662,6 +855,7 @@ async def interact_with_process(
             "close_stdin": close_stdin,
         },
         request_approval_fn=request_approval,
+        card=interact_card,
     )
     if rejection is not None:
         return rejection

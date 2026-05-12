@@ -212,7 +212,6 @@ def _autocomplete_suggestions(
                 "dependency_insights",
                 "bridge_save_note",
                 "bridge_read_notes",
-                "bridge_doodle",
                 "create_plan",
                 "execute_step",
                 "get_plan_status",

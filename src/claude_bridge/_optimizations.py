@@ -84,9 +84,7 @@ def load_bridgeignore_patterns_optimized(project_root: Path) -> list[str]:
     except OSError:
         return []
     with _BRIDGEIGNORE_LOCK:
-        old_keys = [
-            k for k in _BRIDGEIGNORE_CACHE if k[0] == str(project_root) and k != cache_key
-        ]
+        old_keys = [k for k in _BRIDGEIGNORE_CACHE if k[0] == str(project_root) and k != cache_key]
         for k in old_keys:
             _BRIDGEIGNORE_CACHE.pop(k, None)
         _BRIDGEIGNORE_CACHE[cache_key] = patterns
@@ -119,8 +117,7 @@ def _get_custom_patterns_cached() -> list[tuple[str, re.Pattern[str]]]:
     if new_version == current_version and _CUSTOM_PATTERNS_CACHE is not None:
         return list(_CUSTOM_PATTERNS_CACHE)
     patterns = [
-        (name, re.compile(pattern))
-        for name, pattern in policy.get("secret_patterns", {}).items()
+        (name, re.compile(pattern)) for name, pattern in policy.get("secret_patterns", {}).items()
     ]
     with _COMPILED_SECRET_LOCK:
         _CUSTOM_PATTERNS_CACHE = tuple(patterns)
@@ -129,26 +126,28 @@ def _get_custom_patterns_cached() -> list[tuple[str, re.Pattern[str]]]:
 
 
 _SENSITIVE_SUFFIXES = frozenset({".env", ".pem", ".key", ".p12", ".pfx"})
-_SENSITIVE_FILENAMES = frozenset({
-    ".env",
-    ".env.local",
-    ".env.production",
-    ".env.development",
-    ".env.staging",
-    ".npmrc",
-    ".netrc",
-    ".pypirc",
-    ".dockercfg",
-    ".git-credentials",
-    "credentials.json",
-    "application_default_credentials.json",
-    "id_rsa",
-    "id_dsa",
-    "id_ed25519",
-    "credentials",
-    "known_hosts",
-    "claude_desktop_config.json",
-})
+_SENSITIVE_FILENAMES = frozenset(
+    {
+        ".env",
+        ".env.local",
+        ".env.production",
+        ".env.development",
+        ".env.staging",
+        ".npmrc",
+        ".netrc",
+        ".pypirc",
+        ".dockercfg",
+        ".git-credentials",
+        "credentials.json",
+        "application_default_credentials.json",
+        "id_rsa",
+        "id_dsa",
+        "id_ed25519",
+        "credentials",
+        "known_hosts",
+        "claude_desktop_config.json",
+    }
+)
 _GIT_PARTS_CACHE: dict[str, tuple[str, ...]] = {}
 _DOCKER_PARTS_CACHE: dict[str, tuple[str, ...]] = {}
 
@@ -389,7 +388,12 @@ def _is_interactive_command_optimized(stripped: str, tokens: list[str]) -> bool:
 
 
 def _shell_analysis_empty_result(command: str) -> dict[str, Any]:
-    from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, make_policy_decision
+    from claude_bridge.guard_policy import (
+        DecisionAction,
+        DecisionSource,
+        RiskLevel,
+        make_policy_decision,
+    )
 
     empty_decision = make_policy_decision(
         DecisionAction.DENY,
@@ -411,7 +415,12 @@ def _shell_analysis_empty_result(command: str) -> dict[str, Any]:
 
 
 def _shell_analysis_parse_error(command: str, exc: ValueError) -> dict[str, Any]:
-    from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, make_policy_decision
+    from claude_bridge.guard_policy import (
+        DecisionAction,
+        DecisionSource,
+        RiskLevel,
+        make_policy_decision,
+    )
 
     parse_error_decision = make_policy_decision(
         DecisionAction.DENY,
@@ -433,7 +442,12 @@ def _shell_analysis_parse_error(command: str, exc: ValueError) -> dict[str, Any]
 
 
 def _shell_analysis_blocked_result(command: str, blocked_pattern: str) -> dict[str, Any]:
-    from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, make_policy_decision
+    from claude_bridge.guard_policy import (
+        DecisionAction,
+        DecisionSource,
+        RiskLevel,
+        make_policy_decision,
+    )
 
     blocked_decision = make_policy_decision(
         DecisionAction.DENY,
@@ -459,7 +473,12 @@ def _shell_analysis_blocked_result(command: str, blocked_pattern: str) -> dict[s
 
 
 def _shell_analysis_interactive_result(command: str) -> dict[str, Any]:
-    from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, make_policy_decision
+    from claude_bridge.guard_policy import (
+        DecisionAction,
+        DecisionSource,
+        RiskLevel,
+        make_policy_decision,
+    )
 
     interactive_decision = make_policy_decision(
         DecisionAction.DENY,

@@ -8,7 +8,6 @@ from claude_bridge.server import (
     apply_bridge_config_change,
     plan_quality_review,
     review_result_quality,
-    bridge_doodle,
     bridge_read_notes,
     bridge_save_note,
     build_context_pack,
@@ -122,7 +121,6 @@ __all__ = [
     "dependency_insights",
     "bridge_save_note",
     "bridge_read_notes",
-    "bridge_doodle",
     "run_mcp_server",
 ]
 

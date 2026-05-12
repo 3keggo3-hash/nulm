@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -34,9 +36,12 @@ class _ResponseTruncatedError(Exception):
     """Raised when an AI provider response exceeds the max response bytes limit."""
 
     pass
+
+
 _RATE_LIMIT_CALLS = 60
 _RATE_LIMIT_WINDOW_SEC = 60.0
 _RATE_LIMIT_TOKENS: deque[float] = deque(maxlen=_RATE_LIMIT_CALLS)
+_RATE_LIMIT_LOCK = threading.Lock()
 
 
 class EvaluationAction(str, Enum):
@@ -179,11 +184,12 @@ def reset_ai_latency_samples() -> None:
 def _check_rate_limit() -> bool:
     """Return True if under rate limit, False if limit exceeded."""
     now = time.monotonic()
-    while _RATE_LIMIT_TOKENS and now - _RATE_LIMIT_TOKENS[0] >= _RATE_LIMIT_WINDOW_SEC:
-        _RATE_LIMIT_TOKENS.popleft()
-    if len(_RATE_LIMIT_TOKENS) < _RATE_LIMIT_CALLS:
-        _RATE_LIMIT_TOKENS.append(now)
-        return True
+    with _RATE_LIMIT_LOCK:
+        while _RATE_LIMIT_TOKENS and now - _RATE_LIMIT_TOKENS[0] >= _RATE_LIMIT_WINDOW_SEC:
+            _RATE_LIMIT_TOKENS.popleft()
+        if len(_RATE_LIMIT_TOKENS) < _RATE_LIMIT_CALLS:
+            _RATE_LIMIT_TOKENS.append(now)
+            return True
     return False
 
 
@@ -286,6 +292,19 @@ def _mask_evaluation_params(params: dict[str, Any]) -> dict[str, Any]:
             masked_v = masked_v[:80] + "...[masked]"
         masked[k] = masked_v
     return masked
+
+
+def _strip_content_for_remote(params: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for k, v in params.items():
+        if k in _MASKED_CONTENT_FIELDS and isinstance(v, str):
+            safe[k] = (
+                f"[content-hash:{hashlib.sha256(v.encode()).hexdigest()[:16]}"
+                f" len:{len(v)}]"
+            )
+        else:
+            safe[k] = v
+    return safe
 
 
 def create_provider(
@@ -729,10 +748,12 @@ async def evaluate_tool_with_ai(
         return None
     masked_params = _mask_evaluation_params(dict(ctx.params))
     safe_params = json.dumps(masked_params)[:500]
+    is_local = isinstance(provider, LocalEvaluatorProvider)
+    remote_params = masked_params if is_local else _strip_content_for_remote(masked_params)
     request = EvaluationRequest(
         prompt=f"Tool: {ctx.tool_name}\nParams: {safe_params}",
         tool_name=ctx.tool_name,
-        tool_params=masked_params,
+        tool_params=remote_params,
         context={"project_dir": ctx.project_dir or ""},
     )
     try:
@@ -761,3 +782,38 @@ async def evaluate_tool_with_ai(
     if latency is not None:
         decision.metadata["ai_evaluator_latency_ms"] = latency
     return decision
+
+
+# ---------------------------------------------------------------------------
+# Token Budget Manager — automatic model routing based on task complexity
+# ---------------------------------------------------------------------------
+
+
+def measure_complexity(task: str, context: dict[str, Any]) -> float:
+    """Measure task complexity score based on token count, file count, and recursion depth.
+
+    The score is normalized to [0.0, 1.0].
+    """
+    token_count = len(task.split()) * 0.01
+    file_count_score = float(context.get("file_count", 0)) * 0.05
+    depth_score = float(context.get("nested_depth", 0)) * 0.1
+    score = token_count + file_count_score + depth_score
+    return min(score, 1.0)
+
+
+def select_model(task: str, context: dict[str, Any]) -> str:
+    """ "Select an AI model based on task complexity.
+
+    User NEVER sees or selects models — routing is automatic only.
+
+    :param task: The task description string.
+    :param context: Additional context dict with keys like file_count, nested_depth.
+    :returns: Model name string — one of claude-haiku, claude-sonnet, claude-opus.
+    """
+    complexity = measure_complexity(task, context)
+    if complexity < 0.3:
+        return "claude-haiku"
+    elif complexity < 0.7:
+        return "claude-sonnet"
+    else:
+        return "claude-opus"

@@ -222,8 +222,10 @@ def _workflow_agent_quality_optimized(
     quality_gate_plan = _workflow_quality_gate_plan(mode=mode, execute=execute)
 
     def _run_parallel_advisors() -> tuple[
-        AgentAdviceResponse, ImprovedRequestResponse,
-        PlanQualityReviewResponse, ResultQualityReviewResponse
+        AgentAdviceResponse,
+        ImprovedRequestResponse,
+        PlanQualityReviewResponse,
+        ResultQualityReviewResponse,
     ]:
         advice_req = AgentAdviceRequest(goal=goal, target=target, recent_context=recent_context)
         plan_req = PlanQualityReviewRequest(plan=plan, goal=goal, target=target)

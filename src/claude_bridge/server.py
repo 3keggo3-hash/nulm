@@ -736,10 +736,8 @@ if any(
         "dependency_insights",
         "bridge_save_note",
         "bridge_read_notes",
-        "bridge_doodle",
     }
 ):
-    from claude_bridge.fun_content import generate_doodle as _generate_doodle
     from claude_bridge.insights import (
         dependency_map as _insights_dependency_map,
         duplicate_code_scan as _insights_duplicate_code_scan,
@@ -771,8 +769,6 @@ if any(
         dependency_map=_insights_dependency_map,
         save_note=_insights_save_note,
         read_notes=_insights_read_notes,
-        generate_doodle=_generate_doodle,
-        doodle_random=__import__("random"),
         enabled_names=_ENABLED_TOOL_NAMES,
     )
 else:
@@ -787,7 +783,6 @@ duplicate_code_scan = _tool_or_disabled(_INSIGHTS_TOOLS, "duplicate_code_scan")
 dependency_insights = _tool_or_disabled(_INSIGHTS_TOOLS, "dependency_insights")
 bridge_save_note = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_save_note")
 bridge_read_notes = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_read_notes")
-bridge_doodle = _tool_or_disabled(_INSIGHTS_TOOLS, "bridge_doodle")
 
 
 _GIT_TOOLS = register_git_tools(
@@ -816,15 +811,14 @@ def _register_prompts_once() -> None:
     with _PROMPTS_REGISTERED_LOCK:
         if _prompts_registered:
             return
-    register_prompts(
-        mcp=mcp,
-        prompt_shortcuts=_PROMPT_SHORTCUTS,
-        prompt_arguments=_PROMPT_ARGUMENTS,
-        prompt_focus_arg=_PROMPT_FOCUS_ARG,
-        workflow_default_focus=_WORKFLOW_DEFAULT_FOCUS,
-        prompt_custom_builders=_PROMPT_CUSTOM_BUILDERS,
-        custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
-        workflow_prompt=_workflow_prompt,
-    )
-    with _PROMPTS_REGISTERED_LOCK:
+        register_prompts(
+            mcp=mcp,
+            prompt_shortcuts=_PROMPT_SHORTCUTS,
+            prompt_arguments=_PROMPT_ARGUMENTS,
+            prompt_focus_arg=_PROMPT_FOCUS_ARG,
+            workflow_default_focus=_WORKFLOW_DEFAULT_FOCUS,
+            prompt_custom_builders=_PROMPT_CUSTOM_BUILDERS,
+            custom_prompt_defaults=_CUSTOM_PROMPT_DEFAULTS,
+            workflow_prompt=_workflow_prompt,
+        )
         _prompts_registered = True

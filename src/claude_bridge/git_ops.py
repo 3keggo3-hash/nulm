@@ -253,3 +253,53 @@ def generate_pr_description(diff_text: str) -> dict[str, Any]:
         "affected_languages": affected_languages,
         "summary": summary,
     }
+
+
+def git_blame(file_path: str, *, project_dir: Path) -> list[dict[str, Any]]:
+    """Return git blame info for each line in the file."""
+    from datetime import datetime, timezone
+
+    blame_entries: list[dict[str, Any]] = []
+    root = _git_root(project_dir)
+    if root is None:
+        return blame_entries
+    repo_root = Path(root).resolve()
+
+    target_path = Path(file_path)
+    try:
+        if target_path.is_absolute():
+            relative_file = target_path.resolve().relative_to(repo_root).as_posix()
+        else:
+            relative_file = (project_dir / target_path).resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        return blame_entries
+
+    if not _is_safe_git_path(relative_file):
+        return blame_entries
+
+    result = _run_git(["git", "blame", "--line-porcelain", relative_file], cwd=repo_root)
+    if result.returncode != 0:
+        return blame_entries
+
+    current_entry: dict[str, Any] = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("hash "):
+            current_entry["hash"] = line[5:]
+        elif line.startswith("author "):
+            current_entry["author"] = line[8:]
+        elif line.startswith("committer-time "):
+            try:
+                ts = int(line.split(" ", 1)[1])
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                current_entry["time"] = dt.isoformat()
+            except (ValueError, IndexError):
+                pass
+        elif line.startswith("\t"):
+            current_entry["content"] = line[1:]
+            if current_entry.get("hash"):
+                blame_entries.append(current_entry)
+            current_entry = {}
+    if current_entry.get("hash"):
+        blame_entries.append(current_entry)
+
+    return blame_entries

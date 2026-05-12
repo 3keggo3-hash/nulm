@@ -168,7 +168,7 @@ def restore_checkpoint(name: str) -> dict[str, Any]:
     if status_result.stdout.strip():
         return {
             "ok": False,
-            "error": ("Uncommitted changes exist. " "Commit or stash before restoring checkpoint."),
+            "error": ("Uncommitted changes exist. Commit or stash before restoring checkpoint."),
             "name": name,
         }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import errno
 from typing import Any, Callable
 
 from claude_bridge.ai_evaluator import evaluate_tool_with_ai
@@ -258,13 +259,6 @@ async def write_file(
             code="not_a_file",
             details={"path": path},
         )
-    if target.is_symlink():
-        return json_response(
-            False,
-            f"Refusing to write to symlink: {path}",
-            code="symlink_blocked",
-            details={"path": path},
-        )
     try:
         _write_text_exact(target, content, exclusive=not overwrite)
     except FileExistsError:
@@ -289,6 +283,13 @@ async def write_file(
             details={"path": path},
         )
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return json_response(
+                False,
+                f"Refusing to write to symlink: {path}",
+                code="symlink_blocked",
+                details={"path": path},
+            )
         return json_response(
             False,
             f"Failed to write file: {exc}",

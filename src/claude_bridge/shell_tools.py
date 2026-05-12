@@ -22,7 +22,9 @@ from claude_bridge._shell_analysis import (  # noqa: F401
     _shell_analysis_decision,
     _truncate_output,
     analyze_shell_command,
+    compute_risk_score,
     is_interactive_command,
+    risk_score_category,
 )
 from claude_bridge._shell_constants import (  # noqa: F401
     _BLOCKED_DIRECT_COMMANDS,

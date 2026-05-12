@@ -609,3 +609,87 @@ class TestEvaluateToolWithAi:
         assert result is not None
         assert result.action == DecisionAction.ASK
         assert "failure" in result.reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# Token Budget Manager — automatic model routing
+# ---------------------------------------------------------------------------
+
+
+class TestMeasureComplexity:
+    def test_empty_task_low_complexity(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        score = measure_complexity("", {})
+        assert score == 0.0
+
+    def test_token_count_contributes(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        # 50 tokens * 0.01 = 0.5
+        score = measure_complexity(" ".join(["word"] * 50), {})
+        assert score == 0.5
+
+    def test_file_count_contributes(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        # "task" = 1 token * 0.01 = 0.01, 5 files * 0.05 = 0.25, total = 0.26
+        score = measure_complexity("task", {"file_count": 5})
+        assert abs(score - 0.26) < 0.001
+
+    def test_depth_contributes(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        # "task" = 1 token * 0.01 = 0.01, 3 depth * 0.1 = 0.3, total = 0.31
+        score = measure_complexity("task", {"nested_depth": 3})
+        assert abs(score - 0.31) < 0.001
+
+    def test_combined_scores(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        # 10 tokens * 0.01 = 0.1, 5 files * 0.05 = 0.25, 2 depth * 0.1 = 0.2
+        score = measure_complexity(" ".join(["word"] * 10), {"file_count": 5, "nested_depth": 2})
+        assert abs(score - 0.55) < 0.001
+
+    def test_capped_at_one(self) -> None:
+        from claude_bridge.ai_evaluator import measure_complexity
+
+        score = measure_complexity(" ".join(["word"] * 200), {"file_count": 100, "nested_depth": 100})
+        assert score == 1.0
+
+
+class TestSelectModel:
+    def test_low_complexity_selects_haiku(self) -> None:
+        from claude_bridge.ai_evaluator import select_model
+
+        model = select_model("simple task", {})
+        assert model == "claude-haiku"
+
+    def test_medium_complexity_selects_sonnet(self) -> None:
+        from claude_bridge.ai_evaluator import select_model
+
+        # 50 tokens * 0.01 = 0.5, 5 files * 0.05 = 0.25, total = 0.75 (capped at 1.0)
+        # but with 30 tokens to get 0.75... wait, 50 tokens = 0.5 + 5*0.05=0.25 = 0.75 > 0.7
+        # so 30 tokens = 0.3 + 5*0.05=0.25 = 0.55 which is < 0.7 but >= 0.3
+        model = select_model(" ".join(["task"] * 30), {"file_count": 5})
+        assert model == "claude-sonnet"
+
+    def test_high_complexity_selects_opus(self) -> None:
+        from claude_bridge.ai_evaluator import select_model
+
+        model = select_model(" ".join(["task"] * 100), {"file_count": 50, "nested_depth": 10})
+        assert model == "claude-opus"
+
+    def test_boundary_low_medium(self) -> None:
+        from claude_bridge.ai_evaluator import select_model
+
+        # complexity 0.3 is NOT < 0.3, so it becomes sonnet (not haiku)
+        model = select_model(" ".join(["task"] * 30), {})
+        assert model == "claude-sonnet"
+
+    def test_boundary_medium_high(self) -> None:
+        from claude_bridge.ai_evaluator import select_model
+
+        # complexity 0.7 is NOT < 0.7, so it becomes opus (not sonnet)
+        model = select_model(" ".join(["task"] * 70), {})
+        assert model == "claude-opus"

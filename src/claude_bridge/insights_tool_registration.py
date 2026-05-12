@@ -25,8 +25,6 @@ def register_insights_tools(
     dependency_map: Any,
     save_note: Any,
     read_notes: Any,
-    generate_doodle: Any,
-    doodle_random: Any,
     enabled_names: set[str] | None = None,
 ) -> dict[str, Any]:
     _enabled = enabled_names
@@ -259,16 +257,5 @@ def register_insights_tools(
             )
 
         results["bridge_read_notes"] = bridge_read_notes
-
-    if _enabled is None or "bridge_doodle" in _enabled:
-
-        @mcp.tool(**tool_options("Generate a random absurd doodle for fun.", read_only=True))
-        async def bridge_doodle() -> str:
-            started_at = time.perf_counter()
-            doodle = generate_doodle(doodle_random)
-            result = json_response(True, doodle["message"], details=doodle)
-            return audit_tool_call("bridge_doodle", {}, result, started_at=started_at)
-
-        results["bridge_doodle"] = bridge_doodle
 
     return results
