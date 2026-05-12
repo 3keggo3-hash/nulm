@@ -73,6 +73,19 @@ multi-format = [
 policy-yaml = [
     "PyYAML>=6.0",
 ]
+redis = [
+    "redis>=5.0.0",
+]
+observability = [
+    "prometheus-client>=0.19.0",
+]
+tracing = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+]
+streaming = [
+    "sse-starlette>=2.0.0",
+]
 
 [project.scripts]
 claude-bridge = "claude_bridge.cli:main"
@@ -101,3 +114,7 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: integration tests for component interaction",
+    "e2e: end-to-end tests for full workflows",
+]

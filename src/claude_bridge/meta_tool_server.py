@@ -13,6 +13,7 @@ from claude_bridge.anomaly import build_anomaly_summary
 from claude_bridge.audit import get_pending_escalations, process_appeal
 from claude_bridge.git_ops import generate_pr_description
 from claude_bridge.guard_policy import default_allow_decision, load_guard_policy
+from claude_bridge.tool_utils import is_within_root
 
 _COMMON_SHELL_COMMANDS = sorted(
     {
@@ -89,7 +90,9 @@ def _autocomplete_suggestions(
             parent = "."
             prefix = ""
         search_root = (base_dir / parent).resolve()
-        if search_root.exists() and search_root.is_dir():
+        if not is_within_root(search_root, base_dir):
+            pass
+        elif search_root.exists() and search_root.is_dir():
             try:
                 entries = sorted(search_root.iterdir(), key=lambda e: (not e.is_dir(), e.name))
             except OSError:
@@ -118,7 +121,9 @@ def _autocomplete_suggestions(
                 )
         if context and not stripped:
             ctx_path = (base_dir / context).resolve()
-            if ctx_path.exists() and ctx_path.is_dir():
+            if not is_within_root(ctx_path, base_dir):
+                pass
+            elif ctx_path.exists() and ctx_path.is_dir():
                 try:
                     ctx_entries = sorted(ctx_path.iterdir(), key=lambda e: (not e.is_dir(), e.name))
                 except OSError:

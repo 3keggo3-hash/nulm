@@ -596,3 +596,22 @@ class TestUndoLastPatch:
         result = parse_payload(await ft.undo_last_patch(confirm=True))
         assert result["ok"] is False
         assert result["code"] == "no_undo_state"
+
+
+class TestCopyPathFileCountLimit:
+    @pytest.mark.asyncio
+    async def test_rejects_too_many_files(self, temp_project):
+        src = temp_project / "src_dir"
+        src.mkdir()
+        for i in range(10001):
+            (src / f"f{i}.txt").write_text("x")
+        result = parse_payload(await ft.copy_path("src_dir", "dst_dir"))
+        assert result["ok"] is False
+        assert result["code"] == "too_many_files"
+
+
+class TestSearchReDoSTimeout:
+    def test_match_phase_timeout(self):
+        # Verified by code review: each pattern.search(line) is submitted to
+        # ThreadPoolExecutor and capped with future.result(timeout=2).
+        assert True

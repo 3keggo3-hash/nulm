@@ -1,0 +1,281 @@
+# Claude Bridge MCP API Specification
+
+> **Version:** 0.1.0
+> **Status:** Alpha
+
+Claude Bridge exposes tools via the Model Context Protocol (MCP). This document describes the MCP tool schemas and REST API endpoints (if HTTP server is enabled).
+
+## Tool Categories
+
+### File Tools
+
+#### `read_file`
+Read contents of a file.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `path` | string | Yes | Absolute path to the file |
+| `offset` | integer | No | Line offset to start reading from (0-indexed) |
+| `limit` | integer | No | Maximum number of lines to read |
+
+**Returns:** `{ok: boolean, content: string, metadata: {...}}`
+
+---
+
+#### `read_multiple_files`
+Read multiple files at once.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `paths` | string[] | Yes | Array of file paths |
+
+**Returns:** `{ok: boolean, files: [{path, content, error}]}`
+
+---
+
+#### `write_file`
+Write content to a file.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `path` | string | Yes | Absolute path to the file |
+| `content` | string | Yes | Content to write |
+| `create_dirs` | boolean | No | Create parent directories if needed |
+
+**Returns:** `{ok: boolean, path: string}`
+
+---
+
+#### `list_directory`
+List directory contents.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `path` | string | Yes | Directory path |
+| `include_hidden` | boolean | No | Include hidden files (default: false) |
+
+**Returns:** `{ok: boolean, entries: [{name, type, size, mtime}]}`
+
+---
+
+#### `search_in_files`
+Search for text patterns in files.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `pattern` | string | Yes | Regex pattern |
+| `paths` | string[] | No | Paths to search in (default: all) |
+| `include_glob` | string | No | Glob pattern for file filtering |
+
+**Returns:** `{ok: boolean, matches: [{path, line, content, line_num}]}`
+
+---
+
+### Shell Tools
+
+#### `run_shell`
+Execute a shell command.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `command` | string | Yes | Shell command to execute |
+| `timeout` | integer | No | Timeout in seconds (default: 30) |
+| `cwd` | string | No | Working directory |
+
+**Returns:** `{ok: boolean, stdout: string, stderr: string, exit_code: integer}`
+
+---
+
+#### `start_process`
+Start a long-running process.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `command` | string | Yes | Command to start |
+| `cwd` | string | No | Working directory |
+
+**Returns:** `{ok: boolean, session_id: string}`
+
+---
+
+#### `kill_process`
+Kill a running process.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `session_id` | string | Yes | Session ID of the process |
+
+**Returns:** `{ok: boolean}`
+
+---
+
+### Workflow Tools
+
+#### `run_workflow`
+Execute a multi-step workflow.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `task` | string | Yes | Task description |
+| `mode` | string | No | Workflow mode (review, optimize, quality) |
+| `max_steps` | integer | No | Maximum steps (default: 10) |
+
+**Returns:** `{ok: boolean, status: string, steps: [...], result: {...}}`
+
+---
+
+#### `run_agent_loop_session`
+Run a bounded agent loop session.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `task` | string | Yes | Task description |
+| `max_steps` | integer | No | Maximum loop iterations (default: 5) |
+| `project_dir` | string | No | Project directory |
+
+**Returns:** `{ok: boolean, session_id: string, steps: [...], result: {...}}`
+
+---
+
+### Agent Quality Tools
+
+#### `advise_next_step`
+Get AI advice for the next step.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `goal` | string | Yes | Current goal |
+| `context` | object | No | Additional context |
+
+**Returns:** `{ok: boolean, advice: {next_step, confidence, reasoning}}`
+
+---
+
+#### `improve_request`
+Convert a rough request into a structured implementation plan.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `request` | string | Yes | Vague user request |
+| `context` | object | No | Additional context |
+
+**Returns:** `{ok: boolean, plan: {assumptions, acceptance_criteria, first_slice, validation}}`
+
+---
+
+#### `review_result_quality`
+Review completed work for quality.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `files_changed` | string[] | Yes | Paths to changed files |
+| `context` | object | No | Review context |
+
+**Returns:** `{ok: boolean, review: {correctness, maintainability, test_coverage, suggestions}}`
+
+---
+
+### Meta Tools
+
+#### `bridge_status`
+Get current Claude Bridge status.
+
+**Parameters:** None
+
+**Returns:** `{ok: boolean, status: {state, config, uptime, version}}`
+
+---
+
+#### `get_config`
+Get current configuration.
+
+**Parameters:** None
+
+**Returns:** `{ok: boolean, config: {...}}`
+
+---
+
+#### `set_config_value`
+Update a runtime config value.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `key` | string | Yes | Config key |
+| `value` | any | Yes | New value |
+
+**Returns:** `{ok: boolean, config: {...}}`
+
+---
+
+## Observability Endpoints
+
+### `GET /health`
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy|degraded|unhealthy",
+  "timestamp": 1234567890.0,
+  "components": {
+    "config": {"status": "healthy", "message": "..."},
+    "audit": {"status": "healthy", "message": "..."},
+    "indexing": {"status": "healthy", "message": "..."},
+    "shell": {"status": "healthy", "message": "..."}
+  }
+}
+```
+
+### `GET /metrics`
+Prometheus metrics endpoint.
+
+**Response:** Prometheus text format with metrics like:
+- `claude_bridge_tool_calls_total{tool="read_file"} 42`
+- `claude_bridge_latency_ms_sum{operation="shell"} 1234.5`
+
+---
+
+## Error Codes
+
+| Code | Description |
+|------|-------------|
+| `tool_disabled` | Tool is disabled by active tool profile |
+| `path_outside_project` | Path is outside allowed project roots |
+| `permission_denied` | Operation not permitted by policy |
+| `invalid_tool_payload` | Tool returned invalid JSON |
+| `approval_required` | Operation requires user approval |
+| `rate_limited` | AI evaluator rate limit exceeded |
+
+---
+
+## Configuration Profiles
+
+### Tool Profiles
+- `essential`: Minimal tool set for low token overhead
+- `standard`: Balanced capability and token cost
+- `full`: All available tools
+
+### Approval Presets
+- `read-only`: Read-only tools only, writes fail closed
+- `dev-safe`: Client-managed approvals for writes/shell
+- `ci-like`: Reviewable automation with explicit approvals
+- `power-user`: Auto-approve enabled (requires confirmation)
+
+### Context Budget Profiles
+- `low-cost`: 2000 tokens budget
+- `balanced`: 4000 tokens budget (default)
+- `deep`: 8000 tokens budget

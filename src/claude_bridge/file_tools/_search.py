@@ -181,49 +181,55 @@ async def search_in_files(
                 details={"query": query},
             )
 
-    MAX_SEARCH_SCAN_MS = 5000
-    results: list[dict[str, Any]] = []
-    files_searched = 0
-    truncated = False
-    match_count = 0
+        MAX_SEARCH_SCAN_MS = 5000
+        results: list[dict[str, Any]] = []
+        files_searched = 0
+        truncated = False
+        match_count = 0
 
-    scan_deadline = _time.monotonic() + MAX_SEARCH_SCAN_MS / 1000.0
-    for file_path in files:
-        if _time.monotonic() > scan_deadline:
-            truncated = True
-            break
-        if sensitive_path_reason(file_path) is not None:
-            continue
-        try:
-            content = safe_read_text(file_path)
-        except (OSError, UnicodeDecodeError):
-            continue
-        files_searched += 1
-        try:
-            relative_path = (
-                file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
-            )
-        except ValueError:
-            continue
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            if not pattern.search(line):
+        scan_deadline = _time.monotonic() + MAX_SEARCH_SCAN_MS / 1000.0
+        for file_path in files:
+            if _time.monotonic() > scan_deadline:
+                truncated = True
+                break
+            if sensitive_path_reason(file_path) is not None:
                 continue
-            if match_count < offset:
+            try:
+                content = safe_read_text(file_path)
+            except (OSError, UnicodeDecodeError):
+                continue
+            files_searched += 1
+            try:
+                relative_path = (
+                    file_path.relative_to(root).as_posix() if target.is_dir() else file_path.name
+                )
+            except ValueError:
+                continue
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                search_future = executor.submit(pattern.search, line)
+                try:
+                    match = search_future.result(timeout=2)
+                except concurrent.futures.TimeoutError:
+                    continue
+                if not match:
+                    continue
+                if match_count < offset:
+                    match_count += 1
+                    continue
+                if len(results) >= limit:
+                    truncated = True
+                    break
+                results.append(
+                    {
+                        "path": relative_path,
+                        "line_number": line_number,
+                        "line": line[:300],
+                    }
+                )
                 match_count += 1
-                continue
             if len(results) >= limit:
                 truncated = True
                 break
-            results.append(
-                {
-                    "path": relative_path,
-                    "line_number": line_number,
-                    "line": line[:300],
-                }
-            )
-            match_count += 1
-        if len(results) >= limit:
-            break
 
     return json_response(
         True,

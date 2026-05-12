@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from claude_bridge import _shell_constants as _sc
+from claude_bridge import _shell_run as _sr
 from claude_bridge import shell_tools as st
 
 
@@ -644,3 +645,20 @@ class TestReadProcessOutput:
         result = json.loads(await st.read_process_output("fake-id", offset=-1, limit=10))
         assert result["ok"] is False
         assert result["code"] == "invalid_offset"
+
+
+class TestSanitizedEnv:
+    def test_removes_api_keys(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "secret")
+        env = _sr._sanitized_env()
+        assert "OPENAI_API_KEY" not in env
+
+    def test_removes_path(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/malicious/bin")
+        env = _sr._sanitized_env()
+        assert "PATH" not in env
+
+    def test_removes_ld_preload(self, monkeypatch):
+        monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
+        env = _sr._sanitized_env()
+        assert "LD_PRELOAD" not in env

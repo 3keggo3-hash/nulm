@@ -24,6 +24,7 @@ from claude_bridge.guard_policy import (
     validate_rule_condition,
 )
 from claude_bridge.rules_engine import (
+    _is_path_within_allowed_roots,
     evaluate_condition,
     evaluate_policy_chain,
     evaluate_rule,
@@ -218,19 +219,22 @@ class TestConditionFileExists:
             f.write(b"test")
             tmp_path = f.name
         try:
-            ctx = make_ctx(params={"path": tmp_path})
+            ctx = make_ctx(
+                params={"path": tmp_path},
+                project_dir=str(Path(tmp_path).parent),
+            )
             cond = make_condition(ConditionType.FILE_EXISTS, field="path", value=True)
             assert evaluate_condition(ctx, cond) is True
         finally:
             Path(tmp_path).unlink()
 
     def test_file_exists_false_when_missing(self) -> None:
-        ctx = make_ctx(params={"path": "/nonexistent/path/12345"})
+        ctx = make_ctx(params={"path": "/nonexistent/path/12345"}, project_dir="/")
         cond = make_condition(ConditionType.FILE_EXISTS, field="path", value=True)
         assert evaluate_condition(ctx, cond) is False
 
     def test_file_not_exists_true(self) -> None:
-        ctx = make_ctx(params={"path": "/nonexistent/path/12345"})
+        ctx = make_ctx(params={"path": "/nonexistent/path/12345"}, project_dir="/")
         cond = make_condition(ConditionType.FILE_EXISTS, field="path", value=False)
         assert evaluate_condition(ctx, cond) is True
 
@@ -241,7 +245,10 @@ class TestConditionFileSize:
             f.write(b"hello")
             tmp_path = f.name
         try:
-            ctx = make_ctx(params={"path": tmp_path})
+            ctx = make_ctx(
+                params={"path": tmp_path},
+                project_dir=str(Path(tmp_path).parent),
+            )
             cond = make_condition(ConditionType.FILE_SIZE, field="path", value={"max": 1024})
             assert evaluate_condition(ctx, cond) is True
         finally:
@@ -768,3 +775,10 @@ class TestLoadRulesIntegration:
         assert "rules" in policy
         assert isinstance(policy["rules"], list)
         assert "rules_validation" in policy
+
+
+class TestPathWithinAllowedRoots:
+    def test_fail_closed_when_no_boundary_configured(self) -> None:
+        ctx = make_ctx(project_dir=None)
+        ctx.allowed_roots = []
+        assert _is_path_within_allowed_roots(Path("/etc/passwd"), ctx) is False

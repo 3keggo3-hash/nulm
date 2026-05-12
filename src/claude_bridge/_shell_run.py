@@ -89,6 +89,7 @@ _ENV_BLOCK_KEYS = frozenset(
         "KUBECONFIG",
         "DOCKER_CONFIG",
         "DOCKER_HOST",
+        "PATH",
         "LD_PRELOAD",
         "LD_LIBRARY_PATH",
         "DYLD_INSERT_LIBRARIES",
@@ -99,7 +100,9 @@ _ENV_BLOCK_KEYS = frozenset(
     }
 )
 
-_PATH_PATTERN = re.compile(r"(?:/[\w\.\-\_]+)+|~/[\w\.\-\_]+(?:/[\w\.\-\_]+)*|[\w\.\-\_]+/[\w\.\-\_]+")
+_PATH_PATTERN = re.compile(
+    r"(?:/[\w\.\-\_]+)+|~/[\w\.\-\_]+(?:/[\w\.\-\_]+)*|[\w\.\-\_]+/[\w\.\-\_]+"
+)
 
 
 def _extract_files_from_command(command: str) -> list[str]:
@@ -723,7 +726,11 @@ async def kill_process(
         risk=risk_score,
         files=_extract_files_from_command(session.command),
         tool_name="kill_process",
-        params={"session_id": session_id, "command": _mask_secrets(session.command), "force": force},
+        params={
+            "session_id": session_id,
+            "command": _mask_secrets(session.command),
+            "force": force,
+        },
     )
     rejection = await require_approval(
         "kill_process",
