@@ -99,7 +99,7 @@ _ENV_BLOCK_KEYS = frozenset(
     }
 )
 
-_PATH_PATTERN = re.compile(r"(?:/[\w\.\-\_]+)+|~/[\w\.\-\_]+|[\w\.\-\_]+/[\w\.\-\_]+")
+_PATH_PATTERN = re.compile(r"(?:/[\w\.\-\_]+)+|~/[\w\.\-\_]+(?:/[\w\.\-\_]+)*|[\w\.\-\_]+/[\w\.\-\_]+")
 
 
 def _extract_files_from_command(command: str) -> list[str]:
