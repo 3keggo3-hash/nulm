@@ -1,7 +1,5 @@
 """Tests for agent result dataclass."""
 
-import pytest
-
 from claude_bridge.agents.result import AgentResult, AgentStatus
 
 

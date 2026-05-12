@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult, AgentStatus
+
+if TYPE_CHECKING:
+    from claude_bridge.permissions import PermissionMatrix
 
 
 class DebugAgent(BaseAgent):
@@ -72,7 +75,7 @@ class DebugAgent(BaseAgent):
         findings: list[str] = ["Diagnostics: Running basic checks"]
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["python", "-m", "py_compile", "--help"],
                 capture_output=True,
                 timeout=10,

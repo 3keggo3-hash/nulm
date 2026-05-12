@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult, AgentStatus
 from claude_bridge.self_critique import self_critique
+
+if TYPE_CHECKING:
+    from claude_bridge.permissions import PermissionMatrix
 
 
 class ReviewAgent(BaseAgent):
