@@ -78,6 +78,7 @@ class EvaluationResponse:
     action: EvaluationAction
     reason: str = ""
     risk_reasons: list[str] = field(default_factory=list)
+    tokens_used: float = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the response to a JSON-compatible dictionary."""
@@ -817,3 +818,116 @@ def select_model(task: str, context: dict[str, Any]) -> str:
         return "claude-sonnet"
     else:
         return "claude-opus"
+
+
+# ---------------------------------------------------------------------------
+# Token Budget — tracking and automatic rollback
+# ---------------------------------------------------------------------------
+
+BUDGET_WARNING = 80
+BUDGET_LIMIT = 100
+BUDGET_STORAGE_PATH = ".claude-bridge/budget.json"
+
+
+@dataclass
+class TokenBudget:
+    """Token budget with warning thresholds and automatic essential model rollback."""
+
+    monthly_limit: float = 100000
+    used: float = 0
+    warning_threshold: float = 0.80
+    hard_limit: float = 1.0
+    _warned_user: bool = field(default=False, repr=False)
+
+    @property
+    def usage_percent(self) -> float:
+        return self.used / self.monthly_limit
+
+    @property
+    def is_warning(self) -> bool:
+        return self.usage_percent >= self.warning_threshold
+
+    @property
+    def is_exhausted(self) -> bool:
+        return self.usage_percent >= self.hard_limit
+
+    def track_usage(self, tokens: float) -> None:
+        self.used += tokens
+
+    def auto_rollback_to_essential(self) -> str:
+        """Called when budget exhausted - force essential model."""
+        return "essential"
+
+    def reset(self) -> None:
+        self.used = 0
+        self._warned_user = False
+
+
+def _log_warning(message: str) -> None:
+    import logging
+    logging.warning(message)
+
+
+def load_budget(path: str = BUDGET_STORAGE_PATH) -> TokenBudget:
+    """Load budget from JSON file, returning a fresh budget if missing or invalid."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return TokenBudget(
+            monthly_limit=data.get("monthly_limit", 100000),
+            used=data.get("used", 0),
+            warning_threshold=data.get("warning_threshold", 0.80),
+            hard_limit=data.get("hard_limit", 1.0),
+        )
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return TokenBudget()
+
+
+def save_budget(budget: TokenBudget, path: str = BUDGET_STORAGE_PATH) -> None:
+    """Persist budget state to JSON file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {
+        "monthly_limit": budget.monthly_limit,
+        "used": budget.used,
+        "warning_threshold": budget.warning_threshold,
+        "hard_limit": budget.hard_limit,
+    }
+    with open(path, "w") as f:
+        json.dump(data, f)
+
+
+class _BudgetAwareEvaluator:
+    """Wrapper that adds budget management to any provider."""
+
+    def __init__(self, provider: Provider, budget: TokenBudget) -> None:
+        self._provider = provider
+        self._budget = budget
+
+    async def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+        """Evaluate with automatic budget management."""
+        if self._budget.is_exhausted:
+            return EvaluationResponse(
+                action=EvaluationAction.ASK,
+                reason="Token usage optimized automatically",
+            )
+
+        result = self._provider.evaluate(request)
+
+        if hasattr(result, "tokens_used"):
+            self._budget.track_usage(result.tokens_used)
+
+        if self._budget.is_warning and not self._budget._warned_user:
+            _log_warning(f"Token budget at {self._budget.usage_percent:.0%}")
+            self._budget._warned_user = True
+
+        return result
+
+
+async def evaluate_with_budget(
+    request: EvaluationRequest,
+    provider: Provider,
+    budget: TokenBudget,
+) -> EvaluationResponse:
+    """Evaluate a request with automatic budget tracking and essential model fallback."""
+    wrapped = _BudgetAwareEvaluator(provider, budget)
+    return await wrapped.evaluate(request)

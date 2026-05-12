@@ -14,14 +14,18 @@ from claude_bridge.ai_evaluator import (
     OpenAIProvider,
     Provider,
     ProviderConfig,
+    TokenBudget,
     _validate_provider_url,
     ai_latency_summary,
     create_provider,
     evaluate_tool_with_ai,
+    evaluate_with_budget,
     evaluate_with_timeout,
     evaluation_response_to_policy_decision,
+    load_budget,
     parse_evaluation_response,
     reset_ai_latency_samples,
+    save_budget,
 )
 from claude_bridge.guard_policy import DecisionAction, DecisionSource, RiskLevel, ToolRequestContext
 
@@ -693,3 +697,96 @@ class TestSelectModel:
         # complexity 0.7 is NOT < 0.7, so it becomes opus (not sonnet)
         model = select_model(" ".join(["task"] * 70), {})
         assert model == "claude-opus"
+
+
+# ---------------------------------------------------------------------------
+# TokenBudget
+# ---------------------------------------------------------------------------
+
+
+class TestTokenBudget:
+    def test_usage_percent_initially_zero(self) -> None:
+        budget = TokenBudget()
+        assert budget.usage_percent == 0.0
+
+    def test_usage_percent_after_usage(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=50000)
+        assert budget.usage_percent == 0.5
+
+    def test_is_warning_below_threshold(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=50000)
+        assert not budget.is_warning
+
+    def test_is_warning_at_threshold(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=80000)
+        assert budget.is_warning
+
+    def test_is_exhausted_below_hard_limit(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=99000)
+        assert not budget.is_exhausted
+
+    def test_is_exhausted_at_hard_limit(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=100000)
+        assert budget.is_exhausted
+
+    def test_track_usage_increments_used(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=10000)
+        budget.track_usage(5000)
+        assert budget.used == 15000
+
+    def test_auto_rollback_returns_essential(self) -> None:
+        budget = TokenBudget()
+        assert budget.auto_rollback_to_essential() == "essential"
+
+    def test_reset_clears_usage_and_warning(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=90000)
+        budget._warned_user = True
+        budget.reset()
+        assert budget.used == 0
+        assert budget._warned_user is False
+
+
+class TestBudgetStorage:
+    def test_save_and_load_budget(self, tmp_path: pytest.TempPathFactory) -> None:
+        budget = TokenBudget(monthly_limit=50000, used=25000)
+        path = tmp_path / "budget.json"
+
+        save_budget(budget, str(path))
+        loaded = load_budget(str(path))
+
+        assert loaded.monthly_limit == 50000
+        assert loaded.used == 25000
+
+    def test_load_budget_missing_file_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
+        path = tmp_path / "nonexistent.json"
+        loaded = load_budget(str(path))
+
+        assert loaded.monthly_limit == 100000
+        assert loaded.used == 0
+
+
+class TestEvaluateWithBudget:
+    @pytest.mark.asyncio
+    async def test_exhausted_budget_returns_ask(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=100000)
+        provider = LocalEvaluatorProvider()
+
+        resp = await evaluate_with_budget(
+            EvaluationRequest(prompt="test"),
+            provider,
+            budget,
+        )
+        assert resp.action == EvaluationAction.ASK
+        assert "optimized automatically" in resp.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_normal_evaluation_works(self) -> None:
+        budget = TokenBudget(monthly_limit=100000, used=1000)
+        provider = LocalEvaluatorProvider()
+
+        resp = await evaluate_with_budget(
+            EvaluationRequest(prompt="run git status"),
+            provider,
+            budget,
+        )
+        assert resp.action == EvaluationAction.ALLOW

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import re
 from typing import TYPE_CHECKING, Any
 
+from claude_bridge.ai_evaluator import EvaluationRequest, Provider
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.dispatcher import TaskDispatcher
 from claude_bridge.agents.result import AgentResult, AgentStatus
@@ -20,10 +24,12 @@ class OrchestratorAgent(BaseAgent):
         self,
         permission_matrix: PermissionMatrix | None = None,
         shared_memory: SharedMemorySpace | None = None,
+        ai_provider: Provider | None = None,
     ) -> None:
         super().__init__("orchestrator", permission_matrix)
         self._shared_memory = shared_memory or SharedMemorySpace()
         self._dispatcher = TaskDispatcher(self._shared_memory)
+        self._ai_provider = ai_provider
 
     async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
         """Execute task through orchestration.
@@ -43,14 +49,76 @@ class OrchestratorAgent(BaseAgent):
         return await self.synthesize(results)
 
     async def decompose(self, task: str) -> list[dict[str, Any]]:
-        """Decompose a task into subtasks for sub-agents.
+        """Decompose task into subtasks using AI evaluation.
 
-        Args:
-            task: The task to decompose.
-
-        Returns:
-            List of subtask dictionaries.
+        If AI provider available, uses LLM for smart decomposition.
+        Falls back to keyword-based if unavailable.
         """
+        if self._ai_provider is not None:
+            try:
+                result = await self._llm_decompose(task)
+                if result:
+                    return result
+            except Exception:
+                pass
+
+        return self._keyword_decompose(task)
+
+    async def _llm_decompose(self, task: str) -> list[dict[str, Any]]:
+        """Use AI provider for task decomposition."""
+        provider = self._ai_provider
+        if provider is None:
+            return []
+
+        prompt = f"""Decompose this task into subtasks for specialized agents.
+Task: {task}
+
+Return JSON:
+{{"subtasks": [
+  {{"description": "...", "agent": "git|security|debug|research|review", "priority": 1-3}}
+]}}"""
+
+        request = EvaluationRequest(prompt=prompt)
+        import inspect
+        if inspect.iscoroutinefunction(provider.evaluate):
+            response: Any = await provider.evaluate(request)
+        else:
+            try:
+                loop = asyncio.get_running_loop()
+                response = await loop.run_in_executor(None, provider.evaluate, request)
+            except RuntimeError:
+                response = provider.evaluate(request)
+
+        if not hasattr(response, "reason"):
+            return []
+        return self._parse_decomposition_response(response.reason)
+
+    def _parse_decomposition_response(self, text: str) -> list[dict[str, Any]]:
+        """Parse LLM response into subtask dicts."""
+        try:
+            json_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
+                subtasks = data.get("subtasks", [])
+                result = []
+                for i, st in enumerate(subtasks):
+                    if isinstance(st, dict):
+                        agent = st.get("agent", "research")
+                        agent_name = f"{agent}_agent"
+                        result.append({
+                            "id": f"{agent}_task_{i}",
+                            "task": st.get("description", ""),
+                            "agent_name": agent_name,
+                            "priority": st.get("priority", 2),
+                        })
+                if result:
+                    return result
+        except Exception:
+            pass
+        return []
+
+    def _keyword_decompose(self, task: str) -> list[dict[str, Any]]:
+        """Decompose a task into subtasks using keyword matching."""
         task_lower = task.lower()
         subtasks: list[dict[str, Any]] = []
 
