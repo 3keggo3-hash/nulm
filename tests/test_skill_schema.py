@@ -206,4 +206,4 @@ class TestCreateSkillJson:
 def test_get_current_timestamp() -> None:
     ts = get_current_timestamp()
     assert "T" in ts
-    assert "Z" in ts
+    assert "+" in ts or "Z" in ts

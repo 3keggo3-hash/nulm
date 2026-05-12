@@ -1,8 +1,5 @@
 """Tests for skill_executor module."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from claude_bridge.skill_executor import (

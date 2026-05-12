@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable
 import os as _os
 
 from claude_bridge.ai_evaluator import evaluate_tool_with_ai
-from claude_bridge.config import active_role, active_user, current_config
+from claude_bridge.config import active_role, active_user, approval_mode, current_config
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -226,33 +226,14 @@ async def run_shell(
             decision_in_details=True,
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
-        if analysis_risk in ("medium", "high", "critical"):
-            allow_decision = _shell_analysis_decision(
-                analysis,
-                action=DecisionAction.ASK,
-                source=DecisionSource.BUILTIN_GUARD,
-                reason=f"Shell command risk level {analysis_risk} requires approval",
-            )
-            return json_response(
-                False,
-                f"Shell command requires approval (risk: {analysis_risk})",
-                code="approval_required",
-                details={
-                    "command": _mask_secrets(command),
-                    "risk_level": analysis_risk,
-                    "risk_reasons": analysis["details"]["risk_reasons"],
-                },
-                decision=allow_decision,
-                decision_in_details=True,
-            )
-        allow_decision = rule_decision
-    elif analysis_risk in ("medium", "high", "critical"):
-        allow_decision = _shell_analysis_decision(
+    auto_approve_on, client_managed = approval_mode()
+    if analysis_risk in ("medium", "high", "critical") and auto_approve_on:
+        ask_decision = _shell_analysis_decision(
             analysis,
             action=DecisionAction.ASK,
             source=DecisionSource.BUILTIN_GUARD,
-            reason=f"Shell command risk level {analysis_risk} requires approval",
+            reason=f"Shell command risk level {analysis_risk} requires approval; "
+            "auto_approve is disabled for medium+ risk commands",
         )
         return json_response(
             False,
@@ -263,9 +244,11 @@ async def run_shell(
                 "risk_level": analysis_risk,
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=allow_decision,
+            decision=ask_decision,
             decision_in_details=True,
         )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        allow_decision = rule_decision
     else:
         risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
             analysis["details"].get("risk_level", "low"), 20
@@ -515,33 +498,14 @@ async def start_process(
             decision_in_details=True,
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
-        if analysis_risk in ("medium", "high", "critical"):
-            allow_decision = _shell_analysis_decision(
-                analysis,
-                action=DecisionAction.ASK,
-                source=DecisionSource.BUILTIN_GUARD,
-                reason=f"Process risk level {analysis_risk} requires approval",
-            )
-            return json_response(
-                False,
-                f"Process start requires approval (risk: {analysis_risk})",
-                code="approval_required",
-                details={
-                    "command": _mask_secrets(command),
-                    "risk_level": analysis_risk,
-                    "risk_reasons": analysis["details"]["risk_reasons"],
-                },
-                decision=allow_decision,
-                decision_in_details=True,
-            )
-        allow_decision = rule_decision
-    elif analysis_risk in ("medium", "high", "critical"):
-        allow_decision = _shell_analysis_decision(
+    auto_approve_on, client_managed = approval_mode()
+    if analysis_risk in ("medium", "high", "critical") and auto_approve_on:
+        ask_decision = _shell_analysis_decision(
             analysis,
             action=DecisionAction.ASK,
             source=DecisionSource.BUILTIN_GUARD,
-            reason=f"Process risk level {analysis_risk} requires approval",
+            reason=f"Process risk level {analysis_risk} requires approval; "
+            "auto_approve is disabled for medium+ risk commands",
         )
         return json_response(
             False,
@@ -552,9 +516,11 @@ async def start_process(
                 "risk_level": analysis_risk,
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=allow_decision,
+            decision=ask_decision,
             decision_in_details=True,
         )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+        allow_decision = rule_decision
     else:
         risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
             analysis["details"].get("risk_level", "low"), 20
