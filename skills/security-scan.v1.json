@@ -1,0 +1,9 @@
+{
+  "name": "security-scan",
+  "version": "1.0",
+  "trigger_phrases": ["güvenlik", "security", "scan", "tarama", "audit"],
+  "trigger_context": ["security", "audit", "vulnerability"],
+  "auto_load": false,
+  "permissions": ["read", "analyze"],
+  "description": "Basic security checks"
+}

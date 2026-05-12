@@ -10,7 +10,10 @@ from typing import Any, Callable, Awaitable
 
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
-from claude_bridge.skill_builder import check_and_propose
+from claude_bridge.skill_builder import (
+    WorkflowResult,
+    propose_skill_creation as propose_skill_creation_async,
+)
 from claude_bridge.tool_utils import request_approval
 
 
@@ -404,10 +407,18 @@ class WorkflowEngine:
         if self.state != WorkflowState.DONE:
             return False, None
 
-        workflow_result = {
-            "task": self.task,
-            "steps": [s.to_dict() for s in self.steps],
-            "outcome": "success",
-            "artifacts": {},
-        }
-        return check_and_propose(workflow_result, request_approval_fn)
+        workflow_result = WorkflowResult(
+            task=self.task,
+            steps=[s.to_dict() for s in self.steps],
+            outcome="success",
+            artifacts={},
+        )
+        import asyncio
+
+        async def run_proposal() -> tuple[bool, str | None]:
+            proposal = await propose_skill_creation_async(workflow_result)
+            if proposal is None:
+                return False, None
+            return True, proposal.skill_name
+
+        return asyncio.get_event_loop().run_until_complete(run_proposal())

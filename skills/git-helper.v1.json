@@ -1,0 +1,9 @@
+{
+  "name": "git-helper",
+  "version": "1.0",
+  "trigger_phrases": ["git", "commit", "branch", "merge", "diff"],
+  "trigger_context": ["git", "version control", "repository"],
+  "auto_load": true,
+  "permissions": ["read", "execute"],
+  "description": "Common git operations helper"
+}

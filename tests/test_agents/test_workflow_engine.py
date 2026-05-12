@@ -2,7 +2,7 @@
 
 import pytest
 
-from claude_bridge.workflow_engine import OrchestratorExecutor, WorkflowEngine
+from claude_bridge.workflow_engine import OrchestratorExecutor, WorkflowEngine, WorkflowState
 from claude_bridge.agents.orchestrator import OrchestratorAgent
 from claude_bridge.agents.sub import ResearchAgent
 
@@ -84,3 +84,78 @@ def test_workflow_engine_get_status():
     assert status["state"] == "planning"
     assert status["task"] == "test task"
     assert status["total_steps"] > 0
+
+
+def test_workflow_engine_get_changed_files():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+    engine.steps[0].files_affected = ["src/foo.py"]
+    engine.steps[1].files_affected = ["src/bar.py", "src/baz.py"]
+
+    files = engine._get_changed_files()
+
+    assert len(files) == 3
+    assert "src/foo.py" in files
+    assert "src/bar.py" in files
+    assert "src/baz.py" in files
+
+
+def test_workflow_engine_get_test_results():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+    for step in engine.steps:
+        step.status = "completed"
+
+    results = engine._get_test_results()
+
+    assert results["passed"] is True
+    assert results["steps_tested"] == 4
+
+
+def test_workflow_engine_get_test_results_with_failure():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+    engine.steps[0].status = "completed"
+    engine.steps[1].status = "failed"
+
+    results = engine._get_test_results()
+
+    assert results["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_workflow_engine_run_self_review():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+    for step in engine.steps:
+        step.status = "completed"
+
+    review = await engine._run_self_review()
+
+    assert "verdict" in review
+    assert "summary" in review
+
+
+@pytest.mark.asyncio
+async def test_workflow_engine_transition_to_reporting():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+    for step in engine.steps:
+        step.status = "completed"
+
+    engine.transition_to(WorkflowState.APPROVAL_PENDING)
+    engine.transition_to(WorkflowState.APPLYING)
+    engine.transition_to(WorkflowState.TESTING)
+    result = await engine.transition_to_reporting()
+
+    assert result is True
+    assert engine.state == WorkflowState.REPORTING
+
+
+@pytest.mark.asyncio
+async def test_workflow_engine_transition_to_reporting_from_wrong_state():
+    engine = WorkflowEngine()
+    engine.create_plan("fix bug in code")
+
+    with pytest.raises(ValueError):
+        await engine.transition_to_reporting()

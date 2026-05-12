@@ -1,0 +1,9 @@
+{
+  "name": "bridge-doctor",
+  "version": "1.0",
+  "trigger_phrases": ["sistem problem", "çalışmıyor", "hata", "check"],
+  "trigger_context": ["shell", "security", "config"],
+  "auto_load": true,
+  "permissions": ["read", "analyze"],
+  "description": "Runs bridge doctor to diagnose environment issues"
+}

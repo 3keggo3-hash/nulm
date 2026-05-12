@@ -1,0 +1,9 @@
+{
+  "name": "debug-helper",
+  "version": "1.0",
+  "trigger_phrases": ["debug", "hata", "error", "stack", "trace"],
+  "trigger_context": ["debugging", "error", "exception"],
+  "auto_load": true,
+  "permissions": ["read", "analyze"],
+  "description": "Error investigation and debugging helper"
+}
