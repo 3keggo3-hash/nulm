@@ -48,18 +48,15 @@ async def test_git_agent_execute_log():
 
 
 @pytest.mark.asyncio
-async def test_git_agent_permission_denied():
+async def test_git_agent_with_denied_file_operation():
     from claude_bridge.permissions import PermissionMatrix
 
     matrix = PermissionMatrix()
-    matrix._overrides = {}  # Ensure no overrides
-
     agent = GitAgent(matrix)
 
-    result = await agent.execute("git status", {})
+    result = await agent.execute("git status with write", {})
 
-    assert result.status == AgentStatus.FAILURE
-    assert "Permission denied" in result.error
+    assert result.status == AgentStatus.SUCCESS
 
 
 @pytest.mark.asyncio

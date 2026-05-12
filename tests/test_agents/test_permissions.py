@@ -13,7 +13,7 @@ from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult
 
 
-class TestAgent(BaseAgent):
+class DummyTestAgent(BaseAgent):
     async def execute(self, task: str, context: dict) -> AgentResult:
         return AgentResult.success(agent_name=self.name)
 
