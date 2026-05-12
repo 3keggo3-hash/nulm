@@ -11,6 +11,7 @@ from typing import Any, Callable, Awaitable
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
 from claude_bridge.agent_advisor import ResultQualityReviewRequest, review_result_quality
+from claude_bridge.agents.result import AgentResult
 from claude_bridge.skill_builder import (
     WorkflowResult,
     propose_skill_creation as propose_skill_creation_async,
@@ -65,7 +66,11 @@ class OrchestratorExecutor:
         agents: list[Any],
     ) -> dict[str, Any]:
         result = await self.orchestrator.orchestrate(task, agents)
-        return result.to_dict()
+        if isinstance(result, AgentResult):
+            return result.to_dict()
+        if isinstance(result, dict):
+            return {"ok": True, **result}
+        return {"ok": True, "result": str(result)}
 
 
 class WorkflowEngine:
@@ -399,12 +404,17 @@ class WorkflowEngine:
         )
         review = review_result_quality(request)
 
-        result = {"status": "pass", "verdict": review.verdict, "summary": review.summary, "warnings": [], "errors": []}
-        if review.verdict in ("needs_followup", "needs_clarification"):
-            result["status"] = "fail"
-            result["errors"].append(review.summary)
-        elif review.strengths:
-            result["warnings"] = [s for s in review.strengths if "note" in s.lower()]
+        verdict = review.verdict
+        strengths = review.strengths or []
+        warnings_list = [s for s in strengths if "note" in s.lower()]
+        errors_list: list[str] = []
+        if verdict in ("needs_followup", "needs_clarification"):
+            errors_list.append(review.summary)
+            status = "fail"
+        else:
+            status = "pass"
+
+        result: dict[str, Any] = {"status": status, "verdict": verdict, "summary": review.summary, "warnings": warnings_list, "errors": errors_list}
         return result
 
     def _get_changed_files(self) -> list[str]:
@@ -445,11 +455,11 @@ class WorkflowEngine:
             return {"ok": False, "review": review_result}
 
         if review_result["warnings"]:
-            self._log_warning(f"Self-review warnings: {review_result['warnings']}")
+            self._log_event("self_review_warnings", {"warnings": review_result["warnings"]})
 
         self.transition_to(WorkflowState.REPORTING)
         self._log_event("transition_to_reporting", {"review": review_result})
-        return True
+        return {"ok": True, "review": review_result}
 
     def rollback(self) -> dict[str, Any]:
         """Rollback to the last checkpoint."""

@@ -150,7 +150,7 @@ def _extract_tar_gz(snapshot_path: Path, target_dir: Path) -> list[Path]:
             if not member.isfile():
                 continue
             try:
-                tar.extract(member, path=target_dir)
+                tar.extract(member, path=target_dir, filter="fully_trusted")
                 extracted.append(target_dir / member.name)
             except (OSError, tarfile.TarError):
                 continue
