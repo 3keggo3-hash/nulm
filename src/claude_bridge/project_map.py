@@ -386,18 +386,10 @@ def _load_custom_guards() -> list[str]:
 
 
 def _load_skills() -> list[str]:
-    """Load skill names from the skills directory."""
-    skills_dir = Path(".claude-bridge/skills")
-    if not skills_dir.exists():
-        return []
-
-    loaded: list[str] = []
-    for item in skills_dir.iterdir():
-        if item.suffix == ".json" and item.stem != "index":
-            loaded.append(item.stem)
-        elif item.suffix == ".py":
-            loaded.append(item.stem)
-    return sorted(loaded)
+    """Load skill names from the skill registry."""
+    registry = get_registry()
+    loaded = registry.get_loaded()
+    return sorted(loaded.keys())
 
 
 # ---------------------------------------------------------------------------
