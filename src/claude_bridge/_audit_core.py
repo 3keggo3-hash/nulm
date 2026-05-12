@@ -62,7 +62,11 @@ def _append_audit_record(path: Path, line: str) -> int | None:
     try:
         with _AUDIT_LOCK:
             path.parent.mkdir(parents=True, exist_ok=True)
+            os.chmod(path.parent, 0o700)
             is_new = not path.exists()
+            if is_new:
+                fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(fd)
             with path.open("a", encoding="utf-8") as handle:
                 if sys.platform == "win32":
                     try:
@@ -76,8 +80,6 @@ def _append_audit_record(path: Path, line: str) -> int | None:
                         pass
                 offset = handle.tell()
                 handle.write(line + "\n")
-                if is_new:
-                    os.chmod(path, 0o600)
                 return offset
     except OSError:
         return None

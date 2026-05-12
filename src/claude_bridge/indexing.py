@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import threading
 import time
 from hashlib import sha256
@@ -651,13 +652,21 @@ def _load_disk_cache(target: Path) -> dict[str, Any] | None:
 def _write_disk_cache(target: Path, payload: dict[str, Any]) -> None:
     cache_path = _disk_cache_path(target)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(
-            {"version": _DISK_CACHE_VERSION, "payload": _disk_cache_payload(payload)},
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    os.chmod(cache_path.parent, 0o700)
+    temp_fd, temp_path = tempfile.mkstemp(dir=str(cache_path.parent))
+    try:
+        os.write(
+            temp_fd,
+            json.dumps(
+                {"version": _DISK_CACHE_VERSION, "payload": _disk_cache_payload(payload)},
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        )
+        os.fsync(temp_fd)
+    finally:
+        os.close(temp_fd)
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, str(cache_path))
     _prune_disk_cache(cache_path.parent)
 
 

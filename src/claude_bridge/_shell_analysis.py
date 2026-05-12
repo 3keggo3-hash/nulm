@@ -77,6 +77,43 @@ def _truncate_output(value: str) -> tuple[str, bool]:
     )
 
 
+def compute_risk_score(risk_level: str, risk_reasons: list[str]) -> int:
+    """Convert risk level to 0-100 score with reason-based adjustments."""
+    base_scores = {"low": 20, "medium": 50, "high": 75, "critical": 100, "blocked": 100}
+    base = base_scores.get(risk_level, 50)
+    for reason in risk_reasons:
+        lreason = reason.lower()
+        if "destructive" in lreason or "rm -rf" in lreason or "fork bomb" in lreason:
+            base = max(base, 85)
+        elif "recursive delete" in lreason or "git reset --hard" in lreason:
+            base = max(base, 80)
+        elif "network" in lreason or "remote access" in lreason:
+            base = max(base, 70)
+        elif "execute code" in lreason or "modify workspace" in lreason:
+            base = max(base, 45)
+        elif "read-only" in lreason or "standard validation" in lreason:
+            base = min(base, 15)
+        elif "unclassified" in lreason or "treat cautiously" in lreason:
+            base = max(base, 55)
+    return min(base, 100)
+
+
+def risk_score_category(score: int) -> tuple[str, str]:
+    """Return (category, emoji) for a risk score."""
+    if score <= 20:
+        return "Safe", "🔒"
+    elif score <= 40:
+        return "Low Risk", "🔓"
+    elif score <= 60:
+        return "Medium", "⚠️"
+    elif score <= 80:
+        return "High", "🚨"
+    elif score < 100:
+        return "Critical", "🚨"
+    else:
+        return "Blocked", "🚫"
+
+
 def _policy_risk_from_shell_risk(risk_level: str) -> RiskLevel:
     if risk_level == "low":
         return RiskLevel.LOW
@@ -231,6 +268,9 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
         risk_level = "medium"
         risk_reasons = ["unclassified command; treat cautiously"]
 
+    risk_score = compute_risk_score(risk_level, risk_reasons)
+    risk_category, risk_emoji = risk_score_category(risk_score)
+
     policy_risk = _policy_risk_from_shell_risk(risk_level)
     if risk_level == "low":
         decision_action = DecisionAction.ALLOW
@@ -258,6 +298,9 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             "normalized_command": stripped,
             "argv": tokens,
             "risk_level": risk_level,
+            "risk_score": risk_score,
+            "risk_category": risk_category,
+            "risk_emoji": risk_emoji,
             "risk_reasons": risk_reasons,
             "requires_confirmation": requires_confirmation,
             "policy_decision": analysis_decision.to_dict(),
@@ -280,11 +323,12 @@ def _shell_analysis_decision(
     risk_reasons = (
         [str(item) for item in risk_reasons_raw] if isinstance(risk_reasons_raw, list) else []
     )
+    risk_score = details.get("risk_score", 50)
     return make_policy_decision(
         action,
         source,
         risk_level,
         reason,
         risk_reasons,
-        {"tool": "run_shell"},
+        {"tool": "run_shell", "risk_score": risk_score},
     )

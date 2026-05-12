@@ -234,12 +234,7 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
         finally:
             os.close(tmp_fd)
         try:
-            if target.is_symlink():
-                try:
-                    os.unlink(str(target))
-                except OSError:
-                    pass
-            os.rename(tmp_path, str(target))
+            os.replace(tmp_path, str(target))
         except OSError:
             try:
                 os.unlink(tmp_path)

@@ -121,14 +121,15 @@ _PROCESS_SESSIONS_LOCK = threading.RLock()
 def _trim_process_sessions() -> None:
     with _PROCESS_SESSIONS_LOCK:
         sessions = list(_PROCESS_SESSIONS.values())
-        for session in sessions:
-            session.refresh_status()
-        completed = [s for s in sessions if s.exit_code is not None]
-        for s in completed:
-            with s.lock:
-                output_len = len(s.output)
-                s.output = s.output[: min(output_len, 200)]
-                s.command = s.command[:200]
+    for session in sessions:
+        session.refresh_status()
+    completed = [s for s in sessions if s.exit_code is not None]
+    for s in completed:
+        with s.lock:
+            output_len = len(s.output)
+            s.output = s.output[: min(output_len, 200)]
+            s.command = s.command[:200]
+    with _PROCESS_SESSIONS_LOCK:
         if len(_PROCESS_SESSIONS) <= _const._MAX_PROCESS_SESSIONS:
             return
         completed.sort(key=lambda session: session.completed_at or session.started_at)

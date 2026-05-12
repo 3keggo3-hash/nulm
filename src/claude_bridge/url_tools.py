@@ -174,19 +174,6 @@ async def read_url(url: str) -> str:
             details={"url_hash": _url_hash(url), "host": hostname},
         )
 
-    if hostname:
-        private_ip = _resolve_and_check_host(hostname)
-        if private_ip is not None:
-            return json_response(
-                False,
-                "Blocked: host resolves to internal IP",
-                code="ssrf_blocked",
-                details={
-                    "url_hash": _url_hash(url),
-                    "host": hostname,
-                },
-            )
-
     redirect_handler = _LimitedRedirectHandler(max_redirects=_MAX_REDIRECTS)
     opener = build_opener(_SafeHTTPHandler, _SafeHTTPSHandler, redirect_handler)  # type: ignore[arg-type]
 

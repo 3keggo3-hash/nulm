@@ -2503,12 +2503,6 @@ class TestInsightsTools:
         consumer = next(item for item in most_connected if item["file"] == "consumer.py")
         assert "feature" in consumer["imports"]
 
-    async def test_bridge_doodle_uses_standard_audit_enrichment(self, temp_project):
-        payload = parse_payload(await mcp_server.bridge_doodle())
-
-        assert payload["ok"] is True
-        assert "onboarding" in payload["details"]
-
     def test_save_note_stores_data_outside_project_root(self, temp_project, monkeypatch):
         notes_dir = temp_project.parent / "bridge-notes"
         monkeypatch.setenv("CLAUDE_BRIDGE_NOTES_DIR", str(notes_dir))

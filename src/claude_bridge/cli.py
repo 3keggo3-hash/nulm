@@ -458,7 +458,7 @@ def policy_diff(
         )
         if rd.extends_changed:
             console.print(
-                f"  Extends: {escape(str(rd.old_extends))} → " f"{escape(str(rd.new_extends))}"
+                f"  Extends: {escape(str(rd.old_extends))} → {escape(str(rd.new_extends))}"
             )
         if rd.description_changed:
             console.print("  Description changed")

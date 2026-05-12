@@ -21,6 +21,8 @@ from claude_bridge.guard_policy import (
     load_guard_policy,
 )
 
+_DANGEROUS_ENV_VARS = frozenset({"ld_preload", "dyld_insert_libraries", "path"})
+
 
 def _command_basename(token: str) -> str:
     return Path(token).name.lower()
@@ -264,7 +266,7 @@ def _blocked_find_xargs(
         if re.search(r"(?:^|\s)find\b.*\|\s*xargs\b.*\brm\b", normalized):
             return "find to xargs rm"
         if any(
-            token.startswith("-exec") or token == "-delete" or token == "+"
+            token.startswith(("-exec", "-ok")) or token == "-delete" or token == "+"
             for token in lower_tokens[1:]
         ):
             return "find -exec"
@@ -422,6 +424,10 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
     head = _command_basename(command_tokens[0])
     while head in {"command", "exec", "builtin"} and len(command_tokens) > 1:
         command_tokens = command_tokens[1:]
+        while command_tokens and command_tokens[0].startswith("-"):
+            command_tokens = command_tokens[1:]
+        if not command_tokens:
+            return None
         head = _command_basename(command_tokens[0])
 
     while head == "env":
@@ -447,6 +453,11 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         env_target = _interactive_target(tokens)
         if env_target is not None and env_target in _ENV_BLOCKED_COMMANDS:
             return f"env {env_target}"
+        for token in tokens[1:]:
+            if "=" in token and not token.startswith("-"):
+                var_name = token.split("=", 1)[0].lower()
+                if var_name in _DANGEROUS_ENV_VARS:
+                    return f"env {var_name}"
 
     for matcher in _BLOCKED_MATCHERS:
         reason = matcher(head, lower_tokens, all_lower_tokens, stripped, normalized)

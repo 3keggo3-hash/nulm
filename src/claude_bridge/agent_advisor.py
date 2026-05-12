@@ -1273,8 +1273,9 @@ def advise_next_step_optimized(request: AgentAdviceRequest) -> AgentAdviceRespon
     _apply_goal_patterns(advice, lowered)
     _apply_context_inputs(advice, request.recent_context, request.constraints)
     _apply_config_suggestions(advice, lowered, request.current_config)
-    _apply_ambiguity_triggers(advice, compact_goal, compact_target,
-                              request.recent_context, request.constraints)
+    _apply_ambiguity_triggers(
+        advice, compact_goal, compact_target, request.recent_context, request.constraints
+    )
     _dedupe_response(advice)
     return advice
 
@@ -1328,22 +1329,28 @@ def improve_request_optimized(
 def _apply_improved_request_patterns(response: ImprovedRequestResponse, lowered: str) -> None:
     """Apply goal patterns to improved request - consolidated pattern matching."""
     if _contains_any(lowered, {"quality", "professional", "clean", "refactor", "polish"}):
-        response.acceptance_criteria.extend([
-            "The patch improves one named quality dimension.",
-            "Behavior remains covered by existing or added focused tests.",
-        ])
+        response.acceptance_criteria.extend(
+            [
+                "The patch improves one named quality dimension.",
+                "Behavior remains covered by existing or added focused tests.",
+            ]
+        )
         response.suggested_first_slice = "Choose one concrete quality issue and fix it end to end."
 
     if _contains_any(lowered, {"bug", "fix", "failing", "failure", "test pass"}):
         response.assumptions.append("A failing test, traceback, or reproduction may exist.")
-        response.acceptance_criteria.append("The failure is reproduced or inspected before the fix.")
+        response.acceptance_criteria.append(
+            "The failure is reproduced or inspected before the fix."
+        )
         response.suggested_first_slice = "Find the reproduction or failing test before editing."
 
     if _contains_any(lowered, {"public", "publish", "release", "pypi", "alpha"}):
-        response.acceptance_criteria.extend([
-            "Public docs avoid overclaiming planned features.",
-            "Release validation commands are identified.",
-        ])
+        response.acceptance_criteria.extend(
+            [
+                "Public docs avoid overclaiming planned features.",
+                "Release validation commands are identified.",
+            ]
+        )
         response.suggested_first_slice = "Run a release-readiness doc and metadata pass first."
 
     if _contains_any(lowered, {"token", "context", "cost", "cheap", "budget"}):
@@ -1385,14 +1392,18 @@ def _apply_ambiguity_triggers(
 
     validation_terms = {"verify", "check", "test", "validate", "ensure"}
     missing_validation = not any(vt in goal_lower for vt in validation_terms)
-    context_has_validation = recent_context.get("validation_failed") or recent_context.get("validation_passed")
+    context_has_validation = recent_context.get("validation_failed") or recent_context.get(
+        "validation_passed"
+    )
     if missing_validation and not context_has_validation:
         triggers.append("missing_validation_evidence")
 
     if len(target) > 80:
         triggers.append("broad_target")
 
-    ambiguity_triggers = [t for t in triggers if t not in ("missing_validation_evidence", "broad_target")]
+    ambiguity_triggers = [
+        t for t in triggers if t not in ("missing_validation_evidence", "broad_target")
+    ]
     advice.ambiguity_triggers = triggers
     if ambiguity_triggers:
         advice.uncertainty_flag = True
@@ -1436,7 +1447,9 @@ def _apply_request_ambiguity_triggers(
         if len(constraint_keys) > 4:
             triggers.append("multiple_constraints")
 
-    ambiguity_triggers = [t for t in triggers if t not in ("missing_validation_evidence", "broad_target")]
+    ambiguity_triggers = [
+        t for t in triggers if t not in ("missing_validation_evidence", "broad_target")
+    ]
     response.ambiguity_triggers = triggers
     if ambiguity_triggers:
         response.uncertainty_flag = True

@@ -472,7 +472,7 @@ def evaluate_policy_chain(
                 DecisionAction.ASK,
                 DecisionSource.APPROVAL,
                 RiskLevel.MEDIUM,
-                "CI auto-approve boundary: operation is outside CI " "auto-approve boundaries",
+                "CI auto-approve boundary: operation is outside CI auto-approve boundaries",
                 ["role restriction: ci_auto_approve_bounded"],
                 {"role": role_name, "restriction": "ci_auto_approve_bounded"},
             )

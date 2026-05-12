@@ -42,7 +42,9 @@ _SENSITIVE_FILENAMES = {
     "application_default_credentials.json",
     "id_rsa",
     "id_dsa",
+    "id_ecdsa",
     "id_ed25519",
+    "id_ed25519_sk",
     "credentials",
     "known_hosts",
     "claude_desktop_config.json",
@@ -175,6 +177,8 @@ def sensitive_path_reason(target: Path) -> str | None:
         rel = parts[docker_idx + 1 :]
         if rel == ["config.json"]:
             return ".docker/config.json"
+    if ".ssh" in parts:
+        return ".ssh directory"
     # Check bridgeignore patterns
     try:
         relative = target.resolve().relative_to(project_dir()).as_posix()
@@ -322,23 +326,52 @@ def set_active_project_dir(next_project_dir: Path) -> None:
     clear_index_cache()
 
 
-async def request_approval(tool_name: str, params: dict[str, Any]) -> bool:
+_TR_LABELS = {
+    "permission_card_title": "İzin Kartı",
+    "agent": "Ajan",
+    "action": "Eylem",
+    "risk": "Risk",
+    "files": "Dosyalar",
+    "reason": "Açıklama",
+    "allow_once": "Bir Kere İzin Ver",
+    "allow_always": "Her Zaman İzin Ver",
+    "deny": "Reddet",
+    "and_more_files": "ve {count} dosya daha",
+}
+
+_RISK_CATEGORIES = {
+    "Safe": "Güvenli",
+    "Low Risk": "Düşük Risk",
+    "Medium": "Orta",
+    "High": "Yüksek",
+    "Critical": "Kritik",
+    "Blocked": "Engellendi",
+}
+
+
+async def request_approval(
+    tool_name: str,
+    params: dict[str, Any],
+    *,
+    card: PermissionCard | None = None,
+) -> bool:
     auto_approve, client_managed_approval = approval_mode()
     if auto_approve or client_managed_approval:
         return True
 
-    print(
-        (
-            f"[{tool_name}] approval requested but no approval handler is configured for MCP stdio. "
-            "Enable client-managed approval in the MCP client, or run with auto-approve only in a trusted local environment."
-        ),
-        file=sys.stderr,
-    )
-    for key, value in params.items():
-        safe_value = _mask_secrets(
-            value
-        )  # FIX: Mask sensitive param values before printing to stderr
-        print(f"  {key}: {safe_value}", file=sys.stderr)
+    if card is not None:
+        print(card.format_card(), file=sys.stderr)
+    else:
+        print(
+            (
+                f"[{tool_name}] approval requested but no approval handler is configured for MCP stdio. "
+                "Enable client-managed approval in the MCP client, or run with auto-approve only in a trusted local environment."
+            ),
+            file=sys.stderr,
+        )
+        for key, value in params.items():
+            safe_value = _mask_secrets(value)
+            print(f"  {key}: {safe_value}", file=sys.stderr)
     return False
 
 
@@ -348,9 +381,10 @@ async def require_approval(
     *,
     rejection_message: str,
     rejection_details: dict[str, Any] | None = None,
-    request_approval_fn: Callable[[str, dict[str, Any]], Awaitable[bool]] = request_approval,
+    request_approval_fn: Callable[..., Awaitable[bool]] = request_approval,
+    card: PermissionCard | None = None,
 ) -> str | None:
-    approved = await request_approval_fn(tool_name, params)
+    approved = await request_approval_fn(tool_name, params, card=card)
     if approved:
         return None
     return json_response(
@@ -432,3 +466,90 @@ def path_guard_decision(
         risk_reasons=[],
         metadata={"path": user_path, "operation": operation},
     )
+
+
+class PermissionCard:
+    """Human-readable permission request card for agent actions."""
+
+    def __init__(
+        self,
+        agent: str,
+        action: str,
+        reason: str,
+        risk: int,
+        files: list[str] | None = None,
+        tool_name: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        self.agent = agent
+        self.action = action
+        self.reason = reason
+        self.risk = risk
+        self.files = files or []
+        self.tool_name = tool_name
+        self.params = params or {}
+
+    @property
+    def risk_category(self) -> str:
+        if self.risk <= 20:
+            return "Safe"
+        elif self.risk <= 40:
+            return "Low Risk"
+        elif self.risk <= 60:
+            return "Medium"
+        elif self.risk <= 80:
+            return "High"
+        elif self.risk < 100:
+            return "Critical"
+        return "Blocked"
+
+    @property
+    def risk_emoji(self) -> str:
+        if self.risk <= 20:
+            return "🔒"
+        elif self.risk <= 40:
+            return "🔓"
+        elif self.risk <= 60:
+            return "⚠️"
+        elif self.risk <= 80:
+            return "🚨"
+        elif self.risk < 100:
+            return "🚨"
+        return "🚫"
+
+    def format_card(self) -> str:
+        lines = [
+            "┌─────────────────────────────────────────┐",
+            "│ 🔐 Permission Card                      │",
+            "├─────────────────────────────────────────┤",
+            f"│ Agent: {self.agent:<32} │",
+            f"│ Action: {self.action:<30} │",
+            f"│ Risk: {self.risk}/100 ({self.risk_category}){'':<10} │",
+            "├─────────────────────────────────────────┤",
+        ]
+        if self.files:
+            lines.append("│ Files:")
+            for f in self.files[:5]:
+                lines.append(f"│   • {f:<33} │")
+            if len(self.files) > 5:
+                lines.append(f"│   ... and {len(self.files) - 5} more files         │")
+            lines.append("├─────────────────────────────────────────┤")
+        reason_str = self.reason[:33] if len(self.reason) > 33 else self.reason
+        lines.append(f'│ "{reason_str}"{" " * (36 - len(reason_str))}│')
+        lines.append("├─────────────────────────────────────────┤")
+        lines.append("│ [Allow Once] [Allow Always] [Deny]      │")
+        lines.append("└─────────────────────────────────────────┘")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "action": self.action,
+            "reason": self.reason,
+            "risk": self.risk,
+            "risk_category": self.risk_category,
+            "risk_emoji": self.risk_emoji,
+            "files": self.files,
+            "tool_name": self.tool_name,
+            "params": self.params,
+        }

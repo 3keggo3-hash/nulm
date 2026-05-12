@@ -65,6 +65,7 @@ def _reset_global_state(monkeypatch, tmp_path):
     from claude_bridge import indexing
 
     monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+    monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
     _do_reset = _make_reset(audit, config_module, file_tools, indexing)
     _do_reset()
     yield

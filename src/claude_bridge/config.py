@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any, Sequence, cast
@@ -53,6 +55,13 @@ BUDGET_PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 
+
+MODEL_PROFILES: dict[str, dict[str, Any]] = {
+    "essential": {"model": "claude-haiku", "cost": "$0.001/1K"},
+    "balanced": {"model": "claude-sonnet", "cost": "$0.003/1K"},
+    "quality": {"model": "claude-opus", "cost": "$0.015/1K"},
+}
+
 TOOL_PROFILES: dict[str, dict[str, Any]] = {
     "essential": {
         "description": (
@@ -69,8 +78,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
     },
     "standard": {
         "description": (
-            "Commonly used tools without niche features. "
-            "Good balance of capability and token cost."
+            "Commonly used tools without niche features. Good balance of capability and token cost."
         ),
         "groups": {
             "agent_quality",
@@ -200,7 +208,6 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "dependency_insights",
     },
     "fun": {
-        "bridge_doodle",
         "bridge_save_note",
         "bridge_read_notes",
     },
@@ -317,6 +324,13 @@ def apply_config(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
     )
+    safety_confirm = (
+        os.environ.get("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "0").strip().lower()
+    )
+    auto_approve_confirmed = safety_confirm in {"1", "true", "yes", "on"}
+    if resolved_auto_approve and not auto_approve_confirmed:
+        resolved_auto_approve = False
+        resolved_client_managed = True
     if context_budget_profile not in BUDGET_PROFILES:
         raise ValueError(f"Unknown context budget profile: {context_budget_profile}")
     if tool_profile not in TOOL_PROFILES:
@@ -336,6 +350,18 @@ def apply_config(
         raise ValueError(
             f"ai_evaluator_fallback_action must be one of deny/ask, "
             f"got {ai_evaluator_fallback_action!r}"
+        )
+    if role is not None and (
+        not isinstance(role, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", role)
+    ):
+        raise ValueError(
+            f"role must be alphanumeric, hyphen, or underscore, got {role!r}"
+        )
+    if user is not None and (
+        not isinstance(user, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", user)
+    ):
+        raise ValueError(
+            f"user must be alphanumeric, hyphen, or underscore, got {user!r}"
         )
     with _CONFIG_LOCK:
         _CONFIG["project_dir"] = resolved_project_dir
@@ -479,26 +505,28 @@ def approval_mode() -> tuple[bool, bool]:
 def current_config() -> dict[str, Any]:
     with _CONFIG_LOCK:
         api_key = str(_CONFIG.get("ai_evaluator_api_key", ""))
-        return {
-            "project_dir": _CONFIG["project_dir"],
-            "allowed_roots": list(_CONFIG["allowed_roots"]),
-            "auto_approve": bool(_CONFIG["auto_approve"]),
-            "client_managed_approval": bool(_CONFIG["client_managed_approval"]),
-            "shell_timeout": int(_CONFIG["shell_timeout"]),
-            "approval_preset": _CONFIG["approval_preset"],
-            "onboarding_enabled": bool(_CONFIG["onboarding_enabled"]),
-            "context_budget_profile": str(_CONFIG["context_budget_profile"]),
-            "tool_profile": str(_CONFIG["tool_profile"]),
-            "intent_compaction_enabled": bool(_CONFIG["intent_compaction_enabled"]),
-            "ai_evaluator_enabled": bool(_CONFIG["ai_evaluator_enabled"]),
-            "ai_evaluator_provider": str(_CONFIG["ai_evaluator_provider"]),
-            "ai_evaluator_api_key": "[REDACTED]" if api_key else "",
-            "ai_evaluator_model": str(_CONFIG.get("ai_evaluator_model", "")),
-            "ai_evaluator_timeout": int(_CONFIG["ai_evaluator_timeout"]),
-            "ai_evaluator_fallback_action": str(_CONFIG["ai_evaluator_fallback_action"]),
-            "role": _CONFIG["role"],
-            "user": _CONFIG["user"],
-        }
+        return copy.deepcopy(
+            {
+                "project_dir": _CONFIG["project_dir"],
+                "allowed_roots": list(_CONFIG["allowed_roots"]),
+                "auto_approve": bool(_CONFIG["auto_approve"]),
+                "client_managed_approval": bool(_CONFIG["client_managed_approval"]),
+                "shell_timeout": int(_CONFIG["shell_timeout"]),
+                "approval_preset": _CONFIG["approval_preset"],
+                "onboarding_enabled": bool(_CONFIG["onboarding_enabled"]),
+                "context_budget_profile": str(_CONFIG["context_budget_profile"]),
+                "tool_profile": str(_CONFIG["tool_profile"]),
+                "intent_compaction_enabled": bool(_CONFIG["intent_compaction_enabled"]),
+                "ai_evaluator_enabled": bool(_CONFIG["ai_evaluator_enabled"]),
+                "ai_evaluator_provider": str(_CONFIG["ai_evaluator_provider"]),
+                "ai_evaluator_api_key": "[REDACTED]" if api_key else "",
+                "ai_evaluator_model": str(_CONFIG.get("ai_evaluator_model", "")),
+                "ai_evaluator_timeout": int(_CONFIG["ai_evaluator_timeout"]),
+                "ai_evaluator_fallback_action": str(_CONFIG["ai_evaluator_fallback_action"]),
+                "role": _CONFIG["role"],
+                "user": _CONFIG["user"],
+            }
+        )
 
 
 def raw_ai_evaluator_config() -> dict[str, Any]:
@@ -564,6 +592,21 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
         if key in {"auto_approve", "client_managed_approval"}:
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be a boolean")
+            if key == "auto_approve" and value is True:
+                safety_confirm = (
+                    os.environ.get("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "0")
+                    .strip()
+                    .lower()
+                )
+                if safety_confirm not in {"1", "true", "yes", "on"}:
+                    _CONFIG["auto_approve"] = False
+                    _CONFIG["client_managed_approval"] = True
+                    result = current_config()
+                    result["_warning"] = (
+                        "auto_approve requires CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED=1; "
+                        "downgraded to client_managed_approval"
+                    )
+                    return result
             _CONFIG[key] = value
             return current_config()
 
@@ -638,14 +681,24 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             return current_config()
 
         if key == "role":
-            if value is not None and not isinstance(value, str):
-                raise ValueError("role must be a string or None")
+            if value is not None and (
+                not isinstance(value, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+            ):
+                raise ValueError(
+                    "role must be alphanumeric, hyphen, or underscore, or None"
+                )
             _CONFIG[key] = value
             return current_config()
 
         if key == "user":
-            if value is not None and not isinstance(value, str):
-                raise ValueError("user must be a string or None")
+            if value is not None and (
+                not isinstance(value, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+            ):
+                raise ValueError(
+                    "user must be alphanumeric, hyphen, or underscore, or None"
+                )
             _CONFIG[key] = value
             return current_config()
 

@@ -53,6 +53,7 @@ _BLOCKED_PIPE_TARGETS = {
     "perl",
     "ruby",
     "node",
+    "xargs",
 }
 _WRAPPER_COMMANDS = {
     "nohup",
@@ -157,6 +158,7 @@ _BLOCKED_DIRECT_COMMANDS = frozenset(
         "socat",
         "openssl",
         "telnet",
+        "doas",
     }
 )
 

@@ -191,7 +191,11 @@ async def run_agent_loop_step(
                 False,
                 f"{name} contains shell injection syntax",
                 code="unsafe_patch_param",
-                details={"iteration": iteration, "max_iterations": max_iterations, "decision": "stop"},
+                details={
+                    "iteration": iteration,
+                    "max_iterations": max_iterations,
+                    "decision": "stop",
+                },
             )
 
     try:
@@ -327,8 +331,10 @@ async def build_agent_loop_session_quality_advice_optimized(
     )
 
     def _run_sync_calls() -> tuple[
-        AgentAdviceResponse, ImprovedRequestResponse,
-        PlanQualityReviewResponse, ResultQualityReviewResponse
+        AgentAdviceResponse,
+        ImprovedRequestResponse,
+        PlanQualityReviewResponse,
+        ResultQualityReviewResponse,
     ]:
         advice = advise_next_step(advice_req)
         improved = improve_request(goal, target=target)
