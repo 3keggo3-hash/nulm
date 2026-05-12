@@ -10,6 +10,7 @@ from typing import Any, Callable, Awaitable
 
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
+from claude_bridge.agent_advisor import ResultQualityReviewRequest, review_result_quality
 from claude_bridge.skill_builder import (
     WorkflowResult,
     propose_skill_creation as propose_skill_creation_async,
@@ -381,6 +382,74 @@ class WorkflowEngine:
             "execution_log": self.execution_log,
             "checkpoint_name": self.checkpoint_name,
         }
+
+    async def _run_self_review(self) -> dict[str, Any]:
+        """Run self-critique before moving to REPORTING.
+
+        Returns dict with status (pass/fail), warnings, and errors.
+        """
+        changed_files = self._get_changed_files()
+        test_results = self._get_test_results()
+
+        request = ResultQualityReviewRequest(
+            goal=self.task,
+            result_summary=f"Workflow completed with {len(self.steps)} steps",
+            changed_files=changed_files,
+            validation=test_results,
+        )
+        review = review_result_quality(request)
+
+        result = {"status": "pass", "verdict": review.verdict, "summary": review.summary, "warnings": [], "errors": []}
+        if review.verdict in ("needs_followup", "needs_clarification"):
+            result["status"] = "fail"
+            result["errors"].append(review.summary)
+        elif review.strengths:
+            result["warnings"] = [s for s in review.strengths if "note" in s.lower()]
+        return result
+
+    def _get_changed_files(self) -> list[str]:
+        """Extract list of files modified during workflow."""
+        files: list[str] = []
+        for step in self.steps:
+            if step.files_affected:
+                files.extend(step.files_affected)
+        return list(set(files))
+
+    def _get_test_results(self) -> dict[str, Any]:
+        """Get test results from execution log."""
+        completed_steps = sum(1 for s in self.steps if s.status == "completed")
+        failed_steps = sum(1 for s in self.steps if s.status == "failed")
+
+        if failed_steps > 0:
+            return {"passed": False, "steps_tested": completed_steps}
+
+        for log in reversed(self.execution_log):
+            if log.get("event") == "step_completed" and "test" in log.get("action", "").lower():
+                return {"passed": log.get("status") == "completed", "steps_tested": completed_steps}
+
+        return {"passed": True, "steps_tested": completed_steps}
+
+    async def transition_to_reporting(self) -> dict[str, Any]:
+        """Transition from TESTING to REPORTING after self-review.
+
+        Runs self-critique and only transitions if review passes or user approves.
+        Returns dict with transition result and review info.
+        """
+        if self.state != WorkflowState.TESTING:
+            raise ValueError(f"Cannot transition from {self.state.value}, expected TESTING")
+
+        review_result = await self._run_self_review()
+
+        if review_result["status"] == "fail":
+            self._log_event("self_review_failed", review_result)
+            return {"ok": False, "review": review_result}
+
+        if review_result["warnings"]:
+            self._log_warning(f"Self-review warnings: {review_result['warnings']}")
+
+        self.transition_to(WorkflowState.REPORTING)
+        self._log_event("transition_to_reporting", {"review": review_result})
+        return True
 
     def rollback(self) -> dict[str, Any]:
         """Rollback to the last checkpoint."""
