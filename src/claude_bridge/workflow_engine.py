@@ -10,6 +10,7 @@ from typing import Any, Callable, Awaitable
 
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
+from claude_bridge.skill_builder import check_and_propose
 from claude_bridge.tool_utils import request_approval
 
 
@@ -379,3 +380,19 @@ class WorkflowEngine:
         self.task = ""
         self.checkpoint_name = None
         self._log_event("reset", {})
+
+    def check_and_propose_skill(
+        self,
+        request_approval_fn=None,
+    ) -> tuple[bool, str | None]:
+        """Propose skill creation if workflow result is suitable."""
+        if self.state != WorkflowState.DONE:
+            return False, None
+
+        workflow_result = {
+            "task": self.task,
+            "steps": [s.to_dict() for s in self.steps],
+            "outcome": "success",
+            "artifacts": {},
+        }
+        return check_and_propose(workflow_result, request_approval_fn)
