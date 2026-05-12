@@ -5,7 +5,6 @@ import pytest
 from claude_bridge.agents.orchestrator import OrchestratorAgent
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult, AgentStatus
-from claude_bridge.agents.shared_memory import SharedMemorySpace
 
 
 class DummySubAgent(BaseAgent):
