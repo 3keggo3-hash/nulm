@@ -207,4 +207,4 @@ def get_agent(name: str) -> BaseAgent:
     if name not in agents:
         raise ValueError(f"Unknown agent: {name}")
 
-    return agents[name]()  # type: ignore[return-value]
+    return agents[name]()  # type: ignore[call-arg]

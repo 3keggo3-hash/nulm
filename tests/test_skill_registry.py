@@ -1,7 +1,5 @@
 """Tests for skill_registry module."""
 
-import json
-import tempfile
 from pathlib import Path
 
 import pytest
