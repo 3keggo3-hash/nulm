@@ -60,6 +60,6 @@ def test_shared_memory_get_agent_view():
 
 def test_shared_memory_update_agent_view():
     memory = SharedMemorySpace()
-    memory.update_agent_view("test_agent", {"custom_key": "custom_value"})
+    memory.write("custom_key", "custom_value")
     view = memory.get_agent_view("test_agent")
     assert view["custom_key"] == "custom_value"

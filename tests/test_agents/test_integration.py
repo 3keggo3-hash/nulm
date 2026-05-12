@@ -50,9 +50,6 @@ async def test_shared_memory_between_agents():
 
 @pytest.mark.asyncio
 async def test_parallel_agent_execution():
-    from claude_bridge.agents.orchestrator import OrchestratorAgent
-
-    orchestrator = OrchestratorAgent()
     agents = [ResearchAgent(), ResearchAgent()]
 
     subtasks = [

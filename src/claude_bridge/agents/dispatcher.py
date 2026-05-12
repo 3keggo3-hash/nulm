@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult
@@ -70,7 +70,7 @@ class TaskDispatcher:
                     )
                 )
             else:
-                processed_results.append(result)
+                processed_results.append(cast(AgentResult, result))
 
         return processed_results
 
