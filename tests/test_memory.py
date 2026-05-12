@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 
 from claude_bridge.memory import (
-    KEY_FILE,
-    MEMORY_DIR,
-    MEMORY_FILE,
     LessonLearned,
     MemoryStore,
     ProjectMemory,
     UserMemory,
-    _get_key,
-    get_memory_store,
 )
 
 
@@ -298,6 +292,3 @@ class TestKeyManagement:
             memory_module.KEY_FILE = orig_file
             if key_file.exists():
                 key_file.unlink()
-
-
-from cryptography.fernet import Fernet
