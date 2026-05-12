@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
+from claude_bridge.intent_engine import detect_undecided
+
 DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
 _DetectEncodingBytes = Callable[[bytes], Any]
 
@@ -247,7 +249,10 @@ def compact_intent(
     original_tokens = estimate_token_count(normalized)
     compact_summary_tokens = estimate_token_count(compact_summary)
     compact_tokens = estimate_token_count(compact_prompt)
-    return {
+
+    is_vague, vague_intent = detect_undecided(normalized)
+
+    result: dict[str, Any] = {
         "original_text": normalized,
         "canonical_intent": compact_fields,
         "compact_summary": compact_summary,
@@ -257,7 +262,21 @@ def compact_intent(
         "estimated_compact_tokens": compact_tokens,
         "estimated_token_delta": compact_summary_tokens - original_tokens,
         "estimated_prompt_overhead_tokens": compact_tokens - compact_summary_tokens,
+        "is_vague": is_vague,
         "recommended_usage": (
             "Use the canonical intent object for internal routing and keep the original text only when nuance is needed."
         ),
     }
+
+    if is_vague:
+        result["vague_intent"] = {
+            "intent_type": vague_intent.intent_type.value,
+            "confidence": vague_intent.confidence,
+            "suggested_actions": vague_intent.suggested_actions,
+            "matched_patterns": vague_intent.matched_patterns,
+        }
+        result["recommended_usage"] = (
+            "Vague input detected. Use undecided_mode_analyze tool for architectural analysis."
+        )
+
+    return result
