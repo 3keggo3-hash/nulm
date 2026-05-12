@@ -8,11 +8,12 @@ from typing import Any
 
 from claude_bridge._detective_classifiers import classify_error, extract_error_location
 from claude_bridge._detective_investigator import check_dependencies, run_diagnostics
-from claude_bridge._detective_learner import add_lesson, find_similar_lesson
+from claude_bridge._detective_learner import find_similar_lesson
 from claude_bridge._detective_locator import find_related_files, get_recent_changes
 from claude_bridge._detective_report import format_detective_report
 from claude_bridge.checkpoint import create_checkpoint
 from claude_bridge.config import project_dir
+from claude_bridge.memory import get_memory_store
 
 
 class DetectiveState(Enum):
@@ -219,11 +220,11 @@ class BridgeDetective:
 
         fix = getattr(self, "_suggested_fix", "")
         if fix and ctx.error_type != "UNKNOWN":
-            add_lesson(
+            memory = get_memory_store()
+            memory.add_lesson(
                 pattern=ctx.error_message[:100],
                 solution=fix,
-                error_type=ctx.error_type,
-                file_path=ctx.file_path,
+                project=project_dir().name,
             )
 
     def _build_report(self) -> DetectiveReport:

@@ -49,6 +49,21 @@ class WorkflowStep:
         }
 
 
+class OrchestratorExecutor:
+    """Wrapper for executing orchestrator tasks within a workflow."""
+
+    def __init__(self, orchestrator: Any) -> None:
+        self.orchestrator = orchestrator
+
+    async def execute_workflow_task(
+        self,
+        task: str,
+        agents: list[Any],
+    ) -> dict[str, Any]:
+        result = await self.orchestrator.orchestrate(task, agents)
+        return result.to_dict()
+
+
 class WorkflowEngine:
     """State machine for mandatory workflow execution.
 
