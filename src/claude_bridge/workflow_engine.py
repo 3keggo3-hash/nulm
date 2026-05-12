@@ -383,7 +383,7 @@ class WorkflowEngine:
 
     def check_and_propose_skill(
         self,
-        request_approval_fn=None,
+        request_approval_fn: Any = None,
     ) -> tuple[bool, str | None]:
         """Propose skill creation if workflow result is suitable."""
         if self.state != WorkflowState.DONE:

@@ -110,7 +110,6 @@ def import_skill(package_path: Path) -> tuple[bool, list[str]]:
             code_content = code_file.read().decode("utf-8")
 
         name = manifest_data["name"]
-        version = manifest_data["version"]
 
         registry = get_registry()
         meta = registry.get_meta(name)

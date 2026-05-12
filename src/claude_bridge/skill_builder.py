@@ -9,8 +9,6 @@ from typing import Any
 from claude_bridge.skill_schema import (
     SkillMeta,
     create_skill_json,
-    get_current_timestamp,
-    save_skill_json,
 )
 from claude_bridge.skill_registry import get_registry
 
@@ -171,14 +169,14 @@ def _generate_skill_code(task: str, steps: list[dict[str, Any]]) -> str:
 
 def propose_skill_creation(
     workflow_result: dict[str, Any],
-    request_approval_fn=None,
+    request_approval_fn: Any = None,
 ) -> tuple[bool, str | None]:
     """Propose skill creation to user and optionally save.
 
     Returns (approved, skill_name). If approved, skill is saved.
     """
     skill_json, skill_code = extract_skill(workflow_result)
-    if skill_json is None:
+    if skill_json is None or skill_code is None:
         return False, None
 
     name = skill_json["name"]
@@ -186,14 +184,14 @@ def propose_skill_creation(
     if request_approval_fn is not None:
         import asyncio
 
-        async def ask():
+        async def ask() -> bool:
             message = (
                 f"Bunu skill olarak kaydetmemi ister misin?\n"
                 f"  Name: {name}\n"
                 f"  Triggers: {', '.join(skill_json['trigger_phrases'][:3])}\n"
                 f"  Context: {', '.join(skill_json['trigger_context'])}"
             )
-            return await request_approval_fn("skill_create", {"skill_name": name, "message": message})
+            return await request_approval_fn("skill_create", {"skill_name": name, "message": message})  # type: ignore[no-any-return]
 
         approved = asyncio.get_event_loop().run_until_complete(ask())
     else:
@@ -210,7 +208,7 @@ def propose_skill_creation(
 
 def check_and_propose(
     workflow_result: dict[str, Any],
-    request_approval_fn=None,
+    request_approval_fn: Any = None,
 ) -> tuple[bool, str | None]:
     """Check if workflow result is suitable for skill creation and propose.
 
