@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_bridge.guard_policy import load_guard_policy
+from claude_bridge.skill_registry import get_registry
 
 # ---------------------------------------------------------------------------
 # Data model
