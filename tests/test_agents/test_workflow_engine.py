@@ -148,7 +148,7 @@ async def test_workflow_engine_transition_to_reporting():
     engine.transition_to(WorkflowState.TESTING)
     result = await engine.transition_to_reporting()
 
-    assert result is True
+    assert result["ok"] is True
     assert engine.state == WorkflowState.REPORTING
 
 
