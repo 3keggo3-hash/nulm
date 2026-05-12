@@ -181,15 +181,14 @@ def _match_extension(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
 def _is_path_within_allowed_roots(target: Path, ctx: ToolRequestContext) -> bool:
     """Check whether *target* is inside any of the allowed workspace roots.
 
-    Falls back to *project_dir* when *allowed_roots* is empty.  When neither
-    is available the check is skipped so that callers without boundary
-    configuration (e.g. legacy tests) continue to work.
+    Falls back to *project_dir* when *allowed_roots* is empty.
+    Returns False (fail-closed) when no boundary is configured.
     """
     if ctx.allowed_roots:
         return any(is_within_root(target, Path(r)) for r in ctx.allowed_roots)
     if ctx.project_dir:
         return is_within_root(target, Path(ctx.project_dir))
-    return True
+    return False
 
 
 def _match_file_exists(ctx: ToolRequestContext, condition: RuleCondition) -> bool:

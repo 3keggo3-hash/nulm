@@ -246,6 +246,7 @@ async def copy_path(
     try:
         if source_path.is_dir():
             total_size = 0
+            file_count = 0
             roots = allowed_roots()
             for f in source_path.rglob("*"):
                 resolved_f = f
@@ -256,6 +257,14 @@ async def copy_path(
                 if not any(is_within_root(resolved_f, root) for root in roots):
                     continue
                 if f.is_file() and not f.is_symlink():
+                    file_count += 1
+                    if file_count > 10000:
+                        return json_response(
+                            False,
+                            "Directory contains too many files (>10000)",
+                            code="too_many_files",
+                            details={"source": source, "file_count": file_count},
+                        )
                     try:
                         total_size += f.stat().st_size
                     except OSError:

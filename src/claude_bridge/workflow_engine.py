@@ -414,7 +414,13 @@ class WorkflowEngine:
         else:
             status = "pass"
 
-        result: dict[str, Any] = {"status": status, "verdict": verdict, "summary": review.summary, "warnings": warnings_list, "errors": errors_list}
+        result: dict[str, Any] = {
+            "status": status,
+            "verdict": verdict,
+            "summary": review.summary,
+            "warnings": warnings_list,
+            "errors": errors_list,
+        }
         return result
 
     def _get_changed_files(self) -> list[str]:

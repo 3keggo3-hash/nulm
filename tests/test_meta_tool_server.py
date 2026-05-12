@@ -3,6 +3,7 @@
 import json
 
 from claude_bridge import server as mcp_server
+from claude_bridge.meta_tool_server import _autocomplete_suggestions
 
 
 class TestAdviseNextStep:
@@ -311,3 +312,22 @@ class TestWorkspaceStatus:
         assert payload["ok"] is True
         assert "root_rules" in payload["details"]
         assert payload["details"]["root_rules"]["can_switch_to_subdirectories"] is True
+
+
+class TestAutocompleteSuggestions:
+    def test_rejects_path_traversal(self, tmp_path):
+        (tmp_path / "safe.txt").write_text("safe")
+        result = _autocomplete_suggestions(
+            "../../etc",
+            project_dir=lambda: tmp_path,
+        )
+        assert not any("etc" in s["text"] for s in result["suggestions"])
+
+    def test_rejects_context_path_traversal(self, tmp_path):
+        (tmp_path / "safe.txt").write_text("safe")
+        result = _autocomplete_suggestions(
+            "",
+            project_dir=lambda: tmp_path,
+            context="../../etc",
+        )
+        assert not any("etc" in s["text"] for s in result["suggestions"])
