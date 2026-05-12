@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
+
+if TYPE_CHECKING:
+    from claude_bridge.agents.base import BaseAgent
 
 TOOL_PERMISSIONS: dict[str, dict[str, set[str]]] = {
     "orchestrator": {
@@ -156,3 +160,51 @@ class PermissionMatrix:
             expired = [ag for ag, ov in self._overrides.items() if not ov.is_active()]
             for ag in expired:
                 del self._overrides[ag]
+
+
+class AgentPermissionError(Exception):
+    """Raised when an agent attempts to use a tool it doesn't have permission for."""
+
+    def __init__(self, agent: str, tool: str) -> None:
+        self.agent = agent
+        self.tool = tool
+        super().__init__(f"Agent '{agent}' does not have permission to use tool '{tool}'")
+
+
+def get_agent(name: str) -> BaseAgent:
+    """Factory function to create an agent by name.
+
+    Args:
+        name: The agent name (e.g., 'git_agent', 'security_agent', etc.)
+
+    Returns:
+        An instance of the requested agent.
+
+    Raises:
+        ValueError: If the agent name is unknown.
+    """
+    from claude_bridge.agents.sub import (
+        GitAgent,
+        SecurityAgent,
+        DebugAgent,
+        ResearchAgent,
+        ReviewAgent,
+    )
+
+    agents: dict[str, type[BaseAgent]] = {
+        "git_agent": GitAgent,
+        "security_agent": SecurityAgent,
+        "debug_agent": DebugAgent,
+        "research_agent": ResearchAgent,
+        "review_agent": ReviewAgent,
+    }
+
+    if name == "orchestrator":
+        from claude_bridge.agents import OrchestratorAgent
+
+        return OrchestratorAgent()
+
+    if name not in agents:
+        raise ValueError(f"Unknown agent: {name}")
+
+    return agents[name]()  # type: ignore[return-value]

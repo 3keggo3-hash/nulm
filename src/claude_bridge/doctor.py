@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from claude_bridge.guard_policy import load_guard_policy
+from claude_bridge.memory import MemoryStore, ProjectMemory
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,9 @@ def build_doctor_report(
             "Useful for auto-commit and history-aware workflows",
         ),
     ]
+
+    _update_project_memory(resolved_project_dir)
+
     return DoctorReport(
         project_dir=resolved_project_dir,
         approval_preset=_optional_str(config_snapshot.get("approval_preset")),
@@ -156,6 +160,18 @@ def _check_dir_writable(path: Path) -> bool:
         return True
     except (OSError, PermissionError):
         return False
+
+
+def _update_project_memory(project_dir: Path) -> None:
+    try:
+        store = MemoryStore()
+        existing = store.get_project_memory()
+        if not existing.path or existing.path != str(project_dir.resolve()):
+            proj_mem = ProjectMemory()
+            proj_mem.populate_from_project(project_dir)
+            store.update_project_memory(proj_mem)
+    except Exception:
+        pass
 
 
 def build_security_doctor_report(

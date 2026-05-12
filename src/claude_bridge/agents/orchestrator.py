@@ -9,6 +9,7 @@ from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.dispatcher import TaskDispatcher
 from claude_bridge.agents.result import AgentResult, AgentStatus
 from claude_bridge.agents.shared_memory import SharedMemorySpace
+from claude_bridge.permissions import PermissionMatrix
 
 
 class OrchestratorAgent(BaseAgent):

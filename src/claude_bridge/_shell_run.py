@@ -227,7 +227,7 @@ async def run_shell(
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
     auto_approve_on, client_managed = approval_mode()
-    if analysis_risk in ("medium", "high", "critical") and auto_approve_on:
+    if analysis_risk in ("high", "critical") and auto_approve_on:
         ask_decision = _shell_analysis_decision(
             analysis,
             action=DecisionAction.ASK,
@@ -499,7 +499,7 @@ async def start_process(
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
     auto_approve_on, client_managed = approval_mode()
-    if analysis_risk in ("medium", "high", "critical") and auto_approve_on:
+    if analysis_risk in ("high", "critical") and auto_approve_on:
         ask_decision = _shell_analysis_decision(
             analysis,
             action=DecisionAction.ASK,
