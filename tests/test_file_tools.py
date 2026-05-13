@@ -158,6 +158,35 @@ class TestSliceTextLines:
         assert result["line_limit"] == 1
 
 
+class TestBudgetAwareReadLimits:
+    async def test_read_multiple_files_rejects_over_budget_path_count(self, temp_project):
+        paths = []
+        for index in range(9):
+            path = temp_project / f"{index}.txt"
+            path.write_text("x\n")
+            paths.append(path.name)
+
+        result = parse_payload(
+            await mcp_server.read_multiple_files(paths, budget_tokens=2000)
+        )
+
+        assert result["ok"] is False
+        assert result["code"] == "too_many_paths"
+        assert result["details"]["max_paths"] == 8
+
+    async def test_search_in_files_caps_low_cost_result_limit(self, temp_project):
+        for index in range(60):
+            (temp_project / f"{index}.txt").write_text("needle\n")
+
+        result = parse_payload(
+            await mcp_server.search_in_files("needle", path=".", limit=200, budget_tokens=2000)
+        )
+
+        assert result["ok"] is True
+        assert len(result["details"]["results"]) == 50
+        assert result["details"]["truncated"] is True
+
+
 # ---------------------------------------------------------------------------
 # _estimate_patch_risk
 # ---------------------------------------------------------------------------

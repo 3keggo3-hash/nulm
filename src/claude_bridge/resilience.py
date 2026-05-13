@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
@@ -33,10 +33,28 @@ async def retry_with_backoff(
     func: Callable[..., Any],
     *args: Any,
     config: RetryConfig | None = None,
+    max_retries: int | None = None,
+    base_delay: float | None = None,
+    max_delay: float | None = None,
+    exponential_base: float | None = None,
+    retryable_exceptions: tuple[type[Exception], ...] | None = None,
     **kwargs: Any,
 ) -> Any:
     if config is None:
         config = RetryConfig()
+    overrides: dict[str, Any] = {}
+    if max_retries is not None:
+        overrides["max_retries"] = max_retries
+    if base_delay is not None:
+        overrides["base_delay"] = base_delay
+    if max_delay is not None:
+        overrides["max_delay"] = max_delay
+    if exponential_base is not None:
+        overrides["exponential_base"] = exponential_base
+    if retryable_exceptions is not None:
+        overrides["retryable_exceptions"] = retryable_exceptions
+    if overrides:
+        config = replace(config, **overrides)
     last_exception: Exception | None = None
     for attempt in range(1, config.max_retries + 2):
         try:
@@ -72,9 +90,28 @@ class CircuitBreakerConfig:
 
 
 class CircuitBreaker:
-    def __init__(self, config: CircuitBreakerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: CircuitBreakerConfig | None = None,
+        *,
+        failure_threshold: int | None = None,
+        success_threshold: int | None = None,
+        recovery_timeout: float | None = None,
+        half_open_max_calls: int | None = None,
+    ) -> None:
         if config is None:
             config = CircuitBreakerConfig()
+        overrides: dict[str, Any] = {}
+        if failure_threshold is not None:
+            overrides["failure_threshold"] = failure_threshold
+        if success_threshold is not None:
+            overrides["success_threshold"] = success_threshold
+        if recovery_timeout is not None:
+            overrides["recovery_timeout"] = recovery_timeout
+        if half_open_max_calls is not None:
+            overrides["half_open_max_calls"] = half_open_max_calls
+        if overrides:
+            config = replace(config, **overrides)
         self._config = config
         self._state = CircuitState.CLOSED
         self._failure_count = 0

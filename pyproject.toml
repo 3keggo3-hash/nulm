@@ -66,6 +66,9 @@ smart = [
     "tiktoken>=0.7.0",
     "charset-normalizer>=3.0.0",
 ]
+memory = [
+    "cryptography>=42.0.0",
+]
 multi-format = [
     "Pillow>=10.0.0",
     "PyPDF2>=3.0.0",

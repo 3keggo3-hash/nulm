@@ -90,11 +90,27 @@ class BridgeDetective:
     Flow: CLASSIFY -> LOCATE -> INVESTIGATE -> SOLVE -> LEARN
     """
 
-    def __init__(self, error_output: str, command: str = "") -> None:
+    def __init__(
+        self,
+        error_output: str,
+        command: str = "",
+        *,
+        allow_diagnostics: bool = False,
+        allow_side_effects: bool = False,
+    ) -> None:
         self.error_output = error_output
         self.command = command
+        self.allow_diagnostics = allow_diagnostics
+        self.allow_side_effects = allow_side_effects
         self.state = DetectiveState.IDLE
         self._context: ErrorContext | None = None
+        self._related_files: list[str] = []
+        self._recent_changes: list[dict[str, Any]] = []
+        self._diagnostics: list[dict[str, Any]] = []
+        self._dep_check: dict[str, Any] = {}
+        self._similar_lesson: dict[str, Any] | None = None
+        self._suggested_fix = ""
+        self._checkpoint_created = False
 
     async def investigate(self) -> DetectiveReport:
         """Run the full investigation workflow."""
@@ -137,15 +153,10 @@ class BridgeDetective:
         ctx.file_path = str((pd / ctx.file_path).resolve()) if ctx.file_path else ""
 
         if ctx.file_path:
-            related = find_related_files(ctx.file_path, pd)
-            if hasattr(self, "_related_files"):
-                self._related_files = related
-            if hasattr(self, "_recent_changes"):
-                self._recent_changes = get_recent_changes(ctx.file_path, pd)
-
-        if hasattr(self, "_related_files"):
+            self._related_files = find_related_files(ctx.file_path, pd)
+            self._recent_changes = get_recent_changes(ctx.file_path, pd)
+        else:
             self._related_files = []
-        if hasattr(self, "_recent_changes"):
             self._recent_changes = []
 
     async def _investigate(self) -> None:
@@ -154,24 +165,25 @@ class BridgeDetective:
         ctx = self._context
         pd = project_dir()
 
-        if hasattr(self, "_diagnostics"):
-            self._diagnostics = []
+        self._diagnostics = []
         if ctx.file_path:
-            diag_result = await run_diagnostics(ctx.file_path, ctx.error_type, pd)
-            if hasattr(self, "_diagnostics"):
-                self._diagnostics = diag_result.get("diagnostics", [])
+            diag_result = await run_diagnostics(
+                ctx.file_path,
+                ctx.error_type,
+                pd,
+                allow_commands=self.allow_diagnostics,
+            )
+            self._diagnostics = diag_result.get("diagnostics", [])
 
             deps_result = check_dependencies(ctx.file_path, pd)
-            if hasattr(self, "_dep_check"):
-                self._dep_check = deps_result
+            self._dep_check = deps_result
 
     def _solve(self) -> None:
         if self._context is None:
             return
         ctx = self._context
 
-        if hasattr(self, "_suggested_fix"):
-            self._suggested_fix = ""
+        self._suggested_fix = ""
 
         if ctx.error_type == "SYNTAX_ERROR":
             if "parenthesis" in ctx.error_output.lower():
@@ -184,6 +196,7 @@ class BridgeDetective:
         elif ctx.error_type == "RUNTIME_ERROR":
             if "ModuleNotFoundError" in ctx.error_output or "No module named" in ctx.error_output:
                 import re
+
                 m = re.search(r"No module named '([^']+)'", ctx.error_output)
                 if m:
                     self._suggested_fix = f"pip install {m.group(1)}"
@@ -204,13 +217,11 @@ class BridgeDetective:
             similar = find_similar_lesson(ctx.error_output)
             if similar:
                 self._suggested_fix = similar.get("solution", "")
-                if hasattr(self, "_similar_lesson"):
-                    self._similar_lesson = similar
+                self._similar_lesson = similar
 
-        if hasattr(self, "_checkpoint_created"):
-            self._checkpoint_created = False
-        cp = create_checkpoint(f"before-fix-{ctx.error_type}")
-        if hasattr(self, "_checkpoint_created"):
+        self._checkpoint_created = False
+        if self.allow_side_effects:
+            cp = create_checkpoint(f"before-fix-{ctx.error_type}")
             self._checkpoint_created = cp.get("ok", False)
 
     def _learn(self) -> None:
@@ -219,7 +230,7 @@ class BridgeDetective:
         ctx = self._context
 
         fix = getattr(self, "_suggested_fix", "")
-        if fix and ctx.error_type != "UNKNOWN":
+        if self.allow_side_effects and fix and ctx.error_type != "UNKNOWN":
             memory = get_memory_store()
             memory.add_lesson(
                 pattern=ctx.error_message[:100],

@@ -1,7 +1,8 @@
-"""Skill execution in sandboxed subprocess."""
+"""Skill execution in a bounded subprocess."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -11,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from claude_bridge.skill_registry import get_registry
-
 
 DEFAULT_TIMEOUT_SECONDS = 30
 SKILL_DIR = Path(".claude-bridge/skills")
@@ -37,9 +37,10 @@ class SkillResult:
 
 
 class SkillExecutor:
-    """Executes skills in a sandboxed subprocess.
+    """Executes approved skills in a bounded subprocess.
 
-    Runs skill code with timeout and permission restrictions.
+    This is not an OS sandbox. Skill code is user-approved Python and is isolated only by
+    timeout, context filtering, and a reduced environment.
     """
 
     def __init__(self, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> None:
@@ -68,12 +69,10 @@ class SkillExecutor:
         }
         return {k: v for k, v in context.items() if k in safe_keys}
 
-    def run_skill(
-        self, name: str, context: dict[str, Any] | None = None
-    ) -> SkillResult:
+    def run_skill(self, name: str, context: dict[str, Any] | None = None) -> SkillResult:
         """Execute a skill by name with the given context.
 
-        Runs the skill in an isolated subprocess with timeout.
+        Runs the skill in a bounded subprocess with timeout.
         """
         import subprocess
 
@@ -108,6 +107,7 @@ class SkillExecutor:
         start = time.monotonic()
 
         try:
+            SKILL_DIR.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 mode="w",
                 suffix=".py",
@@ -127,7 +127,8 @@ class SkillExecutor:
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,
-                    cwd=context.get("cwd", os.getcwd()),
+                    cwd=os.getcwd(),
+                    env=_skill_env(),
                 )
             finally:
                 Path(skill_file).unlink(missing_ok=True)
@@ -170,13 +171,13 @@ class SkillExecutor:
 
         Imports skill module, runs the run() function with context.
         """
-        context_repr = repr(context)
+        context_json = json.dumps(context)
         return f"""
 import sys
 import json
 sys.path.insert(0, '.')
 
-context = json.loads({context_repr!r})
+context = json.loads({context_json!r})
 
 try:
     with open({skill_file!r}, 'r') as f:
@@ -194,6 +195,15 @@ except Exception as e:
 
 
 _executor: SkillExecutor | None = None
+
+
+def _skill_env() -> dict[str, str]:
+    env: dict[str, str] = {}
+    for key in ("PATH", "PYTHONPATH", "SYSTEMROOT", "WINDIR"):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
 
 
 def get_executor() -> SkillExecutor:

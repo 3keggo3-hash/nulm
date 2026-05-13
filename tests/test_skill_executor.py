@@ -1,9 +1,12 @@
 """Tests for skill_executor module."""
 
+from __future__ import annotations
+
 
 from claude_bridge.skill_executor import (
     SkillExecutor,
     SkillResult,
+    _skill_env,
     get_executor,
 )
 
@@ -42,6 +45,24 @@ class TestSkillExecutor:
         executor = SkillExecutor()
         result = executor._prepare_context({})
         assert result == {}
+
+    def test_build_execution_wrapper_uses_json_context(self) -> None:
+        executor = SkillExecutor()
+        wrapper = executor._build_execution_wrapper(
+            "/tmp/skill.py",
+            {"flag": True, "items": ["a", "b"]},
+        )
+        assert '"flag": true' in wrapper
+        assert "'flag': True" not in wrapper
+
+    def test_skill_env_drops_secret_environment(self, monkeypatch) -> None:
+        monkeypatch.setenv("PATH", "/bin")
+        monkeypatch.setenv("SECRET_TOKEN", "abc123")
+
+        env = _skill_env()
+
+        assert env["PATH"] == "/bin"
+        assert "SECRET_TOKEN" not in env
 
 
 class TestSkillResult:

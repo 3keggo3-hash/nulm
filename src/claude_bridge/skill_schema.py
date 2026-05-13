@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-import jsonschema
 
 
 @dataclass
@@ -116,15 +115,28 @@ def validate_skill_json(data: dict[str, Any]) -> tuple[bool, list[str]]:
     Returns (is_valid, error_messages).
     """
     errors: list[str] = []
-    try:
-        jsonschema.validate(data, SKILL_JSON_SCHEMA)
-        return True, []
-    except jsonschema.ValidationError as e:
-        errors.append(f"Validation error: {e.message}")
-        return False, errors
-    except jsonschema.SchemaError as e:
-        errors.append(f"Schema error: {e.message}")
-        return False, errors
+    if not isinstance(data.get("name"), str) or not re.fullmatch(
+        r"[a-zA-Z0-9_-]+", str(data.get("name", ""))
+    ):
+        errors.append("Validation error: name must match ^[a-zA-Z0-9_-]+$")
+    if not isinstance(data.get("version"), str) or not re.fullmatch(
+        r"\d+\.\d+", str(data.get("version", ""))
+    ):
+        errors.append("Validation error: version must match ^\\d+\\.\\d+$")
+    trigger_phrases = data.get("trigger_phrases")
+    if (
+        not isinstance(trigger_phrases, list)
+        or not trigger_phrases
+        or not all(isinstance(item, str) for item in trigger_phrases)
+    ):
+        errors.append("Validation error: trigger_phrases must be a non-empty string array")
+    for key in ("trigger_context", "permissions"):
+        value = data.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            errors.append(f"Validation error: {key} must be a string array")
+    if "auto_load" in data and not isinstance(data["auto_load"], bool):
+        errors.append("Validation error: auto_load must be a boolean")
+    return not errors, errors
 
 
 def load_skill_json(path: Path) -> tuple[dict[str, Any], list[str]]:

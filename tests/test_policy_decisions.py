@@ -111,7 +111,7 @@ class TestPolicyDecisionE2E:
             payload,
             action="ask",
             source="approval",
-            risk_level="medium",
+            risk_level="low",
         )
 
     async def test_sensitive_path_attempt_has_builtin_deny_decision(
@@ -334,7 +334,7 @@ class TestAiEvaluatorDecisions:
 
         assert payload["ok"] is False
         assert payload["code"] == "approval_rejected"
-        assert_decision(payload, action="ask", source="approval", risk_level="medium")
+        assert_decision(payload, action="ask", source="approval", risk_level="low")
 
     async def test_ai_deny_shell_command_blocks_execution(
         self, policy_project: tuple[Path, Path]
@@ -386,7 +386,7 @@ class TestAiEvaluatorDecisions:
 
         assert payload["ok"] is False
         assert payload["code"] == "approval_rejected"
-        assert_decision(payload, action="ask", source="ai", risk_level="medium")
+        assert_decision(payload, action="ask", source="ai", risk_level="low")
 
     async def test_ai_allow_write_file_still_requires_approval(
         self, policy_project: tuple[Path, Path]
@@ -502,7 +502,7 @@ class TestAiEvaluatorDecisions:
 
         assert payload["ok"] is False
         assert payload["code"] == "approval_rejected"
-        decision = assert_decision(payload, action="ask", source="ai", risk_level="medium")
+        decision = assert_decision(payload, action="ask", source="ai", risk_level="low")
         assert "timeout" in decision["reason"].lower()
 
     async def test_rule_no_match_ai_deny_beats_default_allow(
@@ -599,7 +599,7 @@ class TestAiEvaluatorDecisions:
 
         assert payload["ok"] is False
         assert payload["code"] == "approval_rejected"
-        assert_decision(payload, action="ask", source="ai", risk_level="medium")
+        assert_decision(payload, action="ask", source="ai", risk_level="low")
 
     async def test_builtin_hard_deny_cannot_be_bypassed_by_ai_allow(
         self, policy_project: tuple[Path, Path]

@@ -36,8 +36,9 @@ extra insights work.
 
 ## Collaboration Rules
 
-1. Start from `tasks/active/comprehensive-fix-plan.md` only when planning; after that, read only the
-   section being implemented.
+1. Start from `docs/product-vision.md`, `docs/roadmap.md`, and
+   `docs/agent-quality-layer-plan.md` when planning; after that, read only the section being
+   implemented.
 2. Use `rg` and narrow `sed -n` ranges instead of opening whole large files.
 3. Do not paste full `pytest`, `git diff`, or `git status` output into the chat; summarize counts and
    failures.

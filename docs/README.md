@@ -35,35 +35,11 @@ behavior, or operational flow.
   Practical rules for reducing token/context burn during AI collaboration sessions.
 - Cross-document sections named `Related Documents` should use `docs/...` paths for consistency.
 
-### Completed / Reference
+### Historical Notes
 
-These documents are not the master plan; they are retained under `archive/` as completed analyses,
-audits, or historical decision records.
-
-- `archive/competitive-analysis-desktopcommander.md`
-  Archived DesktopCommanderMCP comparison and findings.
-- `archive/performance-and-completion-audit.md`
-  Performance, completion, and UX audit report. Actionable items from its content
-  have been converted into newer canonical plans and docs.
-- `archive/product-roadmap.md`
-  Historical strategy and the earlier AI security layer pivot. The Phase 5 Web LLM
-  Extension idea was cancelled, so this should not be treated as canonical in new plans.
-- `archive/overnight-autopilot-plan.md`
-  Historical internal maintenance plan. Not part of public product docs.
-- `RELEASE-NOTES.md`
-  Release snapshot and historical change log for the public alpha candidate.
-
-### In Progress / Task Tracking
-
-The task lifecycle is not maintained under `docs/`. Active work and completed records:
-
-- `tasks/active/`
-- `tasks/done/`
-- `tasks/needs-review.md`
-
-### Candidates for Review or Archival
-
-Use `tasks/needs-review.md` as the source of truth for pending doc review/archival decisions.
+Old execution plans, competitive analyses, and scratch notes are intentionally not canonical
+documentation. When their useful decisions are absorbed into the active docs above, the historical
+Markdown files can be removed instead of preserved as parallel roadmaps.
 
 ## Directory Rules
 
@@ -76,12 +52,12 @@ The following types of documents belong here:
 
 Do not place task tracking or temporary work notes here:
 
-- active work goes in `tasks/active/`
-- completed task records go in `tasks/done/`
-- old plans and notes that are no longer canonical go in `archive/`
+- active work may live under `tasks/` while it is genuinely current
+- completed or superseded task notes should be summarized into durable docs, then removed
+- old plans should not duplicate `product-vision.md`, `roadmap.md`, or
+  `agent-quality-layer-plan.md`
 
 Note:
 
 - `benchmarks/README.md` is a dedicated usage guide that lives alongside the benchmark
-  directory; whether it needs to stay close to benchmark material is tracked in
-  `tasks/needs-review.md`.
+  directory.

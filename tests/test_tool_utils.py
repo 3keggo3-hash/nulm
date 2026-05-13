@@ -297,44 +297,32 @@ class TestPermissionCard:
         assert "/etc/config" in card.files
 
     def test_risk_category_safe(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=15
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=15)
         assert card.risk_category == "Safe"
         assert card.risk_emoji == "🔒"
 
     def test_risk_category_low(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=35
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=35)
         assert card.risk_category == "Low Risk"
         assert card.risk_emoji == "🔓"
 
     def test_risk_category_medium(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=55
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=55)
         assert card.risk_category == "Medium"
         assert card.risk_emoji == "⚠️"
 
     def test_risk_category_high(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=75
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=75)
         assert card.risk_category == "High"
         assert card.risk_emoji == "🚨"
 
     def test_risk_category_critical(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=95
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=95)
         assert card.risk_category == "Critical"
         assert card.risk_emoji == "🚨"
 
     def test_risk_category_blocked(self):
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=100
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=100)
         assert card.risk_category == "Blocked"
         assert card.risk_emoji == "🚫"
 
@@ -443,28 +431,23 @@ class TestExtractFilesFromCommand:
 
 class TestRequestApprovalWithCard:
     @pytest.mark.asyncio
-    async def test_request_approval_with_card_auto_approve(self, temp_project):
-        tu.approval_mode = lambda: (True, False)
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=10
-        )
+    async def test_request_approval_with_card_auto_approve(self, temp_project, monkeypatch):
+        monkeypatch.setattr(tu, "approval_mode", lambda: (True, False))
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=10)
         result = await tu.request_approval("test_tool", {"key": "val"}, card=card)
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_request_approval_without_card(self, temp_project):
-        tu.approval_mode = lambda: (False, False)
+    async def test_request_approval_without_card(self, temp_project, monkeypatch):
+        monkeypatch.setattr(tu, "approval_mode", lambda: (False, False))
         import sys
         from io import StringIO
 
         old_stderr = sys.stderr
         sys.stderr = StringIO()
-        card = tu.PermissionCard(
-            agent="test", action="test", reason="test", risk=10
-        )
+        card = tu.PermissionCard(agent="test", action="test", reason="test", risk=10)
         result = await tu.request_approval("test_tool", {"key": "val"}, card=card)
         assert result is False
         stderr_output = sys.stderr.getvalue()
         assert "Permission Card" in stderr_output
         sys.stderr = old_stderr
-

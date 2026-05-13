@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -366,6 +367,10 @@ def _approach_store_dir() -> Path:
     return store
 
 
+def _valid_approach_id(approach_id: str) -> bool:
+    return re.fullmatch(r"[0-9a-f]{32}", approach_id) is not None
+
+
 def _detect_keywords(problem: str) -> list[str]:
     """Return matching keyword keys found in the problem text."""
     lowered = problem.lower()
@@ -390,8 +395,9 @@ def explore_approaches(problem: str, count: int = 3) -> dict[str, Any]:
     for kw in keywords:
         for tmpl in _KEYWORD_APPROACHES[kw]:
             if tmpl["name"] not in seen_names:
-                tmpl["keyword"] = kw
-                candidates.append(dict(tmpl))
+                candidate = dict(tmpl)
+                candidate["keyword"] = kw
+                candidates.append(candidate)
                 seen_names.add(tmpl["name"])
 
     selected = candidates[:count]
@@ -412,6 +418,8 @@ def explore_approaches(problem: str, count: int = 3) -> dict[str, Any]:
 
 def execute_approach(approach_id: str) -> dict[str, Any]:
     """Load an approach file, mark it as executed, and return with metadata."""
+    if not _valid_approach_id(approach_id):
+        return {"ok": False, "message": "Invalid approach_id."}
     file_path = _approach_store_dir() / f"{approach_id}.json"
     if not file_path.exists():
         return {"ok": False, "message": f"Approach '{approach_id}' not found."}
@@ -439,6 +447,9 @@ def compare_approaches(approach_ids: list[str]) -> dict[str, Any]:
     missing: list[str] = []
 
     for aid in approach_ids:
+        if not isinstance(aid, str) or not _valid_approach_id(aid):
+            missing.append(str(aid))
+            continue
         file_path = store_dir / f"{aid}.json"
         if file_path.exists():
             try:

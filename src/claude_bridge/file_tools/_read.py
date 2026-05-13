@@ -128,6 +128,7 @@ async def read_multiple_files(
     offset: int = 0,
     limit: int = _MAX_READ_FILE_LINES,
     budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
+    max_paths: int = _MAX_MULTI_FILE_READS,
 ) -> str:
     if not paths:
         return json_response(
@@ -136,12 +137,13 @@ async def read_multiple_files(
             code="empty_paths",
             details={"paths": paths},
         )
-    if len(paths) > _MAX_MULTI_FILE_READS:
+    safe_max_paths = min(max(1, max_paths), _MAX_MULTI_FILE_READS)
+    if len(paths) > safe_max_paths:
         return json_response(
             False,
-            f"At most {_MAX_MULTI_FILE_READS} files can be read at once",
+            f"At most {safe_max_paths} files can be read at once for the active budget",
             code="too_many_paths",
-            details={"max_paths": _MAX_MULTI_FILE_READS, "requested_paths": len(paths)},
+            details={"max_paths": safe_max_paths, "requested_paths": len(paths)},
         )
 
     files: list[dict[str, Any]] = []

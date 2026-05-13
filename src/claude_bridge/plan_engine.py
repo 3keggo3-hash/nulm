@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,13 @@ def _plan_path(plan_id: str) -> Path:
     return _plans_dir() / f"{plan_id}.json"
 
 
+def _valid_plan_id(plan_id: str) -> bool:
+    return re.fullmatch(r"[0-9a-f]{32}", plan_id) is not None
+
+
 def _read_plan(plan_id: str) -> dict[str, Any] | None:
+    if not _valid_plan_id(plan_id):
+        return None
     file_path = _plan_path(plan_id)
     if not file_path.is_file():
         return None
@@ -33,6 +40,8 @@ def _read_plan(plan_id: str) -> dict[str, Any] | None:
 
 
 def _write_plan(plan_id: str, data: dict[str, Any]) -> bool:
+    if not _valid_plan_id(plan_id):
+        return False
     file_path = _plan_path(plan_id)
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +102,8 @@ def create_plan(goal: str, steps_json: str) -> dict[str, Any]:
 
 
 def execute_step(plan_id: str, step_id: int) -> dict[str, Any]:
+    if not _valid_plan_id(plan_id):
+        return {"ok": False, "error": "Invalid plan_id"}
     plan = _read_plan(plan_id)
     if plan is None:
         return {"ok": False, "error": f"Plan not found: {plan_id}"}
@@ -125,6 +136,8 @@ def execute_step(plan_id: str, step_id: int) -> dict[str, Any]:
 
 
 def get_plan_status(plan_id: str) -> dict[str, Any]:
+    if not _valid_plan_id(plan_id):
+        return {"ok": False, "error": "Invalid plan_id"}
     plan = _read_plan(plan_id)
     if plan is None:
         return {"ok": False, "error": f"Plan not found: {plan_id}"}

@@ -38,6 +38,7 @@ except ImportError:
 
 - dev toolchain: `pytest`, `pytest-asyncio`, `ruff`, `black`, `mypy`
 - smart extra: `tiktoken`, `charset_normalizer`
+- memory extra: `cryptography`
 - indexing extra: `tree_sitter_language_pack`
 
 Missing optional packages are not treated as errors for core usage; the doctor output should

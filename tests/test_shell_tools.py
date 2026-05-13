@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -66,6 +68,42 @@ class TestTokensAfterEnv:
 
     def test_empty(self):
         assert st._tokens_after_env([]) == []
+
+
+class TestRunShellRiskScore:
+    @pytest.mark.asyncio
+    async def test_run_shell_includes_risk_score_details(self, tmp_path: Path) -> None:
+        result = json.loads(
+            await st.run_shell(
+                "echo hello",
+                request_approval=lambda *_args, **_kwargs: _approved(),
+                project_dir=lambda: tmp_path,
+                shell_timeout=lambda: 5,
+            )
+        )
+
+        assert result["ok"] is True
+        assert result["details"]["risk_score"] == 15
+        assert result["details"]["risk_category"] == "Safe"
+
+    @pytest.mark.asyncio
+    async def test_run_shell_failure_includes_passive_detective_report(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        result = json.loads(
+            await st.run_shell(
+                "python3 -m definitely_missing_claude_bridge_module",
+                request_approval=lambda *_args, **_kwargs: _approved(),
+                project_dir=lambda: tmp_path,
+                shell_timeout=lambda: 5,
+            )
+        )
+
+        assert result["ok"] is False
+        report = result["details"]["detective_report"]
+        assert report["error_type"] == "RUNTIME_ERROR"
+        assert report["checkpoint_created"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -653,10 +691,10 @@ class TestSanitizedEnv:
         env = _sr._sanitized_env()
         assert "OPENAI_API_KEY" not in env
 
-    def test_removes_path(self, monkeypatch):
+    def test_sanitizes_path(self, monkeypatch):
         monkeypatch.setenv("PATH", "/malicious/bin")
         env = _sr._sanitized_env()
-        assert "PATH" not in env
+        assert "/malicious/bin" not in env["PATH"].split(os.pathsep)
 
     def test_removes_ld_preload(self, monkeypatch):
         monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")

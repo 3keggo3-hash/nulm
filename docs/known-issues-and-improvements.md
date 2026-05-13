@@ -115,7 +115,6 @@ write/shell. This mode assumes the MCP client actually implements an approval UI
 ## Related Documents
 
 - Claude Code review (2026-04-29)
-- `archive/competitive-analysis-desktopcommander.md`
 - `docs/product-vision.md`
 - `docs/agent-quality-layer-plan.md`
 - `docs/roadmap.md`

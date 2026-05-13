@@ -32,12 +32,25 @@ async def run_diagnostics(
     file_path: str,
     error_type: str,
     project_dir_path: Path,
+    *,
+    allow_commands: bool = False,
 ) -> dict[str, Any]:
     """Run diagnostic commands based on error type."""
     commands = _DIAGNOSTIC_COMMANDS.get(error_type, _DIAGNOSTIC_COMMANDS["UNKNOWN"])
     results: list[dict[str, Any]] = []
 
     for cmd in commands:
+        if not allow_commands:
+            results.append(
+                {
+                    "command": " ".join(cmd),
+                    "returncode": None,
+                    "stdout": "",
+                    "stderr": "diagnostic command not run; explicit approval required",
+                    "executed": False,
+                }
+            )
+            continue
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -46,19 +59,25 @@ async def run_diagnostics(
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-            results.append({
-                "command": " ".join(cmd),
-                "returncode": proc.returncode,
-                "stdout": stdout.decode("utf-8", errors="replace"),
-                "stderr": stderr.decode("utf-8", errors="replace"),
-            })
+            results.append(
+                {
+                    "command": " ".join(cmd),
+                    "returncode": proc.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                    "executed": True,
+                }
+            )
         except (asyncio.TimeoutError, OSError) as exc:
-            results.append({
-                "command": " ".join(cmd),
-                "returncode": -1,
-                "stdout": "",
-                "stderr": str(exc),
-            })
+            results.append(
+                {
+                    "command": " ".join(cmd),
+                    "returncode": -1,
+                    "stdout": "",
+                    "stderr": str(exc),
+                    "executed": True,
+                }
+            )
 
     return {"diagnostics": results}
 
@@ -77,23 +96,35 @@ def check_dependencies(file_path: str, project_dir_path: Path) -> dict[str, Any]
     except OSError as exc:
         return {"ok": False, "missing": [], "error": str(exc)}
 
-    import_re = __import__("re").compile(r"^\s*(?:import|from)\s+([^\s.]+)", __import__("re").MULTILINE)
+    import_re = __import__("re").compile(
+        r"^\s*(?:import|from)\s+([^\s.]+)",
+        __import__("re").MULTILINE,
+    )
     modules = import_re.findall(content)
     stdlib_modules = {
-        "os", "sys", "re", "json", "datetime", "pathlib", "typing",
-        "collections", "itertools", "functools", "operator", "inspect",
+        "os",
+        "sys",
+        "re",
+        "json",
+        "datetime",
+        "pathlib",
+        "typing",
+        "collections",
+        "itertools",
+        "functools",
+        "operator",
+        "inspect",
     }
 
+    project_modules = {path.stem for path in project_dir_path.rglob("*.py")}
+    external: list[str] = []
     for module in modules:
-        if module in stdlib_modules:
+        if module in stdlib_modules or module in project_modules:
             continue
-        try:
-            __import__(module)
-        except ImportError:
-            if module not in missing:
-                missing.append(module)
+        if module not in external:
+            external.append(module)
 
-    return {"ok": True, "missing": missing}
+    return {"ok": True, "missing": missing, "unverified_external_modules": external}
 
 
 def check_file_permissions(file_path: str, project_dir_path: Path) -> dict[str, Any]:

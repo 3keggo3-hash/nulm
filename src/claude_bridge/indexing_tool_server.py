@@ -29,10 +29,13 @@ def register_indexing_tools(
 
     if ctx.should_register("index_codebase"):
 
-        async def index_codebase(path: str = ".") -> str:
+        async def index_codebase(path: str = ".", offset: int = 0, limit: int = 50) -> str:
             from claude_bridge.indexing import public_index_payload
 
             started_at = ctx.now_ms()
+            safe_offset = max(0, offset)
+            safe_limit = max(1, min(limit, 100))
+            audit_params = {"path": path, "offset": safe_offset, "limit": safe_limit}
             try:
                 payload = build_index(path)
             except PermissionError as exc:
@@ -43,7 +46,7 @@ def register_indexing_tools(
                     details=path_outside_project_details(path),
                 )
                 return audit_tool_call(
-                    "index_codebase", {"path": path}, result, started_at=started_at
+                    "index_codebase", audit_params, result, started_at=started_at
                 )
             except FileNotFoundError:
                 result = json_response(
@@ -53,7 +56,7 @@ def register_indexing_tools(
                     details={"path": path},
                 )
                 return audit_tool_call(
-                    "index_codebase", {"path": path}, result, started_at=started_at
+                    "index_codebase", audit_params, result, started_at=started_at
                 )
             except NotADirectoryError:
                 result = json_response(
@@ -63,7 +66,7 @@ def register_indexing_tools(
                     details={"path": path},
                 )
                 return audit_tool_call(
-                    "index_codebase", {"path": path}, result, started_at=started_at
+                    "index_codebase", audit_params, result, started_at=started_at
                 )
 
             if not isinstance(payload, dict) or "files" not in payload:
@@ -74,20 +77,25 @@ def register_indexing_tools(
                     details={"path": path},
                 )
                 return audit_tool_call(
-                    "index_codebase", {"path": path}, result, started_at=started_at
+                    "index_codebase", audit_params, result, started_at=started_at
                 )
 
             result = json_response(
                 True,
                 f"Indexed codebase: {path}",
-                details=public_index_payload(payload),
+                details=public_index_payload(payload, offset=safe_offset, limit=safe_limit),
             )
-            return audit_tool_call("index_codebase", {"path": path}, result, started_at=started_at)
+            return audit_tool_call(
+                "index_codebase",
+                audit_params,
+                result,
+                started_at=started_at,
+            )
 
         ctx.register(
             "index_codebase",
-            "Create a lightweight symbol index for a codebase. Use this before relevance "
-            "or architectural questions instead of reading many files blindly.",
+            "Create a paginated lightweight symbol index for a codebase. Use this before "
+            "relevance or architectural questions instead of reading many files blindly.",
             index_codebase,
             read_only=True,
         )

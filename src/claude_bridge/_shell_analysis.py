@@ -246,7 +246,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     _git_sub = lower_tokens[_git_sub_start] if _git_sub_start < len(lower_tokens) else ""
 
     if (
-        head in {"pytest", "ls", "cat"}
+        head in {"pytest", "ls", "cat", "echo", "pwd"}
         or tokens[:3] == ["python3", "-m", "pytest"]
         or command_tokens[:3] == ["python3", "-m", "pytest"]
         or tokens[:2] == ["git", "status"]

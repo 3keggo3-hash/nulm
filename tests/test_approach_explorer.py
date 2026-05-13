@@ -88,6 +88,11 @@ class TestExecuteApproach:
         result = ae.execute_approach("nonexistent-id")
         assert result["ok"] is False
 
+    def test_execute_rejects_invalid_approach_id(self, temp_project):
+        result = ae.execute_approach("../outside")
+        assert result["ok"] is False
+        assert result["message"] == "Invalid approach_id."
+
     def test_execute_stamps_timestamp(self, temp_project):
         result = ae.explore_approaches("sort an array", count=1)
         approach_id = result["approaches"][0]["id"]
@@ -112,8 +117,8 @@ class TestCompareApproaches:
 
     def test_compare_low_beats_high(self, temp_project):
         store_dir = ae._approach_store_dir()
-        aid_high = "high-approach-id"
-        aid_low = "low-approach-id"
+        aid_high = "a" * 32
+        aid_low = "b" * 32
         (store_dir / f"{aid_high}.json").write_text(
             json.dumps(
                 {

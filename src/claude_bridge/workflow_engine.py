@@ -54,6 +54,16 @@ class WorkflowStep:
         }
 
 
+@dataclass
+class WorkflowExecutionResult:
+    """Summary returned after a workflow plan execution attempt."""
+
+    status: str
+    steps: list[dict[str, Any]]
+    review: dict[str, Any] | None = None
+    error: str = ""
+
+
 class OrchestratorExecutor:
     """Wrapper for executing orchestrator tasks within a workflow."""
 
@@ -67,7 +77,9 @@ class OrchestratorExecutor:
     ) -> dict[str, Any]:
         result = await self.orchestrator.orchestrate(task, agents)
         if isinstance(result, AgentResult):
-            return result.to_dict()
+            result_dict = result.to_dict()
+            result_dict["ok"] = result.status.value == "success"
+            return result_dict
         if isinstance(result, dict):
             return {"ok": True, **result}
         return {"ok": True, "result": str(result)}
@@ -82,11 +94,12 @@ class WorkflowEngine:
     Each step includes: action, files affected, risk score, rollback plan.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, project_dir: Any = None) -> None:
         self.state = WorkflowState.IDLE
         self.steps: list[WorkflowStep] = []
         self.current_step = 0
         self.task: str = ""
+        self.project_dir = project_dir
         self.checkpoint_name: str | None = None
         self.execution_log: list[dict[str, Any]] = []
 
@@ -268,6 +281,57 @@ class WorkflowEngine:
         step.status = "completed"
         self._log_event("step_completed", {"action": step.action})
         return True
+
+    async def execute_plan(
+        self,
+        plan: list[WorkflowStep] | None = None,
+        *,
+        execute_fn: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+        request_approval_fn: Callable[[str, dict[str, Any]], Awaitable[bool]] = request_approval,
+    ) -> WorkflowExecutionResult:
+        """Execute the current plan through approval, apply, test, review, and done states."""
+        if plan is not None:
+            self.steps = list(plan)
+        if not self.steps:
+            return WorkflowExecutionResult(status="empty", steps=[], error="No plan available")
+        if self.state != WorkflowState.PLANNING:
+            raise ValueError(f"Cannot execute plan from {self.state.value}, expected PLANNING")
+
+        approved = await self.request_approval_for_plan(request_approval_fn)
+        if not approved:
+            return WorkflowExecutionResult(
+                status="pending_approval",
+                steps=[s.to_dict() for s in self.steps],
+            )
+
+        for index, step in enumerate(self.steps):
+            self.current_step = index
+            ok = await self.execute_step(step, execute_fn=execute_fn)
+            if not ok:
+                self.transition_to(WorkflowState.REJECTED)
+                rollback_result = self.rollback()
+                return WorkflowExecutionResult(
+                    status="failed",
+                    steps=[s.to_dict() for s in self.steps],
+                    error=str(rollback_result.get("error", "step failed")),
+                )
+
+        self.current_step = len(self.steps)
+        self.transition_to(WorkflowState.TESTING)
+        review_transition = await self.transition_to_reporting()
+        if not review_transition.get("ok"):
+            return WorkflowExecutionResult(
+                status="needs_review",
+                steps=[s.to_dict() for s in self.steps],
+                review=review_transition.get("review"),
+            )
+
+        self.transition_to(WorkflowState.DONE)
+        return WorkflowExecutionResult(
+            status="done",
+            steps=[s.to_dict() for s in self.steps],
+            review=review_transition.get("review"),
+        )
 
     def transition_to(self, new_state: WorkflowState) -> None:
         """Transition to a new state with validation."""

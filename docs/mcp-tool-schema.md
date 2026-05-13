@@ -1,9 +1,11 @@
-# Claude Bridge MCP Tool Schema Reference
+# Claude Bridge MCP Tool Schema Examples
 
 > **Version:** 0.1.0
 > **Last Updated:** 2026-05-12
 
-This document provides complete JSON Schema definitions for all MCP tools exposed by Claude Bridge.
+This document provides representative JSON Schema definitions for common MCP tools exposed by
+Claude Bridge. The active runtime schema is generated from the registered tools and can vary by
+tool profile (`essential`, `standard`, `full`) and optional dependency availability.
 
 ## Tool Schema Format
 

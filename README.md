@@ -48,7 +48,7 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 
 ## Features
 
-- **File operations**: `read_file`, `read_image`, `read_pdf`, `list_directory`, `write_file`,
+- **File operations**: `read_file`, `read_multiple_files`, `list_directory`, `write_file`,
   `move_file`, `copy_path`, `search_in_files`
 - **Targeted edits**: `patch_file`, `preview_patch` with SEARCH/REPLACE patches
 - **Shell execution**: `run_shell` through a guarded `shell=False` execution path
@@ -56,14 +56,15 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
   ranking without embeddings
 - **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` — structured
   review, explain, test, todo, quality, and bounded agent-loop flows
-- **URL reading**: `read_url` — constrained text-only HTTP/HTTPS reader with SSRF protections
-- **Git integration**: file mutations committed automatically when target is in a Git repository
+- **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
+  constrained text-only HTTP/HTTPS reading
+- **Full-profile Git commit helper**: `commit_changes` for explicit local commits
 - **Audit logging**: tool calls recorded as structured JSONL
 - **Policy engine**: custom guard rules, team RBAC, AI advisor, policy diff for CI/CD
 - **Replay and appeal**: deterministic decision replay and post-hoc appeal with audit chain
 - **Anomaly detection**: rule-based audit anomaly scanning
-- **Meta-agent tools**: local plans, approach exploration, deterministic self-critique, git-backed
-  checkpoints
+- **Full-profile meta-agent tools**: local plans, approach exploration, deterministic self-critique,
+  git-backed checkpoints
 - **Tool profiles**: `essential`, `standard`, `full` for token/capability tradeoffs
 - **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
   safe config suggestions, workflow quality gates, result quality review, and fail-safe provider

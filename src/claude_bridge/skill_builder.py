@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -347,20 +348,32 @@ def propose_skill_creation_sync(
         return False, None
 
     if request_approval_fn is not None:
-        approved = asyncio.get_event_loop().run_until_complete(
+        approved = _run_sync(
             request_approval_fn("skill_create", {"skill_name": proposal.skill_name})
         )
     else:
+
         async def check() -> bool:
             return await _request_user_approval(proposal)
 
-        approved = asyncio.get_event_loop().run_until_complete(check())
+        approved = _run_sync(check())
 
     if approved:
-        asyncio.get_event_loop().run_until_complete(_create_skill_files(proposal))
+        _run_sync(_create_skill_files(proposal))
         return True, proposal.skill_name
 
     return False, None
+
+
+def _run_sync(awaitable: Any) -> Any:
+    """Run an awaitable from sync code in Python versions without a default loop."""
+    if not inspect.isawaitable(awaitable):
+        return awaitable
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    raise RuntimeError("Cannot run synchronous skill proposal while an event loop is running")
 
 
 def check_and_propose(

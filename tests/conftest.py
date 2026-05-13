@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+os.environ.setdefault("CLAUDE_BRIDGE_TOOL_PROFILE", "full")
+
 _DEFAULT_CONFIG = {
     "project_dir": Path.cwd().resolve(),
     "allowed_roots": [Path.cwd().resolve()],

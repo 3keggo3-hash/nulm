@@ -171,6 +171,15 @@ class TestRollback:
             result = engine.rollback()
         assert result.get("ok") is False
 
+    @pytest.mark.asyncio
+    async def test_execute_plan_reaches_done(self, engine: WorkflowEngine) -> None:
+        plan = engine.create_plan("Fix bug in shell workflow")
+        result = await engine.execute_plan(plan, request_approval_fn=AsyncMock(return_value=True))
+
+        assert result.status == "done"
+        assert engine.state == WorkflowState.DONE
+        assert all(step.status == "completed" for step in engine.steps)
+
 
 class TestOrchestratorExecutor:
     @pytest.mark.asyncio
