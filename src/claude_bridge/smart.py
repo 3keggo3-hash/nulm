@@ -276,7 +276,8 @@ def compact_intent(
             "matched_patterns": vague_intent.matched_patterns,
         }
         result["recommended_usage"] = (
-            "Vague input detected. Use undecided_mode_analyze tool for architectural analysis."
+            "Vague input detected. Use advise_next_step or improve_request to clarify scope "
+            "before planning."
         )
 
     return result

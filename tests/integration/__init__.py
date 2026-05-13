@@ -6,7 +6,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Generator
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -74,7 +73,9 @@ class MockAIProvider:
     async def complete(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         self.call_count += 1
         self.last_request = {"prompt": prompt, **kwargs}
-        response = self.responses[self.call_count - 1] if self.responses else {"content": [{"text": "ok"}]}
+        response = (
+            self.responses[self.call_count - 1] if self.responses else {"content": [{"text": "ok"}]}
+        )
         return response
 
     def reset(self) -> None:
@@ -103,5 +104,4 @@ def integration_config() -> dict[str, Any]:
         "allowed_roots": [Path.cwd()],
         "auto_approve": True,
         "shell_timeout": 30,
-        "tool_profile": "standard",
     }

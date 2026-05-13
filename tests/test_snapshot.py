@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import io
+import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -21,6 +24,7 @@ def temp_project(tmp_path: Path) -> Path:
 def snapshot_manager(temp_project: Path, monkeypatch: pytest.MonkeyPatch) -> SnapshotManager:
     monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(temp_project))
     from claude_bridge import config
+
     config._CONFIG["project_dir"] = temp_project
     config._CONFIG["allowed_roots"] = [temp_project]
     return SnapshotManager()
@@ -63,9 +67,7 @@ class TestSnapshotManager:
         assert snapshot.name == "named"
         assert "test.txt" in snapshot.files
 
-    def test_list_snapshots(
-        self, snapshot_manager: SnapshotManager, temp_project: Path
-    ) -> None:
+    def test_list_snapshots(self, snapshot_manager: SnapshotManager, temp_project: Path) -> None:
         test_file = temp_project / "test.txt"
         test_file.write_text("content")
 
@@ -78,9 +80,7 @@ class TestSnapshotManager:
         assert "first" in names
         assert "second" in names
 
-    def test_restore_snapshot(
-        self, snapshot_manager: SnapshotManager, temp_project: Path
-    ) -> None:
+    def test_restore_snapshot(self, snapshot_manager: SnapshotManager, temp_project: Path) -> None:
         test_file = temp_project / "test.txt"
         test_file.write_text("original")
 
@@ -91,9 +91,78 @@ class TestSnapshotManager:
         assert result is True
         assert test_file.read_text() == "original"
 
-    def test_delete_snapshot(
-        self, snapshot_manager: SnapshotManager, temp_project: Path
+    def test_restore_rejects_index_path_outside_snapshot_dir(
+        self,
+        snapshot_manager: SnapshotManager,
+        temp_project: Path,
     ) -> None:
+        outside = temp_project.parent / "outside.tar.gz"
+        outside.write_bytes(b"not a tar")
+        index_path = temp_project / ".claude-bridge" / "snapshots" / "index.json"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        index_path.write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {
+                            "name": "outside",
+                            "type": SnapshotType.NAMED.value,
+                            "created_at": "2026-05-12T00:00:00+00:00",
+                            "files": [],
+                            "size_bytes": outside.stat().st_size,
+                            "path": str(outside),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert snapshot_manager.restore("outside") is False
+
+    def test_restore_skips_tar_members_outside_project(
+        self,
+        snapshot_manager: SnapshotManager,
+        temp_project: Path,
+    ) -> None:
+        snap_dir = temp_project / ".claude-bridge" / "snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        archive = snap_dir / "evil.tar.gz"
+
+        with tarfile.open(archive, "w:gz") as tar:
+            escaped = b"escaped"
+            escaped_info = tarfile.TarInfo("../escape.txt")
+            escaped_info.size = len(escaped)
+            tar.addfile(escaped_info, io.BytesIO(escaped))
+
+            safe = b"safe"
+            safe_info = tarfile.TarInfo("safe.txt")
+            safe_info.size = len(safe)
+            tar.addfile(safe_info, io.BytesIO(safe))
+
+        (snap_dir / "index.json").write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {
+                            "name": "evil",
+                            "type": SnapshotType.NAMED.value,
+                            "created_at": "2026-05-12T00:00:00+00:00",
+                            "files": ["safe.txt"],
+                            "size_bytes": archive.stat().st_size,
+                            "path": str(archive),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert snapshot_manager.restore("evil") is True
+        assert (temp_project / "safe.txt").read_text(encoding="utf-8") == "safe"
+        assert not (temp_project.parent / "escape.txt").exists()
+
+    def test_delete_snapshot(self, snapshot_manager: SnapshotManager, temp_project: Path) -> None:
         test_file = temp_project / "test.txt"
         test_file.write_text("content")
 
@@ -108,9 +177,7 @@ class TestSnapshotManager:
         result = snapshot_manager.delete("nonexistent")
         assert result is False
 
-    def test_get_snapshot_path(
-        self, snapshot_manager: SnapshotManager, temp_project: Path
-    ) -> None:
+    def test_get_snapshot_path(self, snapshot_manager: SnapshotManager, temp_project: Path) -> None:
         test_file = temp_project / "test.txt"
         test_file.write_text("content")
 

@@ -50,5 +50,6 @@
 
 ## Docs
 
-- Durable docs: `docs/`; active tasks: `tasks/active/`; done tasks: `tasks/done/`.
-- Archive old notes in `archive/`; keep root `README.md` and `AGENTS.md`.
+- Durable docs: `docs/`; temporary task notes may live under `tasks/` while current.
+- Remove old notes after their useful decisions are folded into durable docs; keep root
+  `README.md` and `AGENTS.md`.

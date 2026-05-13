@@ -26,6 +26,7 @@ _ERROR_PATTERNS: Final[dict[str, list[str]]] = {
         r"ZeroDivisionError",
         r"ImportError",
         r"ModuleNotFoundError",
+        r"No module named",
     ],
     "SECURITY_ERROR": [
         r"SecurityError",

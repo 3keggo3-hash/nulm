@@ -8,7 +8,12 @@ import pytest
 
 from claude_bridge._detective_classifiers import classify_error, extract_error_location
 from claude_bridge._detective_locator import find_related_files, get_recent_changes
-from claude_bridge._detective_learner import add_lesson, find_similar_lesson, load_lessons, save_lessons
+from claude_bridge._detective_learner import (
+    add_lesson,
+    find_similar_lesson,
+    load_lessons,
+    save_lessons,
+)
 from claude_bridge._detective_report import format_detective_report
 from claude_bridge.detective import BridgeDetective, DetectiveReport, DetectiveState, ErrorType
 
@@ -24,6 +29,10 @@ class TestClassifiers:
 
     def test_classify_module_not_found(self) -> None:
         output = "ModuleNotFoundError: No module named 'yaml'"
+        assert classify_error(output) == "RUNTIME_ERROR"
+
+    def test_classify_python_module_runner_missing_module(self) -> None:
+        output = "/usr/bin/python3: No module named missing_package"
         assert classify_error(output) == "RUNTIME_ERROR"
 
     def test_classify_security_error(self) -> None:
@@ -84,7 +93,9 @@ class TestLearner:
         assert lessons[0]["pattern"] == "TestError"
         assert lessons[0]["solution"] == "do something"
 
-    def test_add_lesson_increment_hit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_add_lesson_increment_hit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import claude_bridge._detective_learner as learner
 
         monkeypatch.setattr(learner, "project_dir", lambda: tmp_path)
@@ -98,13 +109,17 @@ class TestLearner:
         import claude_bridge._detective_learner as learner
 
         monkeypatch.setattr(learner, "project_dir", lambda: tmp_path)
-        test_lessons = [{"pattern": "ModuleNotFoundError", "solution": "pip install foo", "hits": 1}]
+        test_lessons = [
+            {"pattern": "ModuleNotFoundError", "solution": "pip install foo", "hits": 1}
+        ]
         save_lessons(test_lessons)
         result = find_similar_lesson("ModuleNotFoundError: No module named 'bar'")
         assert result is not None
         assert result["pattern"] == "ModuleNotFoundError"
 
-    def test_find_similar_lesson_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_find_similar_lesson_not_found(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import claude_bridge._detective_learner as learner
 
         monkeypatch.setattr(learner, "project_dir", lambda: tmp_path)
@@ -151,6 +166,84 @@ class TestBridgeDetective:
         assert report.state == DetectiveState.DONE
         assert report.error_type == "RUNTIME_ERROR"
         assert "pip install" in report.suggested_fix or report.suggested_fix
+
+    @pytest.mark.asyncio
+    async def test_investigate_populates_context_sections(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import claude_bridge.detective as detective_module
+
+        test_file = tmp_path / "test.py"
+        test_file.write_text("print('broken')\n", encoding="utf-8")
+
+        async def fake_run_diagnostics(
+            file_path: str,
+            error_type: str,
+            project_dir_path: Path,
+            *,
+            allow_commands: bool = False,
+        ) -> dict[str, object]:
+            assert allow_commands is True
+            return {
+                "diagnostics": [
+                    {
+                        "command": "python -m py_compile",
+                        "returncode": 1,
+                        "stdout": "",
+                        "stderr": error_type,
+                    }
+                ]
+            }
+
+        monkeypatch.setattr(detective_module, "project_dir", lambda: tmp_path)
+        monkeypatch.setattr(detective_module, "find_related_files", lambda *_: ["src/related.py"])
+        monkeypatch.setattr(
+            detective_module,
+            "get_recent_changes",
+            lambda *_: [{"hash": "abc123", "message": "touch test.py"}],
+        )
+        monkeypatch.setattr(detective_module, "run_diagnostics", fake_run_diagnostics)
+        monkeypatch.setattr(detective_module, "check_dependencies", lambda *_: {"ok": True})
+        monkeypatch.setattr(detective_module, "create_checkpoint", lambda *_: {"ok": True})
+
+        error_output = 'SyntaxError: invalid syntax\n  File "test.py", line 1'
+        detective = BridgeDetective(
+            error_output,
+            allow_diagnostics=True,
+            allow_side_effects=True,
+        )
+        report = await detective.investigate()
+
+        assert report.related_files == ["src/related.py"]
+        assert report.recent_changes == [{"hash": "abc123", "message": "touch test.py"}]
+        assert report.diagnostics[0]["command"] == "python -m py_compile"
+        assert report.checkpoint_created is True
+
+    @pytest.mark.asyncio
+    async def test_investigate_is_passive_by_default(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import claude_bridge.detective as detective_module
+
+        (tmp_path / "test.py").write_text("x =\n", encoding="utf-8")
+        monkeypatch.setattr(detective_module, "project_dir", lambda: tmp_path)
+
+        def fail_checkpoint(*_args: object, **_kwargs: object) -> dict[str, object]:
+            raise AssertionError("checkpoint should not be created by passive detective")
+
+        monkeypatch.setattr(detective_module, "create_checkpoint", fail_checkpoint)
+
+        error_output = 'SyntaxError: invalid syntax\n  File "test.py", line 1'
+        detective = BridgeDetective(error_output)
+        report = await detective.investigate()
+
+        assert report.checkpoint_created is False
+        assert report.diagnostics
+        assert report.diagnostics[0]["executed"] is False
 
     @pytest.mark.asyncio
     async def test_investigate_unknown_error(self) -> None:

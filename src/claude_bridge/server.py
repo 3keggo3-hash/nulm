@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json as _json
-import os
 import threading
 import time
 from pathlib import Path
@@ -153,8 +152,6 @@ _DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
 
 
 def _enabled_tool_names_for_registration() -> set[str] | None:
-    if not os.environ.get("CLAUDE_BRIDGE_TOOL_PROFILE", "").strip():
-        return None
     configure_from_env_state()
     return active_tool_names()
 

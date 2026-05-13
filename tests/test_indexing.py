@@ -202,3 +202,36 @@ class TestBuildIndex:
         assert result["source_files"] == 3
         assert result["python_files"] == 2
         assert {f["path"] for f in result["files"]} == {"a.py", "b.py", "c.js"}
+
+    async def test_public_index_payload_paginates_files(self, temp_project):
+        raw = {
+            "root": ".",
+            "files": [
+                {
+                    "path": f"{index}.py",
+                    "functions": [],
+                    "classes": [],
+                    "imports": [],
+                    "language": "python",
+                    "parser_backend": "fallback",
+                    "content_lower": "def hidden(): pass",
+                    "content_tokens": ["hidden"],
+                }
+                for index in range(3)
+            ],
+            "python_files": 3,
+            "source_files": 3,
+            "parser_backends": ["fallback"],
+            "cached": False,
+            "_snapshot_key": "abc",
+        }
+
+        payload = indexing_module.public_index_payload(raw, offset=1, limit=1)
+
+        assert [item["path"] for item in payload["files"]] == ["1.py"]
+        assert payload["returned_files"] == 1
+        assert payload["total_files"] == 3
+        assert payload["files_truncated"] is True
+        assert payload["next_file_offset"] == 2
+        assert "content_lower" not in payload["files"][0]
+        assert "content_tokens" not in payload["files"][0]

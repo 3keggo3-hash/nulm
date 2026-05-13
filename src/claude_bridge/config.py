@@ -260,7 +260,7 @@ _CONFIG: dict[str, Any] = {
     "approval_preset": None,
     "onboarding_enabled": False,
     "context_budget_profile": "balanced",
-    "tool_profile": "full",
+    "tool_profile": "standard",
     "intent_compaction_enabled": False,
     "ai_evaluator_enabled": False,
     "ai_evaluator_provider": "local",

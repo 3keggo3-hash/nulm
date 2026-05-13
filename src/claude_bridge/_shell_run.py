@@ -113,9 +113,35 @@ def _extract_files_from_command(command: str) -> list[str]:
 
 def _sanitized_env() -> dict[str, str]:
     env = dict(_os.environ)
+    path = env.get("PATH", "")
     for key in _ENV_BLOCK_KEYS:
         env.pop(key, None)
+    sanitized_path = _sanitized_path(path)
+    if sanitized_path:
+        env["PATH"] = sanitized_path
     return env
+
+
+def _sanitized_path(path_value: str) -> str:
+    parts: list[str] = []
+    for raw_part in path_value.split(_os.pathsep):
+        if not raw_part or raw_part == ".":
+            continue
+        path = Path(raw_part).expanduser()
+        if not path.is_absolute():
+            continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if not resolved.is_dir():
+            continue
+        value = str(resolved)
+        if value not in parts:
+            parts.append(value)
+    if not parts:
+        return _os.defpath
+    return _os.pathsep.join(parts)
 
 
 async def run_shell(
@@ -250,12 +276,12 @@ async def run_shell(
             decision=ask_decision,
             decision_in_details=True,
         )
+    risk_score = int(analysis["details"].get("risk_score", 50))
+    risk_category = str(analysis["details"].get("risk_category", "Medium"))
+
     if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
-        risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
-            analysis["details"].get("risk_level", "low"), 20
-        )
         shell_card = PermissionCard(
             agent="shell_agent",
             action="Run shell command",
@@ -272,6 +298,8 @@ async def run_shell(
             rejection_details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
+                "risk_score": risk_score,
+                "risk_category": risk_category,
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
             request_approval_fn=request_approval,
@@ -291,6 +319,8 @@ async def run_shell(
                 details={
                     "command": _mask_secrets(command),
                     "risk_level": analysis["details"]["risk_level"],
+                    "risk_score": risk_score,
+                    "risk_category": risk_category,
                     "risk_reasons": analysis["details"]["risk_reasons"],
                 },
                 decision=ask_decision,
@@ -329,6 +359,8 @@ async def run_shell(
                 "command": _mask_secrets(command),
                 "timeout_seconds": timeout_seconds,
                 "risk_level": analysis["details"]["risk_level"],
+                "risk_score": risk_score,
+                "risk_category": risk_category,
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
             decision=allow_decision,
@@ -342,6 +374,8 @@ async def run_shell(
             details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
+                "risk_score": risk_score,
+                "risk_category": risk_category,
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
             decision=allow_decision,
@@ -356,13 +390,17 @@ async def run_shell(
         "stderr": stderr,
         "exit_code": result.returncode,
         "risk_level": analysis["details"]["risk_level"],
+        "risk_score": risk_score,
+        "risk_category": risk_category,
         "risk_reasons": analysis["details"]["risk_reasons"],
         "stdout_truncated": stdout_truncated,
         "stderr_truncated": stderr_truncated,
         "output_char_limit": _MAX_SHELL_OUTPUT_CHARS,
     }
     if result.returncode != 0:
-        await _maybe_detective_hook(stderr, stripped, project_dir=project_dir)
+        detective_report = await _maybe_detective_hook(stderr, stripped)
+        if detective_report is not None:
+            details["detective_report"] = detective_report
         return json_response(
             False,
             "Shell command failed",
@@ -384,17 +422,16 @@ async def run_shell(
 async def _maybe_detective_hook(
     error_output: str,
     command: str,
-    *,
-    project_dir: Callable[[], Path],
-) -> None:
+) -> dict[str, Any] | None:
     """Invoke Bridge Detective if an error pattern is detected."""
     try:
         from claude_bridge.detective import BridgeDetective
 
         detector = BridgeDetective(error_output, command=command)
-        await detector.investigate()
+        report = await detector.investigate()
+        return report.to_dict()
     except Exception:
-        pass
+        return None
 
 
 async def start_process(

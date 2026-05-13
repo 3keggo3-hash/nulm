@@ -600,7 +600,12 @@ def set_cached_index(cache_key: str, snapshot: tuple[Any, ...], payload: dict[st
             _INDEX_CACHE.pop(oldest_key, None)
 
 
-def public_index_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def public_index_payload(
+    payload: dict[str, Any],
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+) -> dict[str, Any]:
     _STRIPPED_KEYS = {
         "content",
         "content_lower",
@@ -611,12 +616,28 @@ def public_index_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "import_tokens",
         "content_tokens",
     }
+    safe_offset = max(0, offset)
+    all_files = [
+        {key: value for key, value in item.items() if key not in _STRIPPED_KEYS}
+        for item in payload["files"]
+    ]
+    if limit is None:
+        selected_files = all_files[safe_offset:]
+    else:
+        safe_limit = max(1, limit)
+        selected_files = all_files[safe_offset : safe_offset + safe_limit]
+    total_files = len(all_files)
+    next_offset = safe_offset + len(selected_files)
+    files_truncated = next_offset < total_files
     return {
         **{key: value for key, value in payload.items() if not key.startswith("_")},
-        "files": [
-            {key: value for key, value in item.items() if key not in _STRIPPED_KEYS}
-            for item in payload["files"]
-        ],
+        "files": selected_files,
+        "file_offset": safe_offset,
+        "file_limit": limit,
+        "returned_files": len(selected_files),
+        "total_files": total_files,
+        "files_truncated": files_truncated,
+        "next_file_offset": next_offset if files_truncated else -1,
     }
 
 

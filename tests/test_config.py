@@ -40,6 +40,31 @@ def _list_tools_for_profile(tmp_path: Path, profile: str) -> set[str]:
     return set(json.loads(result.stdout))
 
 
+def _list_tools_without_profile(tmp_path: Path) -> set[str]:
+    script = (
+        "import asyncio, json\n"
+        "from claude_bridge import server\n"
+        "async def main():\n"
+        "    tools = await server.mcp.list_tools()\n"
+        "    print(json.dumps(sorted(tool.name for tool in tools)))\n"
+        "asyncio.run(main())\n"
+    )
+    env = {**os.environ, "CLAUDE_BRIDGE_PROJECT_DIR": str(tmp_path)}
+    env.pop("CLAUDE_BRIDGE_TOOL_PROFILE", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    return set(json.loads(result.stdout))
+
+
 class TestApplyConfig:
     async def test_apply_config_valid(self, temp_project):
         config_module.apply_config(
@@ -229,6 +254,13 @@ def test_standard_tool_profile_registers_documented_workflow_tools(tmp_path):
     assert "run_agent_loop_step" in tool_names
     assert "run_agent_loop_session" in tool_names
     assert "_run_workflow" not in tool_names
+
+
+def test_missing_tool_profile_env_registers_standard_not_full(tmp_path):
+    tool_names = _list_tools_without_profile(tmp_path)
+    assert "run_workflow" in tool_names
+    assert "read_pdf" not in tool_names
+    assert "create_plan" not in tool_names
 
 
 def test_tool_profile_union_covers_public_server_exports():

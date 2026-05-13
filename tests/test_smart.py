@@ -35,3 +35,11 @@ def test_detect_file_encoding_uses_charset_normalizer_when_available(
     monkeypatch.setattr(smart, "_detect_encoding_bytes", fake_detect)
 
     assert smart.detect_file_encoding(b"hello") == "cp1254"
+
+
+def test_compact_intent_recommends_existing_clarification_tools_for_vague_input() -> None:
+    result = smart.compact_intent("şey biraz karışık")
+
+    assert result["is_vague"] is True
+    assert "undecided_mode_analyze" not in result["recommended_usage"]
+    assert "advise_next_step" in result["recommended_usage"]

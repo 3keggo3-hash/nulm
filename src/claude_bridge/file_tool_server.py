@@ -7,6 +7,29 @@ from typing import Any, Callable
 
 from claude_bridge.tool_registration import ToolRegistrationContext
 
+_LOW_COST_BUDGET_TOKENS = 2000
+_LOW_COST_MULTI_FILE_READS = 8
+_LOW_COST_SEARCH_RESULTS = 50
+_BALANCED_MULTI_FILE_READS = 12
+_BALANCED_SEARCH_RESULTS = 100
+_MAX_SEARCH_RESULTS = 200
+
+
+def _multi_file_path_limit(budget_tokens: int) -> int:
+    if budget_tokens <= _LOW_COST_BUDGET_TOKENS:
+        return _LOW_COST_MULTI_FILE_READS
+    if budget_tokens <= 4000:
+        return _BALANCED_MULTI_FILE_READS
+    return 20
+
+
+def _search_result_limit(requested: int, budget_tokens: int) -> int:
+    if budget_tokens <= _LOW_COST_BUDGET_TOKENS:
+        return min(requested, _LOW_COST_SEARCH_RESULTS)
+    if budget_tokens <= 4000:
+        return min(requested, _BALANCED_SEARCH_RESULTS)
+    return min(requested, _MAX_SEARCH_RESULTS)
+
 
 def register_file_tools(
     *,
@@ -44,7 +67,7 @@ def register_file_tools(
         async def read_file(
             path: str,
             offset: int = 0,
-            limit: int = 200,
+            limit: int = 50,
             budget_tokens: int | None = None,
         ) -> str:
             bt = budget_tokens if budget_tokens is not None else effective_budget_tokens()
@@ -69,17 +92,24 @@ def register_file_tools(
         async def read_multiple_files(
             paths: list[str],
             offset: int = 0,
-            limit: int = 200,
+            limit: int = 50,
             budget_tokens: int | None = None,
         ) -> str:
             bt = budget_tokens if budget_tokens is not None else effective_budget_tokens()
+            max_paths = _multi_file_path_limit(bt)
             started_at = ctx.now_ms()
             result = await read_multiple_files_impl(
-                paths, offset=offset, limit=limit, budget_tokens=bt
+                paths, offset=offset, limit=limit, budget_tokens=bt, max_paths=max_paths
             )
             return audit_tool_call(
                 "read_multiple_files",
-                {"paths": paths, "offset": offset, "limit": limit, "budget_tokens": bt},
+                {
+                    "paths": paths,
+                    "max_paths": max_paths,
+                    "offset": offset,
+                    "limit": limit,
+                    "budget_tokens": bt,
+                },
                 result,
                 started_at=started_at,
             )
@@ -227,6 +257,7 @@ def register_file_tools(
             budget_tokens: int | None = None,
         ) -> str:
             bt = budget_tokens if budget_tokens is not None else effective_budget_tokens()
+            effective_limit = _search_result_limit(limit, bt)
             started_at = ctx.now_ms()
             result = await search_in_files_impl(
                 query,
@@ -235,7 +266,7 @@ def register_file_tools(
                 case_sensitive=case_sensitive,
                 include_glob=include_glob,
                 offset=offset,
-                limit=limit,
+                limit=effective_limit,
                 budget_tokens=bt,
             )
             return audit_tool_call(
@@ -248,6 +279,7 @@ def register_file_tools(
                     "include_glob": include_glob,
                     "offset": offset,
                     "limit": limit,
+                    "effective_limit": effective_limit,
                     "budget_tokens": bt,
                 },
                 result,

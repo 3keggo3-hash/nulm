@@ -50,7 +50,7 @@ class TestRetryPolicy:
         async def always_fail():
             nonlocal call_count
             call_count += 1
-            raise ValueError("permanent")
+            raise ConnectionError("permanent")
 
         with pytest.raises(RetryExhaustedError):
             await retry_with_backoff(always_fail, max_retries=2, base_delay=0.01)
@@ -65,7 +65,11 @@ class TestCircuitBreaker:
         from claude_bridge.resilience import CircuitBreaker
 
         breaker = CircuitBreaker(failure_threshold=3)
-        await breaker.call(lambda: asyncio.coroutine(lambda: "ok")())
+
+        async def success():
+            return "ok"
+
+        await breaker.call(success)
         assert breaker.state == "closed"
 
     @pytest.mark.asyncio

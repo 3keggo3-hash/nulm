@@ -102,6 +102,14 @@ def _relativize_path(path: Path) -> Path:
         return path
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def _collect_files_for_snapshot(
     files: list[str] | None,
     snapshot_type: SnapshotType,
@@ -145,13 +153,24 @@ def _create_tar_gz(snapshot_path: Path, files: list[Path]) -> int:
 def _extract_tar_gz(snapshot_path: Path, target_dir: Path) -> list[Path]:
     """Extract a tar.gz archive to the target directory."""
     extracted: list[Path] = []
+    target_root = target_dir.resolve()
     with tarfile.open(snapshot_path, "r:gz") as tar:
         for member in tar.getmembers():
             if not member.isfile():
                 continue
+            member_name = Path(member.name)
+            if member_name.is_absolute() or ".." in member_name.parts:
+                continue
+            target_path = (target_root / member.name).resolve()
+            if not _is_relative_to(target_path, target_root):
+                continue
             try:
-                tar.extract(member, path=target_dir, filter="fully_trusted")
-                extracted.append(target_dir / member.name)
+                source = tar.extractfile(member)
+                if source is None:
+                    continue
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_bytes(source.read())
+                extracted.append(target_path)
             except (OSError, tarfile.TarError):
                 continue
     return extracted
@@ -233,7 +252,13 @@ class SnapshotManager:
         if not target:
             return False
 
-        archive_path = Path(target["path"])
+        try:
+            archive_path = Path(target["path"]).resolve()
+            snapshots_root = _snapshots_dir().resolve()
+        except (OSError, TypeError):
+            return False
+        if not _is_relative_to(archive_path, snapshots_root):
+            return False
         if not archive_path.is_file():
             return False
 

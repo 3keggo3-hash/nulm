@@ -14,7 +14,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from cryptography.fernet import Fernet
+try:
+    from cryptography.fernet import Fernet as _ImportedFernet  # type: ignore[import-not-found]
+
+    _Fernet: Any | None = _ImportedFernet
+except ImportError:  # pragma: no cover - exercised only in minimal installs
+    _Fernet = None
 
 MEMORY_DIR = Path(".claude-bridge")
 MEMORY_FILE = MEMORY_DIR / "memory.json.enc"
@@ -25,6 +30,11 @@ _ENV_KEY_VAR = "CLAUDE_BRIDGE_MEMORY_KEY"
 
 
 def _get_key() -> bytes:
+    if _Fernet is None:
+        raise RuntimeError(
+            "Memory encryption requires the optional 'cryptography' package. "
+            "Install claude-bridge-mcp with the memory extra before using memory."
+        )
     env_key = os.environ.get(_ENV_KEY_VAR, "").strip()
     if env_key:
         return env_key.encode("utf-8")
@@ -39,7 +49,7 @@ def _get_key() -> bytes:
         except OSError:
             pass
 
-    new_key = Fernet.generate_key()
+    new_key = _Fernet.generate_key()
     KEY_FILE.write_bytes(new_key)
     try:
         KEY_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)
@@ -48,8 +58,13 @@ def _get_key() -> bytes:
     return new_key
 
 
-def _load_fernet() -> Fernet:
-    return Fernet(_get_key())
+def _load_fernet() -> Any:
+    if _Fernet is None:
+        raise RuntimeError(
+            "Memory encryption requires the optional 'cryptography' package. "
+            "Install claude-bridge-mcp with the memory extra before using memory."
+        )
+    return _Fernet(_get_key())
 
 
 @dataclass

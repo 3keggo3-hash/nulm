@@ -78,6 +78,8 @@ class TestSuggestValidationCommands:
 
 class TestRunAgentLoopStep:
     async def test_agent_loop_step_patch_and_validate(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
         test_file = temp_project / "module.py"
         test_file.write_text("def old_name():\n    return 1\n")
         monkeypatch.setattr(wf_agent_loop, "_validation_command_error", lambda cmd: None)
@@ -113,6 +115,8 @@ class TestRunAgentLoopStep:
     async def test_agent_loop_step_validation_fails_no_continue_budget(
         self, temp_project, monkeypatch
     ):
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
         test_file = temp_project / "module.py"
         test_file.write_text("def old_name():\n    return 1\n")
         monkeypatch.setattr(wf_agent_loop, "_validation_command_error", lambda cmd: None)
@@ -133,6 +137,8 @@ class TestRunAgentLoopStep:
 
 class TestRunAgentLoopSession:
     async def test_agent_loop_session_two_steps_success(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
+        mcp_server.set_config(project_dir=temp_project, auto_approve=True)
         test_file = temp_project / "module.py"
         test_file.write_text("def fn_a():\n    return 'a'\n\ndef fn_b():\n    return 'b'\n")
         monkeypatch.setattr(wf_agent_loop, "_validation_command_error", lambda cmd: None)
