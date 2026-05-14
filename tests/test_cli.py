@@ -1054,3 +1054,23 @@ class TestCLI:
 
         assert result.exit_code == 1
         assert "Invalid format" in result.stdout
+
+
+class TestConfigCLI:
+    def test_config_set_max_parallel(self):
+        result = runner.invoke(cli.app, ["config", "set", "max_parallel", "8"])
+        assert result.exit_code == 0
+
+    def test_config_describe_max_parallel(self):
+        result = runner.invoke(cli.app, ["config", "describe", "max_parallel"])
+        assert result.exit_code == 0
+        assert "1-32" in result.stdout or "parallel" in result.stdout.lower()
+
+    def test_config_describe_auto_approve_risk_level(self):
+        result = runner.invoke(cli.app, ["config", "describe", "auto_approve_risk_level"])
+        assert result.exit_code == 0
+
+    def test_root_invocation_no_command(self):
+        result = runner.invoke(cli.app, [])
+        assert result.exit_code == 0
+        assert "Claude Bridge" in result.stdout or "Core" in result.stdout

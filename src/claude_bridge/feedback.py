@@ -123,8 +123,31 @@ def get_recent_ratings(limit: int = 10) -> list[int]:
 
 
 def is_low_satisfaction() -> bool:
-    """Check if recent feedback indicates low satisfaction (avg < 3)."""
+    """Check if recent feedback indicates low satisfaction (avg < 3).
+
+    Returns True if we have at least 3 recent ratings with average < 3.0.
+    This function is intended for future integration with adaptive behavior.
+    Currently returns False as feedback consumption is not yet implemented.
+    """
     recent = get_recent_ratings(limit=5)
     if len(recent) < 3:
         return False
     return sum(recent) / len(recent) < 3.0
+
+
+def get_satisfaction_status() -> dict[str, Any]:
+    """Return current satisfaction status for dashboard/monitoring.
+
+    This data is intended for future adaptive behavior (e.g., showing
+    more helpful hints when satisfaction is low). Currently returns
+    raw data for future consumption.
+    """
+    recent = get_recent_ratings(limit=10)
+    avg = sum(recent) / len(recent) if recent else 0.0
+    return {
+        "has_enough_data": len(recent) >= 3,
+        "recent_count": len(recent),
+        "average_rating": round(avg, 2) if recent else None,
+        "is_low": avg < 3.0 if recent and len(recent) >= 3 else False,
+        "recent_ratings": recent,
+    }

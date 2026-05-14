@@ -14,6 +14,7 @@ from claude_bridge._audit_core import (  # noqa: F401
     _VALID_SESSION_ID_RE,
     _append_audit_record,
     _audit_dir,
+    _compute_record_hash,
     _iter_session_ids_newest_first,
     _load_records,
     _load_records_at_offsets,
@@ -28,6 +29,7 @@ from claude_bridge._audit_core import (  # noqa: F401
     log_session_end,
     log_session_start,
     reset_audit_session,
+    verify_audit_integrity,
 )
 
 from claude_bridge._audit_redaction import (  # noqa: F401

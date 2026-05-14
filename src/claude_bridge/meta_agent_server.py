@@ -389,14 +389,19 @@ def register_meta_agent_tools(
             summary = _build_reflection_summary(raw_records, safe_depth)
             suggestions: list[str] = []
             if summary.get("error_rate", 0) > 0.2:
-                suggestions.append("High error rate detected; review failed tool calls for pattern")
-            if summary.get("unique_tools", 0) < 3:
-                suggestions.append("Limited tool diversity; consider exploring more capabilities")
+                suggestions.append("High error rate (>20%) - review failed tool calls for patterns")
+            elif summary.get("error_rate", 0) > 0.1:
+                suggestions.append("Moderate error rate (10-20%) - check tool parameters")
+
+            unique_tools = summary.get("unique_tools", 0)
+            if unique_tools < 3 and safe_limit > 5:
+                suggestions.append("Low tool diversity - using same tools repeatedly may indicate inefficiency")
+
             top_tool = max(
                 summary.get("tool_counts", {}).items(), key=lambda x: x[1], default=(None, 0)
             )
-            if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.5:
-                suggestions.append(f"Heavy reliance on {top_tool[0]}; investigate alternatives")
+            if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.6:
+                suggestions.append(f"Heavy reliance on {top_tool[0]} (>{top_tool[1]/safe_limit:.0%}) - consider if alternatives exist")
             result = json_response(
                 True,
                 "Reflection complete",

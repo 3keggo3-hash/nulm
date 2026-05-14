@@ -37,6 +37,8 @@ _DEFAULT_CONFIG = {
     "ai_evaluator_fallback_action": "ask",
     "role": None,
     "user": None,
+    "auto_approve_risk_level": "medium",
+    "max_parallel": 4,
 }
 
 

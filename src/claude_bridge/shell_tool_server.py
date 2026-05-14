@@ -20,6 +20,9 @@ def register_shell_tools(
     list_process_sessions_impl: Any,
     kill_process_impl: Any,
     interact_with_process_impl: Any,
+    interactive_shell_impl: Any,
+    send_to_process_impl: Any,
+    get_process_status_impl: Any,
     request_approval: Any,
     project_dir: Any,
     shell_timeout: Any,
@@ -206,6 +209,71 @@ def register_shell_tools(
             interact_with_process,
             destructive=True,
             open_world=True,
+        )
+
+    if ctx.should_register("interactive_shell"):
+
+        async def interactive_shell(command: str) -> str:
+            started_at = ctx.now_ms()
+            result = await interactive_shell_impl(
+                command,
+                request_approval=request_approval,
+                project_dir=project_dir,
+                ai_provider=_get_ai() if _get_ai else None,
+            )
+            return audit_tool_call(
+                "interactive_shell", {"command": command}, result, started_at=started_at
+            )
+
+        ctx.register(
+            "interactive_shell",
+            "Start an interactive shell session (bash, python, zsh, etc.).",
+            interactive_shell,
+            destructive=True,
+            open_world=True,
+        )
+
+    if ctx.should_register("send_to_process"):
+
+        async def send_to_process(session_id: str, input: str) -> str:
+            started_at = ctx.now_ms()
+            result = await send_to_process_impl(
+                session_id=session_id,
+                input=input,
+                request_approval=request_approval,
+            )
+            return audit_tool_call(
+                "send_to_process",
+                {"session_id": session_id, "input_length": len(input)},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "send_to_process",
+            "Send input to a running process (bounded, no shell escape).",
+            send_to_process,
+            destructive=True,
+            open_world=True,
+        )
+
+    if ctx.should_register("get_process_status"):
+
+        async def get_process_status(session_id: str) -> str:
+            started_at = ctx.now_ms()
+            result = await get_process_status_impl(session_id=session_id)
+            return audit_tool_call(
+                "get_process_status",
+                {"session_id": session_id},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "get_process_status",
+            "Get the current status of a process session.",
+            get_process_status,
+            read_only=True,
         )
 
     return ctx.results

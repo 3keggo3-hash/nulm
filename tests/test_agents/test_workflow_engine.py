@@ -47,7 +47,7 @@ def test_workflow_engine_decompose_fix():
     steps = engine._decompose_task("fix the error")
 
     assert len(steps) == 4
-    assert any("Identify" in s.action for s in steps)
+    assert any("Locate" in s.action for s in steps)
 
 
 def test_workflow_engine_decompose_create():

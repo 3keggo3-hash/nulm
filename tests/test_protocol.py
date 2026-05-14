@@ -2705,8 +2705,8 @@ class TestAnomalyTools:
         assert "critical_count" in details
         assert "policy_decisions" in details
         assert "mvp_limits" in details
-        assert details["mvp_limits"]["scope"] == "rule-based, no ML model"
-        assert len(details["mvp_limits"]["rules"]) == 16
+        assert details["mvp_limits"]["scope"] == "critical security anomalies only, no ML model"
+        assert len(details["mvp_limits"]["rules"]) == 6
         assert "recommended_action" in details
         assert "baseline" in details
 
@@ -2785,4 +2785,4 @@ class TestAnomalyTools:
         details = payload["details"]
         assert details["baseline"]["enabled"] is True
         assert details["baseline"]["session_count"] == 3
-        assert details["anomaly_counts"].get("path_anomaly") == 1
+        assert "path_anomaly" not in details["anomaly_counts"]

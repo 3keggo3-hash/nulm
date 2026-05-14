@@ -150,6 +150,9 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "list_process_sessions",
         "kill_process",
         "interact_with_process",
+        "interactive_shell",
+        "send_to_process",
+        "get_process_status",
     },
     "indexing": {
         "index_codebase",
@@ -172,6 +175,7 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "get_config",
         "set_config_value",
         "compact_user_intent",
+        "compress_context",
         "tools_overview",
         "get_recent_tool_calls",
         "session_insights",
@@ -272,6 +276,7 @@ RESTRICTED_CHAT_CONFIG_KEYS: frozenset[str] = frozenset(
         "ai_evaluator_fallback_action",
         "role",
         "user",
+        "auto_approve_risk_level",
     }
 )
 
@@ -294,6 +299,8 @@ _CONFIG: dict[str, Any] = {
     "ai_evaluator_fallback_action": "ask",
     "role": None,
     "user": None,
+    "auto_approve_risk_level": "medium",
+    "max_parallel": 4,
 }
 _ALLOWED_ROOTS_SNAPSHOT: tuple[Path, ...] = tuple(_CONFIG["allowed_roots"])
 
@@ -326,6 +333,14 @@ def validate_config_value(key: str, value: Any) -> None:
     elif key == "approval_preset":
         if value is not None and value not in APPROVAL_PRESETS:
             raise ValueError(f"Unknown approval preset: {value}")
+    elif key == "auto_approve_risk_level":
+        if value not in {"none", "low", "medium", "high"}:
+            raise ValueError(
+                "auto_approve_risk_level must be one of none, low, medium, high"
+            )
+    elif key == "max_parallel":
+        if not isinstance(value, int) or value < 1 or value > 32:
+            raise ValueError("max_parallel must be an integer between 1 and 32")
 
 
 def _validate_all_config() -> None:
@@ -376,6 +391,8 @@ def apply_config(
     ai_evaluator_fallback_action: str = "ask",
     role: str | None = None,
     user: str | None = None,
+    auto_approve_risk_level: str = "medium",
+    max_parallel: int = 4,
 ) -> None:
     global _ALLOWED_ROOTS_SNAPSHOT
     resolved_project_dir = project_dir.resolve()
@@ -427,6 +444,13 @@ def apply_config(
         not isinstance(user, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", user)
     ):
         raise ValueError(f"user must be alphanumeric, hyphen, or underscore, got {user!r}")
+    if auto_approve_risk_level not in {"none", "low", "medium", "high"}:
+        raise ValueError(
+            f"auto_approve_risk_level must be one of none, low, medium, high, "
+            f"got {auto_approve_risk_level!r}"
+        )
+    if not isinstance(max_parallel, int) or max_parallel < 1 or max_parallel > 32:
+        raise ValueError("max_parallel must be an integer between 1 and 32")
     with _CONFIG_LOCK:
         _CONFIG["project_dir"] = resolved_project_dir
         _CONFIG["allowed_roots"] = resolved_allowed_roots
@@ -449,6 +473,8 @@ def apply_config(
             _CONFIG["role"] = role
         if user is not None:
             _CONFIG["user"] = user
+        _CONFIG["auto_approve_risk_level"] = auto_approve_risk_level
+        _CONFIG["max_parallel"] = max_parallel
 
 
 def load_config_from_toml(config_path: Path | str) -> dict[str, Any]:
@@ -480,6 +506,8 @@ def load_config_from_toml(config_path: Path | str) -> dict[str, Any]:
             result["allowed_roots"] = [Path(r) for r in sec["allowed_roots"]]
         if "approval_preset" in sec:
             result["approval_preset"] = sec["approval_preset"]
+        if "auto_approve_risk_level" in sec:
+            result["auto_approve_risk_level"] = sec["auto_approve_risk_level"]
     if "tools" in data:
         tools = data["tools"]
         if "profile" in tools:
@@ -625,9 +653,33 @@ def shell_timeout() -> int:
         return int(_CONFIG["shell_timeout"])
 
 
+def max_parallel() -> int:
+    with _CONFIG_LOCK:
+        return int(_CONFIG["max_parallel"])
+
+
 def approval_mode() -> tuple[bool, bool]:
     with _CONFIG_LOCK:
         return bool(_CONFIG["auto_approve"]), bool(_CONFIG["client_managed_approval"])
+
+
+_RISK_LEVEL_ORDER: tuple[str, ...] = ("none", "low", "medium", "high")
+
+
+def auto_approve_risk_level() -> str:
+    with _CONFIG_LOCK:
+        return str(_CONFIG["auto_approve_risk_level"])
+
+
+def should_auto_approve_risk(risk_level: str) -> bool:
+    configured = auto_approve_risk_level()
+    if configured == "none":
+        return False
+    configured_idx = _RISK_LEVEL_ORDER.index(configured)
+    if risk_level not in _RISK_LEVEL_ORDER:
+        return False
+    risk_idx = _RISK_LEVEL_ORDER.index(risk_level)
+    return risk_idx <= configured_idx
 
 
 def current_config() -> dict[str, Any]:
@@ -653,6 +705,8 @@ def current_config() -> dict[str, Any]:
                 "ai_evaluator_fallback_action": str(_CONFIG["ai_evaluator_fallback_action"]),
                 "role": _CONFIG["role"],
                 "user": _CONFIG["user"],
+                "auto_approve_risk_level": str(_CONFIG["auto_approve_risk_level"]),
+                "max_parallel": int(_CONFIG["max_parallel"]),
             }
         )
 
@@ -822,6 +876,25 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             ):
                 raise ValueError("user must be alphanumeric, hyphen, or underscore, or None")
             _CONFIG[key] = value
+            return current_config()
+
+        if key == "auto_approve_risk_level":
+            level = str(value).lower()
+            if level not in {"none", "low", "medium", "high"}:
+                raise ValueError(
+                    "auto_approve_risk_level must be one of none, low, medium, high"
+                )
+            _CONFIG["auto_approve_risk_level"] = level
+            return current_config()
+
+        if key == "max_parallel":
+            try:
+                val = int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("max_parallel must be an integer") from exc
+            if val < 1 or val > 32:
+                raise ValueError("max_parallel must be between 1 and 32")
+            _CONFIG["max_parallel"] = val
             return current_config()
 
         raise ValueError(f"Unsupported config key: {key}")

@@ -469,8 +469,7 @@ def log_appeal_event(
         record["appeal_reviewed_by"] = appeal_result.reviewed_by
 
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    offset = _append_audit_record(path, line)
+    offset = _append_audit_record(path, record, session_id=session_id)
     append_audit_index_record(session_id, record, offset=offset)
 
 
@@ -524,6 +523,5 @@ def log_escalation_event(escalation_event: EscalationEvent) -> None:
         "escalation_status": escalation_event.status,
     }
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    offset = _append_audit_record(path, line)
+    offset = _append_audit_record(path, record, session_id=session_id)
     append_audit_index_record(session_id, record, offset=offset)

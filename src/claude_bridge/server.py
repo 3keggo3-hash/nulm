@@ -100,6 +100,15 @@ from claude_bridge.shell_tools import (
 from claude_bridge.shell_tools import (
     interact_with_process as _interact_with_process_impl,
 )
+from claude_bridge.shell_tools import (
+    interactive_shell as _interactive_shell_impl,
+)
+from claude_bridge.shell_tools import (
+    send_to_process as _send_to_process_impl,
+)
+from claude_bridge.shell_tools import (
+    get_process_status as _get_process_status_impl,
+)
 from claude_bridge.tool_utils import (
     current_allowed_roots as _allowed_roots,
 )
@@ -534,6 +543,9 @@ _SHELL_TOOLS = register_shell_tools(
     list_process_sessions_impl=_list_process_sessions_impl,
     kill_process_impl=_kill_process_impl,
     interact_with_process_impl=_interact_with_process_impl,
+    interactive_shell_impl=_interactive_shell_impl,
+    send_to_process_impl=_send_to_process_impl,
+    get_process_status_impl=_get_process_status_impl,
     request_approval=_request_approval,
     project_dir=_project_dir,
     shell_timeout=_shell_timeout,
@@ -547,6 +559,9 @@ read_process_output = _tool_or_disabled(_SHELL_TOOLS, "read_process_output")
 list_process_sessions = _tool_or_disabled(_SHELL_TOOLS, "list_process_sessions")
 kill_process = _tool_or_disabled(_SHELL_TOOLS, "kill_process")
 interact_with_process = _tool_or_disabled(_SHELL_TOOLS, "interact_with_process")
+interactive_shell = _tool_or_disabled(_SHELL_TOOLS, "interactive_shell")
+send_to_process = _tool_or_disabled(_SHELL_TOOLS, "send_to_process")
+get_process_status = _tool_or_disabled(_SHELL_TOOLS, "get_process_status")
 _is_interactive_command = _SHELL_TOOLS["_is_interactive_command"]
 _normalize_command_for_safety = _SHELL_TOOLS["_normalize_command_for_safety"]
 _blocked_command_reason = _SHELL_TOOLS["_blocked_command_reason"]
@@ -658,6 +673,7 @@ apply_bridge_config_change = _tool_or_disabled(_META_TOOLS, "apply_bridge_config
 session_insights = _tool_or_disabled(_META_TOOLS, "session_insights")
 activity_summary = _tool_or_disabled(_META_TOOLS, "activity_summary")
 usage_insights = _tool_or_disabled(_META_TOOLS, "usage_insights")
+compress_context = _tool_or_disabled(_META_TOOLS, "compress_context")
 bridge_status = _tool_or_disabled(_META_TOOLS, "bridge_status")
 tools_overview = _tool_or_disabled(_META_TOOLS, "tools_overview")
 get_config = _tool_or_disabled(_META_TOOLS, "get_config")

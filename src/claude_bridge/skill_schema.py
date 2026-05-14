@@ -26,6 +26,8 @@ class SkillMeta:
     homepage: str = ""
     risk_level: str = "low"
     dependencies: list[str] = field(default_factory=list)
+    trust_level: str = "unverified"
+    signature: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +43,8 @@ class SkillMeta:
             "homepage": self.homepage,
             "risk_level": self.risk_level,
             "dependencies": list(self.dependencies),
+            "trust_level": self.trust_level,
+            "signature": self.signature,
         }
 
     @classmethod
@@ -58,6 +62,8 @@ class SkillMeta:
             homepage=str(data.get("homepage", "")),
             risk_level=str(data.get("risk_level", "low")),
             dependencies=list(data.get("dependencies", [])),
+            trust_level=str(data.get("trust_level", "unverified")),
+            signature=str(data.get("signature", "")),
         )
 
 
@@ -189,6 +195,13 @@ def validate_skill_json(data: dict[str, Any]) -> tuple[bool, list[str]]:
     risk_level = str(data.get("risk_level", "low"))
     if risk_level not in {"low", "medium", "high"}:
         errors.append("Validation error: risk_level must be one of low, medium, high")
+    trust_level = str(data.get("trust_level", "unverified"))
+    if trust_level not in {"official", "community", "unverified"}:
+        errors.append(
+            "Validation error: trust_level must be one of official, community, unverified"
+        )
+    if "signature" in data and not isinstance(data["signature"], str):
+        errors.append("Validation error: signature must be a string")
     return not errors, errors
 
 
@@ -229,6 +242,8 @@ def create_skill_json(
     homepage: str = "",
     risk_level: str = "low",
     dependencies: list[str] | None = None,
+    trust_level: str = "unverified",
+    signature: str = "",
 ) -> dict[str, Any]:
     """Create a skill JSON dictionary."""
     return {
@@ -244,6 +259,8 @@ def create_skill_json(
         "homepage": homepage,
         "risk_level": risk_level,
         "dependencies": dependencies or [],
+        "trust_level": trust_level,
+        "signature": signature,
     }
 
 

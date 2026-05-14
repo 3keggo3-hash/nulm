@@ -9,6 +9,10 @@ from typing import Any, Callable, Sequence
 
 from mcp.server.fastmcp.prompts.base import Message, Prompt, PromptArgument
 
+from claude_bridge._context_compression import (
+    compress_session as _compress_session_impl,
+    get_session_stats as _get_session_stats_impl,
+)
 from claude_bridge.anomaly import build_anomaly_summary
 from claude_bridge.audit import get_pending_escalations, process_appeal
 from claude_bridge.git_ops import generate_pr_description
@@ -878,6 +882,33 @@ def register_meta_tools(
             )
 
         results["usage_insights"] = usage_insights
+
+    if _enabled is None or "compress_context" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Compress session context into a compact summary for reduced context window usage.",
+                read_only=True,
+            )
+        )
+        async def compress_context(session_id: str = "") -> str:
+            started_at = time.perf_counter()
+            target_session = session_id.strip() or ""
+            compact_summary = _compress_session_impl(target_session)
+            stats = _get_session_stats_impl(target_session)
+            result = json_response(
+                True,
+                "Context compression complete",
+                details={
+                    "compact_summary": compact_summary,
+                    "session_stats": stats,
+                },
+            )
+            return audit_tool_call(
+                "compress_context", {"session_id": target_session}, result, started_at=started_at
+            )
+
+        results["compress_context"] = compress_context
 
     if _enabled is None or "bridge_status" in _enabled:
 

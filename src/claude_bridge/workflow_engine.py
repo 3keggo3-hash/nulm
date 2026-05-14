@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -83,6 +84,71 @@ class WorkflowExecutionResult:
     error: str = ""
 
 
+@dataclass
+class ParallelValidationResult:
+    """Result from parallel validation execution.
+
+    Attributes:
+        ok: Whether all validations passed.
+        results: Dictionary mapping task names to their results.
+        errors: Dictionary mapping task names to errors encountered.
+    """
+
+    ok: bool
+    results: dict[str, dict[str, Any]]
+    errors: dict[str, str]
+
+
+class ParallelWorkflowExecutor:
+    """Executor for running independent workflow tasks in parallel."""
+
+    def __init__(self, max_workers: int = 4) -> None:
+        self.max_workers = max_workers
+
+    async def execute_parallel_validation(
+        self,
+        tasks: dict[str, Callable[[], Awaitable[dict[str, Any]]]],
+    ) -> ParallelValidationResult:
+        """Execute multiple validation tasks in parallel.
+
+        Args:
+            tasks: Dictionary mapping task names to async callables.
+
+        Returns:
+            ParallelValidationResult with aggregated results and errors.
+        """
+        results: dict[str, dict[str, Any]] = {}
+        errors: dict[str, str] = {}
+
+        def run_sync(task_fn: Callable[[], Awaitable[dict[str, Any]]]) -> tuple[str, dict[str, Any] | None, str | None]:
+            try:
+                import asyncio
+                result = asyncio.run(task_fn())
+                return ("", result, None)
+            except Exception as e:
+                return ("", None, str(e))
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = {
+                pool.submit(run_sync, task_fn): name
+                for name, task_fn in tasks.items()
+            }
+
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    _, result, error = future.result()
+                    if error:
+                        errors[name] = error
+                    elif result:
+                        results[name] = result
+                except Exception as e:
+                    errors[name] = str(e)
+
+        all_ok = all(r.get("ok", False) for r in results.values()) and len(errors) == 0
+        return ParallelValidationResult(ok=all_ok, results=results, errors=errors)
+
+
 class OrchestratorExecutor:
     """Wrapper for executing orchestrator tasks within a workflow."""
 
@@ -128,7 +194,12 @@ class WorkflowEngine:
         self._state_metadata: dict[str, Any] = {}
 
     def create_plan(self, task: str) -> list[WorkflowStep]:
-        """Decompose task into steps using LLM-based analysis."""
+        """Create a workflow plan for the given task.
+
+        The decomposition uses keyword analysis to identify affected files
+        and appropriate steps. Since real task understanding requires LLM
+        analysis, the agent should review and modify the plan before execution.
+        """
         self.task = task
         self.transition_to(WorkflowState.PLANNING)
         self.steps = self._decompose_task(task)
@@ -137,16 +208,32 @@ class WorkflowEngine:
         return self.steps
 
     def _decompose_task(self, task: str) -> list[WorkflowStep]:
-        """Break down task into workflow steps with risk assessment."""
+        """Break down task into workflow steps with risk assessment.
+
+        Uses keyword analysis to identify likely files and actions.
+        Note: Real task decomposition requires LLM analysis - this provides
+        a reasonable starting scaffold that can be modified by the agent.
+        """
         task_lower = task.lower()
         steps: list[WorkflowStep] = []
 
-        # Analyze overall task risk
+        files_affected: list[str] = []
+        if "test" in task_lower:
+            files_affected.append("tests/")
+        if any(kw in task_lower for kw in ["auth", "login", "session", "password"]):
+            files_affected.extend(["src/auth/", "src/login/"])
+        if any(kw in task_lower for kw in ["api", "endpoint", "route"]):
+            files_affected.extend(["src/api/", "src/routes/"])
+        if any(kw in task_lower for kw in ["config", "setting"]):
+            files_affected.extend(["config/", ".env"])
+        if any(kw in task_lower for kw in ["database", "db", "sql"]):
+            files_affected.extend(["src/db/", "src/models/"])
+
         if any(kw in task_lower for kw in ["create", "new", "add", "implement"]):
             steps.append(
                 WorkflowStep(
-                    action="Analyze requirements and identify target files",
-                    files_affected=[],
+                    action="Identify target files and required changes",
+                    files_affected=files_affected[:2] if files_affected else [],
                     risk_score=10,
                     rollback_plan="No changes made yet",
                 )
@@ -154,17 +241,17 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Read existing code in target area",
-                    files_affected=[],
+                    files_affected=files_affected[:2] if files_affected else [],
                     risk_score=5,
                     rollback_plan="No changes made yet",
                 )
             )
             steps.append(
                 WorkflowStep(
-                    action="Implement the requested feature",
-                    files_affected=[],
+                    action="Implement requested feature",
+                    files_affected=files_affected,
                     risk_score=25,
-                    rollback_plan="Revert to previous checkpoint",
+                    rollback_plan="Revert changes via git",
                 )
             )
             steps.append(
@@ -179,15 +266,15 @@ class WorkflowEngine:
         elif any(kw in task_lower for kw in ["fix", "bug", "error", "repair"]):
             steps.append(
                 WorkflowStep(
-                    action="Identify the failing component",
-                    files_affected=[],
+                    action="Locate the failing component or error source",
+                    files_affected=files_affected[:1] if files_affected else [],
                     risk_score=5,
                     rollback_plan="No changes made yet",
                 )
             )
             steps.append(
                 WorkflowStep(
-                    action="Analyze root cause of the issue",
+                    action="Analyze root cause and identify fix",
                     files_affected=[],
                     risk_score=5,
                     rollback_plan="No changes made yet",
@@ -196,9 +283,9 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Apply the fix",
-                    files_affected=[],
+                    files_affected=files_affected[:1] if files_affected else [],
                     risk_score=20,
-                    rollback_plan="Revert to previous checkpoint",
+                    rollback_plan="Revert via git",
                 )
             )
             steps.append(
@@ -214,7 +301,7 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Identify files to refactor",
-                    files_affected=[],
+                    files_affected=files_affected,
                     risk_score=5,
                     rollback_plan="No changes made yet",
                 )
@@ -230,7 +317,7 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Perform refactoring",
-                    files_affected=[],
+                    files_affected=files_affected,
                     risk_score=35,
                     rollback_plan="Restore from checkpoint",
                 )
@@ -248,7 +335,7 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Analyze task and identify files",
-                    files_affected=[],
+                    files_affected=files_affected[:2] if files_affected else [],
                     risk_score=10,
                     rollback_plan="No changes made yet",
                 )
@@ -264,7 +351,7 @@ class WorkflowEngine:
             steps.append(
                 WorkflowStep(
                     action="Execute the task",
-                    files_affected=[],
+                    files_affected=files_affected,
                     risk_score=25,
                     rollback_plan="Revert to previous state",
                 )
@@ -356,6 +443,97 @@ class WorkflowEngine:
             steps=[s.to_dict() for s in self.steps],
             review=review_transition.get("review"),
         )
+
+    def identify_independent_validation_steps(self) -> list[WorkflowStep]:
+        """Identify steps that are independent validation tasks.
+
+        Validation steps are considered independent if their action contains
+        keywords like: lint, type check, test, format, validate, check.
+        Steps with files_affected are excluded to avoid conflicts.
+        """
+        validation_keywords = [
+            "lint",
+            "type check",
+            "typecheck",
+            "test",
+            "format",
+            "validate",
+            "check",
+            "ruff",
+            "mypy",
+            "pytest",
+            "black",
+        ]
+        independent: list[WorkflowStep] = []
+        for step in self.steps:
+            if step.status != "pending":
+                continue
+            action_lower = step.action.lower()
+            has_validation_keyword = any(kw in action_lower for kw in validation_keywords)
+            has_no_file_conflicts = not step.files_affected
+            if has_validation_keyword and has_no_file_conflicts:
+                independent.append(step)
+        return independent
+
+    async def execute_parallel_steps(
+        self,
+        steps: list[WorkflowStep],
+        execute_fn: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+        max_workers: int = 4,
+    ) -> dict[str, Any]:
+        """Execute multiple steps in parallel using ThreadPoolExecutor.
+
+        Args:
+            steps: List of WorkflowSteps to execute in parallel.
+            execute_fn: Optional async function to execute for each step.
+            max_workers: Maximum number of parallel workers.
+
+        Returns:
+            Dictionary with 'completed', 'failed', and 'errors' lists.
+        """
+        completed: list[WorkflowStep] = []
+        failed: list[WorkflowStep] = []
+        errors: dict[str, str] = {}
+
+        def run_step_sync(step: WorkflowStep) -> tuple[WorkflowStep, dict[str, Any] | None, str | None]:
+            try:
+                import asyncio
+                result = asyncio.run(execute_fn(step)) if execute_fn is not None else None
+                if result is None:
+                    step.status = "completed"
+                    result = {"ok": True}
+                return (step, result, None)
+            except Exception as e:
+                return (step, None, str(e))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(run_step_sync, step): step for step in steps}
+            for future in as_completed(futures):
+                step = futures[future]
+                try:
+                    executed_step, result, error = future.result()
+                    if error:
+                        executed_step.status = "failed"
+                        failed.append(executed_step)
+                        errors[executed_step.action] = error
+                    elif result:
+                        executed_step.result = result
+                        executed_step.status = "completed" if result.get("ok", False) else "failed"
+                        if executed_step.status == "failed":
+                            failed.append(executed_step)
+                            errors[executed_step.action] = result.get("error", "unknown error")
+                        else:
+                            completed.append(executed_step)
+                    else:
+                        executed_step.status = "failed"
+                        failed.append(executed_step)
+                        errors[executed_step.action] = "no result returned"
+                except Exception as e:
+                    step.status = "failed"
+                    failed.append(step)
+                    errors[step.action] = str(e)
+
+        return {"completed": completed, "failed": failed, "errors": errors}
 
     def transition_to(self, new_state: WorkflowState) -> None:
         """Transition to a new state with validation."""

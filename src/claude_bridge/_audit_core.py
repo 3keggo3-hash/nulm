@@ -23,6 +23,8 @@ _CURRENT_SESSION_ID = ""
 _MAX_AUDIT_SESSION_SCAN_FILES = 256
 _MAX_AUDIT_RECORD_SCAN_LINES = 10000
 _SESSION_START_RECORDED = False
+_LAST_RECORD_HASH: dict[str, str] = {}
+_GENESIS_HASH = sha256(b"GENESIS").hexdigest()
 
 _VALID_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
@@ -79,8 +81,7 @@ def log_session_start(session_id: str, agent_id: str | None = None) -> int | Non
         },
     }
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    return _append_audit_record(path, line)
+    return _append_audit_record(path, record, session_id=session_id)
 
 
 def log_session_end(session_id: str, reason: str = "normal") -> int | None:
@@ -106,8 +107,7 @@ def log_session_end(session_id: str, reason: str = "normal") -> int | None:
         },
     }
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    return _append_audit_record(path, line)
+    return _append_audit_record(path, record, session_id=session_id)
 
 
 def ensure_session_start_logged(session_id: str, agent_id: str | None = None) -> None:
@@ -124,10 +124,40 @@ def _session_file(session_id: str) -> Path:
     return _audit_dir() / f"{session_id}.jsonl"
 
 
-def _append_audit_record(path: Path, line: str) -> int | None:
-    """Append a line to an audit file with process locking and restricted permissions."""
+def _compute_record_hash(record: dict[str, Any], prev_hash: str) -> str:
+    content = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    return sha256((content + prev_hash).encode("utf-8")).hexdigest()
+
+
+def _append_audit_record(
+    path: Path,
+    record_or_line: dict[str, Any] | str,
+    *,
+    session_id: str | None = None,
+    skip_hash_chain: bool = False,
+) -> int | None:
+    """Append a record to an audit file with hash chain and process locking.
+
+    Args:
+        path: Path to the audit file.
+        record_or_line: Either a record dict (for hash chain) or a pre-serialized line.
+        session_id: Session ID for hash chain tracking (required if record is a dict).
+        skip_hash_chain: If True, skip hash chain logic (for index/ops files).
+    """
     try:
         with _AUDIT_LOCK:
+            if isinstance(record_or_line, dict):
+                if not skip_hash_chain and session_id is None:
+                    raise ValueError("session_id required for hash chain")
+                if not skip_hash_chain:
+                    prev_hash = _LAST_RECORD_HASH.get(session_id, _GENESIS_HASH)  # type: ignore[arg-type]
+                    record_or_line["prev_hash"] = prev_hash
+                    record_hash = _compute_record_hash(record_or_line, prev_hash)
+                    _LAST_RECORD_HASH[session_id] = record_hash  # type: ignore[index]
+                line = json.dumps(record_or_line, ensure_ascii=False, sort_keys=True)
+            else:
+                line = record_or_line
+
             path.parent.mkdir(parents=True, exist_ok=True)
             os.chmod(path.parent, 0o700)
             is_new = not path.exists()
@@ -310,7 +340,45 @@ def log_policy_change(
         record["agent_id"] = agent_id
 
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    offset = _append_audit_record(path, line)
+    offset = _append_audit_record(path, record, session_id=session_id)
     append_audit_index_record(session_id, record, offset=offset)
     return offset
+
+
+def verify_audit_integrity(
+    session_id: str,
+) -> dict[str, Any]:
+    """Verify the hash chain integrity of audit records for a session.
+
+    Args:
+        session_id: The session ID to verify.
+
+    Returns:
+        A dict with 'valid' (bool), 'error' (str or None), 'record_index' (int),
+        and 'expected_hash' (str or None) describing the verification result.
+    """
+    records = _load_records(session_id)
+    if not records:
+        return {"valid": False, "error": "no records found", "record_index": -1, "expected_hash": None}
+
+    expected_prev_hash = _GENESIS_HASH
+    for i, record in enumerate(records):
+        stored_prev_hash = record.get("prev_hash")
+        if stored_prev_hash is None:
+            return {
+                "valid": False,
+                "error": "missing prev_hash field",
+                "record_index": i,
+                "expected_hash": expected_prev_hash,
+            }
+        if stored_prev_hash != expected_prev_hash:
+            return {
+                "valid": False,
+                "error": "prev_hash mismatch",
+                "record_index": i,
+                "expected_hash": expected_prev_hash,
+            }
+        computed_hash = _compute_record_hash(record, expected_prev_hash)
+        expected_prev_hash = computed_hash
+
+    return {"valid": True, "error": None, "record_index": -1, "expected_hash": None}

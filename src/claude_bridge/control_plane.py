@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal, Mapping, TypeVar, TypedDict, cast
@@ -68,11 +67,15 @@ class ControlPlaneApproval(TypedDict, total=False):
     status: ApprovalStatus
     created_at: str
     updated_at: str
+    expires_at: str
     summary: str
     metadata: dict[str, Any]
     tool: str
     command: str
     reason: str
+
+
+DEFAULT_APPROVAL_EXPIRY_MINUTES = 30
 
 
 class ControlPlaneSummary(TypedDict):
@@ -122,10 +125,13 @@ def create_approval(
     reason: str = "",
     status: ApprovalStatus = "pending",
     metadata: dict[str, Any] | None = None,
+    expires_at: str | None = None,
 ) -> ControlPlaneApproval:
     """Append an approval request record without changing runtime approval behavior."""
     _validate_status(status, _APPROVAL_STATUSES, "approval")
     now = _utc_timestamp()
+    if expires_at is None:
+        expires_at = _utc_timestamp(offset_minutes=DEFAULT_APPROVAL_EXPIRY_MINUTES)
     record: ControlPlaneApproval = {
         "schema_version": SCHEMA_VERSION,
         "id": _new_id("approval"),
@@ -137,6 +143,7 @@ def create_approval(
         "status": status,
         "created_at": now,
         "updated_at": now,
+        "expires_at": expires_at,
     }
     if metadata is not None:
         record["metadata"] = metadata
@@ -278,6 +285,8 @@ def resolve_approval(
     approval = get_approval(approval_id)
     if approval is None:
         return None
+    if _is_approval_expired(approval):
+        return None
     updated = cast(ControlPlaneApproval, dict(approval))
     updated["status"] = status
     updated["updated_at"] = _utc_timestamp()
@@ -289,6 +298,32 @@ def resolve_approval(
         updated["metadata"] = existing
     _append_record(_approvals_file(), updated)
     return updated
+
+
+def check_approval_expiry(approval_id: str) -> bool:
+    """Check if an approval has expired and update its status if so. Returns True if expired."""
+    approval = get_approval(approval_id)
+    if approval is None:
+        return False
+    if _is_approval_expired(approval):
+        updated = cast(ControlPlaneApproval, dict(approval))
+        updated["status"] = "expired"
+        updated["updated_at"] = _utc_timestamp()
+        _append_record(_approvals_file(), updated)
+        return True
+    return False
+
+
+def _is_approval_expired(approval: ControlPlaneApproval) -> bool:
+    expires_at = approval.get("expires_at")
+    if not expires_at:
+        return False
+    from datetime import datetime, timezone
+    try:
+        expiry_time = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > expiry_time
+    except ValueError:
+        return False
 
 
 def _tasks_file() -> Path:
@@ -366,6 +401,7 @@ def _coerce_approval(record: dict[str, Any]) -> ControlPlaneApproval | None:
     approval["tool"] = _string_value(record.get("tool"), "")
     approval["command"] = _string_value(record.get("command"), "")
     approval["reason"] = _string_value(record.get("reason"), "")
+    approval["expires_at"] = _string_value(record.get("expires_at"), "")
     return approval
 
 
@@ -406,8 +442,12 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def _utc_timestamp() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+def _utc_timestamp(offset_minutes: int = 0) -> str:
+    from datetime import datetime, timedelta, timezone
+    if offset_minutes:
+        future = datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
+        return future.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _chmod_if_possible(path: Path, mode: int) -> None:

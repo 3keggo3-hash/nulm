@@ -1145,3 +1145,203 @@ class TestApplyRetention:
         assert "retention_config" in result
         assert result["retention_config"]["retention_days"] == 90
         assert result["retention_config"]["max_sessions"] == 100
+
+
+class TestHashChainIntegrity:
+    """Tests for audit hash chain verification."""
+
+    def test_verify_valid_chain(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import verify_audit_integrity, _compute_record_hash, _GENESIS_HASH
+        from claude_bridge._audit_core import (
+            _LAST_RECORD_HASH,
+            _append_audit_record,
+            _session_file,
+        )
+
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=project, auto_approve=True)
+        reset_audit_session()
+
+        session_id = current_session_id()
+        _LAST_RECORD_HASH.clear()
+
+        record1 = {
+            "record_id": "abc",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "session_id": session_id,
+            "tool_name": "test",
+            "params": {},
+            "result": {},
+        }
+        record2 = {
+            "record_id": "def",
+            "timestamp": "2024-01-01T00:01:00Z",
+            "session_id": session_id,
+            "tool_name": "test2",
+            "params": {},
+            "result": {},
+        }
+
+        path = _session_file(session_id)
+        _append_audit_record(path, record1, session_id=session_id)
+        _append_audit_record(path, record2, session_id=session_id)
+
+        result = verify_audit_integrity(session_id)
+
+        assert result["valid"] is True
+        assert result["error"] is None
+        assert result["record_index"] == -1
+
+    def test_verify_missing_prev_hash(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import verify_audit_integrity, _GENESIS_HASH
+        from claude_bridge._audit_core import _session_file
+
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=project, auto_approve=True)
+        reset_audit_session()
+
+        session_id = current_session_id()
+        path = _session_file(session_id)
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "record_id": "abc",
+                        "timestamp": "2024-01-01T00:00:00Z",
+                        "session_id": session_id,
+                        "tool_name": "test",
+                        "params": {},
+                        "result": {},
+                    }
+                )
+                + "\n"
+            )
+
+        result = verify_audit_integrity(session_id)
+
+        assert result["valid"] is False
+        assert result["error"] == "missing prev_hash field"
+        assert result["record_index"] == 0
+        assert result["expected_hash"] == _GENESIS_HASH
+
+    def test_verify_tampered_record(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import verify_audit_integrity, _GENESIS_HASH
+        from claude_bridge._audit_core import _LAST_RECORD_HASH, _append_audit_record, _session_file
+
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=project, auto_approve=True)
+        reset_audit_session()
+
+        session_id = current_session_id()
+        _LAST_RECORD_HASH.clear()
+
+        record1 = {
+            "record_id": "abc",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "session_id": session_id,
+            "tool_name": "test",
+            "params": {},
+            "result": {},
+        }
+        record2 = {
+            "record_id": "def",
+            "timestamp": "2024-01-01T00:01:00Z",
+            "session_id": session_id,
+            "tool_name": "test2",
+            "params": {},
+            "result": {},
+        }
+
+        path = _session_file(session_id)
+        _append_audit_record(path, record1, session_id=session_id)
+        _append_audit_record(path, record2, session_id=session_id)
+
+        with path.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        tampered_line = json.loads(lines[0])
+        tampered_line["tool_name"] = "tampered"
+        lines[0] = json.dumps(tampered_line, ensure_ascii=False, sort_keys=True) + "\n"
+
+        with path.open("w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+        result = verify_audit_integrity(session_id)
+
+        assert result["valid"] is False
+        assert result["error"] == "prev_hash mismatch"
+        assert result["record_index"] == 1
+        assert result["expected_hash"] is not None
+        assert result["expected_hash"] != _GENESIS_HASH
+
+    def test_verify_no_records(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import verify_audit_integrity
+
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=project, auto_approve=True)
+        reset_audit_session()
+
+        session_id = current_session_id()
+
+        result = verify_audit_integrity(session_id)
+
+        assert result["valid"] is False
+        assert result["error"] == "no records found"
+        assert result["record_index"] == -1
+
+    def test_compute_record_hash(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import _compute_record_hash, _GENESIS_HASH
+
+        record = {
+            "record_id": "abc",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "tool_name": "test",
+            "prev_hash": _GENESIS_HASH,
+        }
+
+        hash1 = _compute_record_hash(record, _GENESIS_HASH)
+        assert isinstance(hash1, str)
+        assert len(hash1) == 64
+
+        hash2 = _compute_record_hash(record, _GENESIS_HASH)
+        assert hash1 == hash2
+
+        record["tool_name"] = "different"
+        hash3 = _compute_record_hash(record, _GENESIS_HASH)
+        assert hash1 != hash3
+
+    def test_prev_hash_in_written_record(self, temp_audit_project, monkeypatch):
+        from claude_bridge._audit_core import _GENESIS_HASH
+        from claude_bridge._audit_core import _LAST_RECORD_HASH, _append_audit_record, _session_file
+
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+        mcp_server.set_config(project_dir=project, auto_approve=True)
+        reset_audit_session()
+
+        session_id = current_session_id()
+        _LAST_RECORD_HASH.clear()
+
+        record = {
+            "record_id": "abc",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "session_id": session_id,
+            "tool_name": "test",
+            "params": {},
+            "result": {},
+        }
+
+        path = _session_file(session_id)
+        _append_audit_record(path, record, session_id=session_id)
+
+        with path.open("r", encoding="utf-8") as f:
+            written = json.loads(f.readline())
+
+        assert "prev_hash" in written
+        assert written["prev_hash"] == _GENESIS_HASH

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -186,3 +187,67 @@ def test_control_plane_dashboard_rejects_network_bind() -> None:
         assert "loopback" in str(exc)
     else:  # pragma: no cover - defensive assertion branch
         raise AssertionError("Dashboard accepted a non-loopback bind")
+
+
+def test_approval_has_expires_at_field(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    approval = control_plane.create_approval("Test approval", tool="run_shell", command="ls")
+    assert "expires_at" in approval
+    expected_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+    actual_expiry = datetime.strptime(approval["expires_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    delta = abs((actual_expiry - expected_expiry).total_seconds())
+    assert delta < 5
+
+
+def test_approval_custom_expiry(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    custom_expiry = "2025-01-01T00:00:00Z"
+    approval = control_plane.create_approval(
+        "Test approval", tool="run_shell", command="ls", expires_at=custom_expiry
+    )
+    assert approval["expires_at"] == custom_expiry
+
+
+def test_resolve_approval_rejects_expired(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    past_expiry = "2020-01-01T00:00:00Z"
+    approval = control_plane.create_approval(
+        "Expired approval", tool="run_shell", command="ls", expires_at=past_expiry
+    )
+    result = control_plane.resolve_approval(approval["id"], "approved")
+    assert result is None
+
+
+def test_resolve_approval_accepts_valid(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    future_expiry = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    approval = control_plane.create_approval(
+        "Valid approval", tool="run_shell", command="ls", expires_at=future_expiry
+    )
+    result = control_plane.resolve_approval(approval["id"], "approved")
+    assert result is not None
+    assert result["status"] == "approved"
+
+
+def test_check_approval_expiry(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    past_expiry = "2020-01-01T00:00:00Z"
+    approval = control_plane.create_approval(
+        "Expiring approval", tool="run_shell", command="ls", expires_at=past_expiry
+    )
+    assert control_plane.check_approval_expiry(approval["id"]) is True
+    updated = control_plane.get_approval(approval["id"])
+    assert updated is not None
+    assert updated["status"] == "expired"
+
+
+def test_check_approval_expiry_not_expired(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    future_expiry = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    approval = control_plane.create_approval(
+        "Not expired approval", tool="run_shell", command="ls", expires_at=future_expiry
+    )
+    assert control_plane.check_approval_expiry(approval["id"]) is False
+    updated = control_plane.get_approval(approval["id"])
+    assert updated is not None
+    assert updated["status"] == "pending"
