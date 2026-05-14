@@ -3,7 +3,50 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, TypedDict
+
+
+class ToolResult(TypedDict):
+    ok: bool
+    message: str
+    code: str | None
+    details: dict[str, Any]
+
+
+class ToolImplProtocol(Protocol):
+    """Protocol for tool implementation functions."""
+
+    async def __call__(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> str: ...
+
+
+class AuditCallbackProtocol(Protocol):
+    """Protocol for audit callback functions."""
+
+    def __call__(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        result: str,
+        *,
+        started_at: float,
+    ) -> str: ...
+
+
+class ToolOptionsProtocol(Protocol):
+    """Protocol for tool_options factory functions."""
+
+    def __call__(
+        self,
+        description: str,
+        *,
+        read_only: bool = False,
+        destructive: bool = False,
+        open_world: bool = False,
+    ) -> dict[str, Any]: ...
 
 
 class ToolMetadata:
@@ -85,7 +128,7 @@ class ToolRegistrationContext:
         self,
         name: str,
         description: str,
-        fn: Callable,
+        fn: Callable[..., str],
         *,
         read_only: bool = False,
         destructive: bool = False,
