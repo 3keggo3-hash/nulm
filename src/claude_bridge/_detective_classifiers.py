@@ -28,7 +28,7 @@ _ERROR_PATTERNS: Final[dict[str, list[tuple[str, int]]]] = {
         (r"ZeroDivisionError", 10),
         (r"ImportError", 8),
         (r"ModuleNotFoundError", 10),
-        (r"No module named ['\"]", 9),
+        (r"No module named", 9),
         (r"PermissionError", 9),
         (r"FileNotFoundError", 9),
         (r"AssertionError", 8),
