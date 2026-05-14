@@ -593,7 +593,6 @@ class WorkflowEngine:
         allowed_from_paused = {
             WorkflowState.PLANNING,
             WorkflowState.APPROVAL_PENDING,
-            WorkflowState.APPLYING,
             WorkflowState.TESTING,
         }
         last_active = self._state_metadata.get("last_active_state")

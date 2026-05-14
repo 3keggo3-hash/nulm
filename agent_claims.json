@@ -3,53 +3,20 @@
   "description": "Agent coordination manifest - claims prevent conflicts",
   "created_at": null,
   "agents": {
-    "agent-01-architecture": {
-      "task": "Architecture analysis and module boundary review",
-      "branch": "feature/agent-crew",
-      "files_reviewed": [
-        "src/claude_bridge/__init__.py",
-        "src/claude_bridge/mcp_server.py",
-        "src/claude_bridge/server.py",
-        "src/claude_bridge/agents/__init__.py",
-        "src/claude_bridge/agents/base.py",
-        "src/claude_bridge/agents/orchestrator.py",
-        "src/claude_bridge/agents/dispatcher.py",
-        "src/claude_bridge/agents/result.py",
-        "src/claude_bridge/agents/shared_memory.py",
-        "src/claude_bridge/agents/sub/__init__.py",
-        "src/claude_bridge/agents/sub/git_agent.py",
-        "src/claude_bridge/detective.py",
-        "src/claude_bridge/skill_registry.py",
-        "src/claude_bridge/skill_executor.py",
-        "src/claude_bridge/workflow_engine.py",
-        "src/claude_bridge/workflow_agent_loop.py",
-        "src/claude_bridge/permissions.py",
-        "src/claude_bridge/config.py",
-        "src/claude_bridge/checkpoint.py",
-        "src/claude_bridge/memory.py",
-        "src/claude_bridge/snapshot.py",
-        "src/claude_bridge/self_critique.py",
-        "src/claude_bridge/agent_advisor.py",
-        "src/claude_bridge/guard_policy.py",
-        "src/claude_bridge/rules_engine.py",
-        "src/claude_bridge/_audit_core.py",
-        "src/claude_bridge/shell_tools.py",
-        "src/claude_bridge/_detective_classifiers.py",
-        "src/claude_bridge/_detective_investigator.py",
-        "src/claude_bridge/_detective_locator.py",
-        "src/claude_bridge/_optimizations.py"
+    "agent-08": {
+      "claimed_tasks": [
+        "test_workflow_cache_coverage",
+        "test_workflow_engine_coverage",
+        "fix_resume_transition_bug"
       ],
-      "changes": [
-        {
-          "file": "src/claude_bridge/_audit_core.py",
-          "issue": "sha256 undefined name errors - imported inside functions but not at module level",
-          "action": "Added 'from hashlib import sha256' at module level and removed redundant local imports from log_session_start(), log_session_end(), log_policy_change()"
-        },
-        {
-          "file": "tests/test_workflow_cache.py",
-          "issue": "Black formatting - unrelated test file",
-          "action": "Applied black formatting to fix formatting issues"
-        }
+      "files_created": ["tests/test_workflow_cache.py"],
+      "files_modified": ["tests/test_workflow_engine.py", "src/claude_bridge/workflow_engine.py"],
+      "tests_added": 26
+    }
+  },
+  "conflicts": [],
+  "resolved": []
+}
       ],
       "architecture_findings": [
         "Server module (server.py) is the central orchestration hub - registers all tool servers and exposes ~60+ tool functions",
