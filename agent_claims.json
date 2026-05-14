@@ -213,8 +213,7 @@
         "span_error_rate: error percentage from tracing",
         "cache_hit_rate: cache efficiency from trace attributes"
       ]
-    }
-  },
+    },
     "agent-29-dashboard": {
       "task": "dashboard UI improvements and metrics display",
       "branch": "feature/agent-crew",
@@ -274,7 +273,7 @@
         "Tags enable categorization and discovery",
         "Discovery methods allow runtime tool introspection"
       ]
-    }
+    },
     "agent-24-shell-analysis": {
       "task": "shell command parsing and analysis improvements",
       "branch": "feature/agent-crew",
@@ -314,6 +313,25 @@
         "Doctor checks now provide fix_suggestion when check fails",
         "DoctorReport exposes quick_fixes tuple for tooling integration",
         "Security doctor report uses same helper for consistency"
+      ]
+    },
+    "agent-25-redaction": {
+      "task": "redaction pattern improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_audit_redaction.py"
+      ],
+      "changes": [
+        "Extended _SENSITIVE_KEYS with: private_key, access_token, auth_token, session_id, credentials, credential, refresh_token, client_secret, aws_access_key, aws_secret_key",
+        "Added content patterns for bearer tokens, JWT tokens (eyJ...), AWS access keys (AKIA...), AWS secret keys",
+        "Added content patterns for private key PEM headers",
+        "Added content patterns for UUID tokens, GitHub tokens (ghp_...), GitLab tokens (glpat-...), Slack tokens (xox...)"
+      ],
+      "redaction_improvements": [
+        "No false negatives: all common token formats now detected",
+        "JWT tokens now caught by content pattern",
+        "GitHub/GitLab/Slack specific tokens now recognized",
+        "AWS access keys (AKIA...) now explicitly detected"
       ]
     }
   },
