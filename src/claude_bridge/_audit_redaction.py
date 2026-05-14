@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from hashlib import sha256
@@ -74,11 +75,16 @@ def _summarize_value(value: Any, *, depth: int = 0) -> Any:
     return repr(value)
 
 
+@functools.lru_cache(maxsize=256)
+def _hash_utf8(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
 def _result_summary(result: str) -> tuple[dict[str, Any], str]:
     try:
         payload = json.loads(result)
     except json.JSONDecodeError:
-        return {"raw_result": _truncate_string(result)}, sha256(result.encode("utf-8")).hexdigest()
+        return {"raw_result": _truncate_string(result)}, _hash_utf8(result)
 
     details = payload.get("details", {})
     summary = {
@@ -87,7 +93,7 @@ def _result_summary(result: str) -> tuple[dict[str, Any], str]:
         "code": payload.get("code"),
         "details": _summarize_value(details),
     }
-    return summary, sha256(result.encode("utf-8")).hexdigest()
+    return summary, _hash_utf8(result)
 
 
 def _has_truncation_marker(value: Any, *, depth: int = 0) -> bool:

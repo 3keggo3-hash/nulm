@@ -285,9 +285,10 @@ def replay_session(
     Returns:
         A list of :class:`ReplayResult` objects, one per replayed record.
     """
-    subset = list(reversed(records))
     if limit is not None:
-        subset = subset[: max(1, limit)]
+        subset = list(reversed(records[-limit:])) if limit > 0 else []
+    else:
+        subset = list(reversed(records))
     results: list[ReplayResult] = []
     for record in subset:
         result = replay_decision(
