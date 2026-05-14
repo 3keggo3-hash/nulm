@@ -195,10 +195,24 @@ def _simulate_builtin_decision(tool: str, params: dict[str, Any]) -> Any:
 
 @policy_app.command("validate")
 def policy_validate(
-    path: Path = typer.Option(..., "--path", help="Policy file to validate"),
+    path: Path = typer.Option(
+        ...,
+        "--path",
+        "-p",
+        help="Policy file to validate (JSON or YAML)",
+    ),
 ) -> None:
-    """Validate a JSON or YAML guard policy file."""
-    policy = validate_guard_policy_file(path.resolve())
+    """Validate a JSON or YAML guard policy file.
+
+    Examples:
+      claude-bridge policy validate --path policy.json
+      claude-bridge policy validate -p policy.yaml
+    """
+    resolved_path = path.resolve()
+    if not resolved_path.exists():
+        console.print(f"[red]Policy file not found:[/red] {escape(str(resolved_path))}")
+        raise typer.Exit(code=1)
+    policy = validate_guard_policy_file(resolved_path)
     if policy.valid:
         console.print("[green]Policy valid[/green]")
     else:
@@ -217,12 +231,22 @@ def policy_validate(
 
 @policy_app.command("simulate")
 def policy_simulate(
-    path: Path = typer.Option(..., "--path", help="Policy file to simulate"),
-    tool: str = typer.Option(..., "--tool", help="Tool name, for example run_shell"),
+    path: Path = typer.Option(
+        ...,
+        "--path",
+        "-p",
+        help="Policy file to simulate (JSON or YAML)",
+    ),
+    tool: str = typer.Option(
+        ...,
+        "--tool",
+        "-t",
+        help="Tool name to simulate (e.g., run_shell, file_read)",
+    ),
     param: list[str] = typer.Option(
         None,
         "--param",
-        help="Tool parameter in key=value form. Can be repeated.",
+        help="Tool parameter in key=value form (can be specified multiple times)",
     ),
     role: str | None = typer.Option(
         None,
@@ -237,16 +261,25 @@ def policy_simulate(
     ai_deny: list[str] = typer.Option(
         None,
         "--ai-deny",
-        help="AI evaluator deny keyword (local provider). Can be repeated.",
+        help="AI evaluator deny keyword (can be specified multiple times)",
     ),
     ai_ask: list[str] = typer.Option(
         None,
         "--ai-ask",
-        help="AI evaluator ask keyword (local provider). Can be repeated.",
+        help="AI evaluator ask keyword (can be specified multiple times)",
     ),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print machine-readable JSON output",
+    ),
 ) -> None:
     """Evaluate a tool request against policy without running the tool.
+
+    Examples:
+      claude-bridge policy simulate --path policy.json --tool run_shell --param command=ls
+      claude-bridge policy simulate -p policy.json -t file_read --param path=README.md
+      claude-bridge policy simulate -p policy.json -t run_shell --role junior --param command=cat
 
     When --role is provided, the full policy chain is evaluated including
     role-based restrictions (pre-rule and post-rule checks).
@@ -410,11 +443,29 @@ def _run_role_simulation(
 
 @policy_app.command("diff")
 def policy_diff(
-    base: Path = typer.Option(..., "--base", help="Base policy file (e.g., main branch)"),
-    head: Path = typer.Option(..., "--head", help="Head policy file (e.g., PR branch)"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+    base: Path = typer.Option(
+        ...,
+        "--base",
+        "-b",
+        help="Base policy file (e.g., main branch)",
+    ),
+    head: Path = typer.Option(
+        ...,
+        "--head",
+        "-h",
+        help="Head policy file (e.g., PR branch)",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print machine-readable JSON output",
+    ),
 ) -> None:
-    """Compare two policy files (JSON/YAML) and report semantic differences.
+    """Compare two policy files and report semantic differences.
+
+    Examples:
+      claude-bridge policy diff --base main.json --head pr.json
+      claude-bridge policy diff -b baseline.json -h updated.json
 
     Detects role additions, removals, permission changes, restriction
     changes, and inheritance issues. Exits with code 1 if validation
@@ -732,19 +783,33 @@ def _write_target_config(
 @app.command()
 def start(
     project_dir: Path = typer.Option(
-        Path.cwd(), help="Root directory the bridge is allowed to access"
+        Path.cwd(),
+        "--project-dir",
+        "-d",
+        help="Root directory the bridge is allowed to access",
     ),
     allow_root: list[Path] = typer.Option(
-        None, "--allow-root", help="Additional allowed workspace root"
+        None,
+        "--allow-root",
+        help="Additional allowed workspace root (can be specified multiple times)",
     ),
     approval_preset: str | None = typer.Option(
-        None, "--approval-preset", help=_approval_help_suffix()
+        None,
+        "--approval-preset",
+        help=_approval_help_suffix(),
     ),
     auto_approve: bool = typer.Option(
-        False, help="Automatically approve all operations (not recommended)"
+        False,
+        help="Automatically approve all operations (use with caution)",
     ),
 ) -> None:
-    """Start the MCP bridge server (stdio transport)."""
+    """Start the MCP bridge server (stdio transport).
+
+    Examples:
+      claude-bridge start
+      claude-bridge start -d /path/to/project
+      claude-bridge start --approval-preset read-only
+    """
     _, _, set_config, run_mcp_server = _server_runtime()
     extra_roots = [path.resolve() for path in allow_root] if allow_root else []
     resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
@@ -1399,10 +1464,15 @@ def workflow_preview(
 @app.command()
 def setup(
     project_dir: Path = typer.Option(
-        Path.cwd(), help="Root directory the bridge is allowed to access"
+        Path.cwd(),
+        "--project-dir",
+        "-d",
+        help="Root directory the bridge is allowed to access",
     ),
     allow_root: list[Path] = typer.Option(
-        None, "--allow-root", help="Additional allowed workspace root"
+        None,
+        "--allow-root",
+        help="Additional allowed workspace root (can be specified multiple times)",
     ),
     target: str = typer.Option(
         "claude-desktop",
@@ -1410,14 +1480,26 @@ def setup(
         help="Setup target: claude-desktop, generic-stdio, or vscode",
     ),
     approval_preset: str | None = typer.Option(
-        None, "--approval-preset", help=_approval_help_suffix()
+        None,
+        "--approval-preset",
+        help=_approval_help_suffix(),
     ),
-    auto_approve: bool = typer.Option(False, help="Render config with auto-approve enabled"),
+    auto_approve: bool = typer.Option(
+        False,
+        help="Render config with auto-approve enabled (use with caution)",
+    ),
     client_managed_approval: bool = typer.Option(
-        False, help="Render config assuming the MCP client handles approvals"
+        False,
+        help="Render config assuming the MCP client handles approvals",
     ),
 ) -> None:
-    """Print setup instructions and system prompt for a supported MCP target."""
+    """Print setup instructions and system prompt for a supported MCP target.
+
+    Examples:
+      claude-bridge setup
+      claude-bridge setup -d /path/to/project --target claude-desktop
+      claude-bridge setup --approval-preset read-only
+    """
     system_prompt, _, generate_mcp_setup_guide, supported_targets = _prompt_runtime()
     if target not in supported_targets:
         raise typer.BadParameter(
@@ -1493,28 +1575,47 @@ def setup(
 @app.command()
 def install(
     project_dir: Path = typer.Option(
-        Path.cwd(), help="Root directory the bridge is allowed to access"
+        Path.cwd(),
+        "--project-dir",
+        "-d",
+        help="Root directory the bridge is allowed to access",
     ),
     allow_root: list[Path] = typer.Option(
-        None, "--allow-root", help="Additional allowed workspace root"
+        None,
+        "--allow-root",
+        help="Additional allowed workspace root (can be specified multiple times)",
     ),
     target: str = typer.Option(
         "claude-desktop",
         "--target",
         help="Install target: claude-desktop, generic-stdio, or vscode",
     ),
-    config_path: Path = typer.Option(None, "--config-path", help="Override target config path"),
+    config_path: Path = typer.Option(
+        None,
+        "--config-path",
+        help="Override target config path",
+    ),
     approval_preset: str | None = typer.Option(
-        None, "--approval-preset", help=_approval_help_suffix()
+        None,
+        "--approval-preset",
+        help=_approval_help_suffix(),
     ),
     auto_approve: bool = typer.Option(
-        False, help="Write config with auto-approve enabled (trusted local use only)"
+        False,
+        help="Write config with auto-approve enabled (use with caution)",
     ),
     client_managed_approval: bool = typer.Option(
-        True, help="Write config assuming Claude Desktop handles approval prompts"
+        True,
+        help="Write config assuming Claude Desktop handles approval prompts",
     ),
 ) -> None:
-    """Install or write Claude Bridge config for a supported MCP target."""
+    """Install or write Claude Bridge config for a supported MCP target.
+
+    Examples:
+      claude-bridge install
+      claude-bridge install -d /path/to/project --target claude-desktop
+      claude-bridge install --approval-preset dev-safe
+    """
     _, _, _, supported_targets = _prompt_runtime()
     if target not in supported_targets:
         raise typer.BadParameter(
