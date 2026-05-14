@@ -507,7 +507,36 @@
         "Both tools are read_only and non-destructive"
       ]
     },
-    "agent-37-detective": {
+    "agent-42-policy": {
+      "task": "policy engine improvements - rule evaluation performance and new rule types",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/rules_engine.py",
+        "src/claude_bridge/guard_policy.py"
+      ],
+      "changes": [
+        "Add field_starts_with condition matcher for prefix matching",
+        "Add field_ends_with condition matcher for suffix matching",
+        "Add field_in_list condition matcher for list membership",
+        "Add field_greater_than and field_less_than for numeric comparisons",
+        "Optimize match_rules with sorted index pre-computation",
+        "Add short-circuit evaluation for tool-only conditions",
+        "Add compiled glob pattern caching"
+      ],
+      "performance_improvements": [
+        "Pre-sorted rule index avoids repeated priority sorting",
+        "Tool-only conditions skip complex field lookups",
+        "Glob patterns cached at module level"
+      ],
+      "new_condition_types": [
+        "field_starts_with",
+        "field_ends_with", 
+        "field_in_list",
+        "field_greater_than",
+        "field_less_than"
+      ]
+    },
+"agent-37-detective": {
       "task": "detective investigation algorithms and pattern improvements",
       "branch": "feature/agent-crew",
       "files_modified": [
@@ -534,7 +563,87 @@
         "Deduplicated related files prevents repeated results",
         "Cross-platform network diagnostics without ping dependency"
       ]
+    },
+    "agent-41-relevance": {
+      "task": "relevance ranking algorithm improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/relevance.py"
+      ],
+      "changes": [
+        "Add _EXACT_MATCH_BONUS (3) for exact identifier matches",
+        "Add _PREFIX_MATCH_BONUS (2) for prefix matches",
+        "Add _POSITION_WEIGHT_BASE (0.1) for position-based scoring",
+        "Add _position_weight() function for exact/prefix/position scoring",
+        "Add _document_frequency() for IDF-weighted scoring"
+      ],
+      "ranking_improvements": [
+        "Exact matches now get +3 bonus over partial matches",
+        "Prefix matches get +2 bonus for early occurrence",
+        "Position weighting rewards terms appearing earlier in paths/functions/classes/imports",
+        "IDF weighting gives higher scores to rare terms (inverse document frequency)"
+      ]
     }
+  },
+  "conflicts": [],
+  "resolved": []
+}
+  },
+    "agent-45-dist-cache": {
+      "task": "distributed cache consistency and clustering improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/distributed_cache.py"
+      ],
+      "changes": [
+        "Add version vector tracking for causal consistency across cache instances",
+        "Add local-first consistency mode with sync-on-read",
+        "Add cache entry versioning with invalidation vectors",
+        "Add cluster mode support with Redis Cluster API fallback",
+        "Add network partition handling with stale-read fallback",
+        "Fix class-level stats causing cross-instance contamination in multi-node scenarios",
+        "Add get_cluster_nodes() for cluster topology awareness",
+        "Add cache_sync() for explicit cache synchronization"
+      ],
+      "consistency_improvements": [
+        "Version vectors prevent stale reads after network partitions",
+        "Local-first mode prioritizes availability over consistency",
+        "Invalidation vectors enable efficient cache coherence",
+        "Partition handling gracefully degrades to local cache"
+      ],
+      "clustering_improvements": [
+        "Redis Cluster support with automatic failover detection",
+        "Multiple Redis node support with consistent routing",
+        "Cross-node cache warming via explicit sync"
+      ]
+    }
+  },
+  "agent-44-update": {
+    "task": "update reliability and rollback capabilities",
+    "branch": "feature/agent-crew",
+    "files_modified": [
+      "src/claude_bridge/update.py"
+    ],
+    "changes": [
+      "Add perform_update() function with pre-check and validation",
+      "Add rollback_update() for reverting to previous version",
+      "Add backup_current_version() before upgrade",
+      "Add UpdateResult dataclass for structured results",
+      "Add retry logic with exponential backoff for PyPI fetch",
+      "Add version comparison using packaging.version",
+      "Add update history tracking with timestamp",
+      "Add get_update_history() for listing past updates",
+      "Add verify_update() post-install validation"
+    ],
+    "improvements": [
+      "Never brick on update failure - rollback mechanism ensures recoverability",
+      "Pre-check current version before fetching PyPI avoids unnecessary downloads",
+      "Backup before upgrade enables manual rollback if needed",
+      "Structured UpdateResult provides consistent return type",
+      "Retry with backoff handles transient network issues",
+      "Version comparison handles pre-releases and dev versions correctly",
+      "Update history enables auditing and debugging of updates"
+    ]
   },
   "conflicts": [],
   "resolved": []

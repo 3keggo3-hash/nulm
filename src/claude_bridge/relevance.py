@@ -23,6 +23,9 @@ _FIELD_REASON_MAP: dict[str, str] = {
     "imports": "import_match",
     "content": "content_match",
 }
+_EXACT_MATCH_BONUS = 3
+_PREFIX_MATCH_BONUS = 2
+_POSITION_WEIGHT_BASE = 0.1
 _SUBTOKEN_INDEX: dict[str, set[str]] = {}
 _SUBTOKEN_INDEX_LOCK = threading.Lock()
 _MIN_SUBTOKEN_LEN = 3
@@ -138,9 +141,11 @@ def rank_indexed_files(
 
         for term in terms:
             term_score = 0
+            idf = _document_frequency(index_payload, term)
             if term in haystacks["path"]:
                 term_score += 5
                 phase_one_fields.add("path")
+                term_score += _position_weight(haystacks["path"], term) * idf
             if term in path_tokens:
                 term_score += 2
                 phase_one_fields.add("path")
@@ -148,6 +153,7 @@ def rank_indexed_files(
             if term in haystacks["functions"]:
                 term_score += 4
                 phase_one_fields.add("functions")
+                term_score += _position_weight(haystacks["functions"], term) * idf
             if term in function_tokens:
                 term_score += 4
                 phase_one_fields.add("functions")
@@ -155,6 +161,7 @@ def rank_indexed_files(
             if term in haystacks["classes"]:
                 term_score += 4
                 phase_one_fields.add("classes")
+                term_score += _position_weight(haystacks["classes"], term) * idf
             if term in class_tokens:
                 term_score += 4
                 phase_one_fields.add("classes")
@@ -162,6 +169,7 @@ def rank_indexed_files(
             if term in haystacks["imports"]:
                 term_score += 2
                 phase_one_fields.add("imports")
+                term_score += _position_weight(haystacks["imports"], term) * idf
             if term in import_tokens:
                 term_score += 3
                 phase_one_fields.add("imports")
@@ -274,6 +282,18 @@ def _subtoken_index_key(term: str) -> str:
     return term.lower()
 
 
+def _position_weight(path_or_name: str, term: str) -> float:
+    lower = path_or_name.lower()
+    idx = lower.find(term.lower())
+    if idx == -1:
+        return 0.0
+    if lower == term.lower():
+        return _EXACT_MATCH_BONUS
+    if lower.startswith(term.lower()):
+        return _PREFIX_MATCH_BONUS
+    return max(0.0, _POSITION_WEIGHT_BASE * (len(path_or_name) - idx))
+
+
 def _build_subtoken_index(terms: list[str]) -> dict[str, list[str]]:
     subtoken_map: dict[str, list[str]] = {}
     for term in terms:
@@ -286,6 +306,19 @@ def _build_subtoken_index(terms: list[str]) -> dict[str, list[str]]:
                     if len(subtoken) >= _MIN_SUBTOKEN_LEN:
                         subtoken_map[key].append(subtoken)
     return subtoken_map
+
+
+def _document_frequency(index_payload: dict[str, Any], term: str) -> float:
+    term_index = index_payload.get("_term_file_index")
+    files = index_payload.get("files", [])
+    total = len(files)
+    if total == 0:
+        return 1.0
+    if isinstance(term_index, dict):
+        raw_paths = term_index.get(term.lower(), [])
+        if isinstance(raw_paths, list):
+            return len(raw_paths) / total
+    return 1.0
 
 
 def _candidate_files(index_payload: dict[str, Any], terms: list[str]) -> list[dict[str, Any]]:
