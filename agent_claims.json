@@ -200,6 +200,27 @@
         "Improved optimize template with concrete low-risk improvement guidance",
         "Improved debug template with hypothesis-driven approach"
       ]
+    },
+    "agent-22-tool-reg": {
+      "task": "tool metadata and versioning improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/tool_registration.py",
+        "src/claude_bridge/smart_tool_registration.py"
+      ],
+      "changes": [
+        "Added ToolMetadata class with name, description, version, read_only, destructive, open_world, tags",
+        "Added version and tags parameters to ToolRegistrationContext.register()",
+        "Added default_version configurable on ToolRegistrationContext",
+        "Added get_metadata() and get_all_metadata() methods for discovery",
+        "Added tool_version and tool_tags parameters to register_smart_tools()"
+      ],
+      "tool_improvements": [
+        "ToolMetadata provides structured metadata for each registered tool",
+        "Versioning enables backward compatibility tracking",
+        "Tags enable categorization and discovery",
+        "Discovery methods allow runtime tool introspection"
+      ]
     }
   },
   "conflicts": [],
