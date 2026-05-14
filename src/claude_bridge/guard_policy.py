@@ -35,7 +35,9 @@ def _is_repeated_nested_quantifier(pattern: str) -> bool:
     """Check for repeated nested quantifiers like (a+)+ or ((a+)+)+."""
     depth = 0
     last_was_quantifier = False
-    for i, ch in enumerate(pattern):
+    i = 0
+    while i < len(pattern):
+        ch = pattern[i]
         if ch == "(":
             depth += 1
             last_was_quantifier = False
@@ -46,14 +48,16 @@ def _is_repeated_nested_quantifier(pattern: str) -> bool:
             last_was_quantifier = False
         elif ch in "*+?":
             last_was_quantifier = True
-        elif ch.isdigit() and last_was_quantifier:
+        elif ch.isdigit():
             j = i
             while j < len(pattern) and pattern[j].isdigit():
                 j += 1
             if j < len(pattern) and pattern[j] == "}":
                 last_was_quantifier = True
+                i = j
             else:
                 last_was_quantifier = False
+        i += 1
     return False
 
 
@@ -190,6 +194,10 @@ class ConditionType(str, Enum):
     FILE_SIZE = "file_size"
     SENSITIVE_PATH = "sensitive_path"
     CONTENT_CONTAINS = "content_contains"
+    COMMAND_BLOCKED = "command_blocked"
+    PATH_NOT_IN_ALLOWED_ROOTS = "path_not_in_allowed_roots"
+    AGENT_ROLE = "agent_role"
+    USER_EQUALS = "user_equals"
 
 
 @dataclass
@@ -442,6 +450,7 @@ def validate_rule_condition(
         ConditionType.GLOB,
         ConditionType.EXTENSION,
         ConditionType.CONTENT_CONTAINS,
+        ConditionType.COMMAND_BLOCKED,
     ):
         if not condition.value:
             errors.append(
@@ -449,6 +458,26 @@ def validate_rule_condition(
                     path=f"{path}.value",
                     message=f"{condition.type.value} condition requires a non-empty value",
                     code="missing_value",
+                )
+            )
+
+    if condition.type in (ConditionType.AGENT_ROLE, ConditionType.USER_EQUALS):
+        if not condition.value:
+            errors.append(
+                ValidationError(
+                    path=f"{path}.value",
+                    message=f"{condition.type.value} condition requires a non-empty value",
+                    code="missing_value",
+                )
+            )
+
+    if condition.type == ConditionType.PATH_NOT_IN_ALLOWED_ROOTS:
+        if not condition.field:
+            errors.append(
+                ValidationError(
+                    path=f"{path}.field",
+                    message="path_not_in_allowed_roots condition requires a non-empty field",
+                    code="missing_field",
                 )
             )
 

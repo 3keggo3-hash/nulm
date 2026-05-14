@@ -1,30 +1,21 @@
 {
   "version": "1.0",
   "description": "Agent coordination manifest - claims prevent conflicts",
-  "created_at": "2026-05-14T00:00:00Z",
+  "created_at": null,
   "agents": {
-    "agent-15-control-plane": {
-      "claimed_tasks": [
-        "improve_task_management",
-        "improve_approval_flows",
-        "improve_cli_integration"
-      ],
+    "agent-12-guard-policy": {
+      "task": "guard policy and rules engine improvements",
+      "branch": "feature/agent-crew",
       "files_modified": [
-        "src/claude_bridge/control_plane.py",
-        "src/claude_bridge/control_plane_tool_server.py",
-        "src/claude_bridge/control_plane_dashboard.py",
-        "agent_claims.json"
+        "src/claude_bridge/guard_policy.py",
+        "src/claude_bridge/rules_engine.py"
       ],
       "changes": [
-        "Add task filtering by multiple statuses in list_tasks()",
-        "Add bulk task cancellation support",
-        "Add task update with reason tracking",
-        "Add approval filtering by age and status",
-        "Add task search by title substring",
-        "Add list_approvals_by_task helper for workflow integration",
-        "Improve dashboard with task search and bulk actions",
-        "Add CLI-style status transitions for tasks",
-        "Add cancel-task-with-reason MCP tool"
+        "Fixed _is_repeated_nested_quantifier bug with {n} quantifier parsing",
+        "Added new condition types: COMMAND_BLOCKED, PATH_NOT_IN_ALLOWED_ROOTS, AGENT_ROLE, USER_EQUALS",
+        "Added validation for new condition types",
+        "Added matchers for new condition types in rules_engine",
+        "Updated docstring to list all supported condition types"
       ]
     },
     "agent-08": {
