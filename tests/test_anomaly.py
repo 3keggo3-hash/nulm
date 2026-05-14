@@ -637,12 +637,18 @@ class TestBuildAnomalySummary:
         summary = build_anomaly_summary(records=[], session_id="test", limit=10)
         assert "mvp_limits" in summary
         assert summary["mvp_limits"]["scope"] == "rule-based, no ML model"
-        assert len(summary["mvp_limits"]["rules"]) == 10
+        assert len(summary["mvp_limits"]["rules"]) == 16
         assert "exfiltration_pattern" in summary["mvp_limits"]["rules"]
         assert "privilege_escalation_attempt" in summary["mvp_limits"]["rules"]
         assert "command_pattern_anomaly" in summary["mvp_limits"]["rules"]
         assert "path_anomaly" in summary["mvp_limits"]["rules"]
         assert "volume_anomaly" in summary["mvp_limits"]["rules"]
+        assert "new_dangerous_tool_use" in summary["mvp_limits"]["rules"]
+        assert "rapid_tool_switch" in summary["mvp_limits"]["rules"]
+        assert "suspicious_file_type" in summary["mvp_limits"]["rules"]
+        assert "network_activity" in summary["mvp_limits"]["rules"]
+        assert "process_spawn" in summary["mvp_limits"]["rules"]
+        assert "env_var_manipulation" in summary["mvp_limits"]["rules"]
 
     def test_critical_record_includes_policy_metadata(self):
         records = [
