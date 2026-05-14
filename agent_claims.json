@@ -36,7 +36,28 @@
           "file": "src/claude_bridge/workflow_engine.py",
           "issue": "Turkish comment in docstring",
           "action": "Fixed to English"
-        },
+"agent-39-snapshot": {
+      "task": "snapshot efficiency and incremental snapshots",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/snapshot.py"
+      ],
+      "changes": [
+        "Add incremental snapshots with file hash tracking",
+        "Cache snapshot index with LRU mechanism",
+        "Parallel file hashing for large snapshots",
+        "Add content_hash field to Snapshot dataclass",
+        "Add reference_snapshot field for incremental snapshots",
+        "Optimize _collect_files_for_snapshot with pre-filtering"
+      ],
+      "snapshot_improvements": [
+        "Incremental snapshots avoid re-archiving unchanged files",
+        "Index caching reduces repeated JSON parsing",
+        "Parallel hashing speeds up change detection",
+        "Content hash enables dedupe across snapshots"
+      ]
+    }
+  },
         {
           "file": "src/claude_bridge/workflow_engine.py",
           "issue": "Missing docstrings",
@@ -315,7 +336,68 @@
         "Security doctor report uses same helper for consistency"
       ]
     },
-    "agent-25-redaction": {
+    "agent-35-config": {
+      "task": "configuration validation and environment variable handling improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/config.py"
+      ],
+      "changes": [
+        "Add _ENV_PREFIX constant for consistent env var prefix handling",
+        "Add validate_config_value() for centralized config validation",
+        "Add load_config_from_toml() for TOML file loading support",
+        "Add _validate_all_config() for comprehensive config validation on load",
+        "Enhance configure_from_env_state() to use _ENV_PREFIX constant"
+      ],
+      "config_improvements": [
+        "Centralized validation function for all config keys",
+        "TOML loading enables file-based configuration",
+        "Fail-fast validation on config load prevents invalid states",
+        "Consistent env var prefix for maintainability"
+      ]
+    },
+    "agent-32-caching": {
+      "task": "caching strategy improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/distributed_cache.py",
+        "src/claude_bridge/workflow_cache.py"
+      ],
+      "changes": [
+        "Added delete_many() to distributed_cache.py for batch deletion",
+        "Added get_many_bulk() using Redis MGET for parallel fetching",
+        "Added set_many_pipeline() using Redis pipeline for batch writes",
+        "Added cache hit/miss statistics tracking to distributed_cache.py",
+        "Added TTL-based invalidation to workflow_cache.py",
+        "Added invalidate_pattern() for selective cache invalidation",
+        "Added clear_disk_cache() to workflow_cache.py"
+      ],
+      "caching_improvements": [
+        "Batch operations now use Redis MGET/pipeline instead of N sequential calls",
+        "Cache statistics track hits, misses, and eviction count",
+        "Workflow cache entries now have TTL and pattern-based invalidation",
+        "Disk cache can now be explicitly cleared"
+      ]
+    },
+    "agent-34-api": {
+      "task": "API consistency and type hint improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/tool_registration.py"
+      ],
+      "changes": [
+        "Added ToolImplProtocol for consistent tool implementation interface",
+        "Added ToolResultTypedDict for structured tool responses",
+        "Added AuditCallbackProtocol for type-safe audit callbacks",
+        "Improved type hints on ToolRegistrationContext methods",
+        "Replaced loose Any types with proper Callable/Protocol types"
+      ],
+      "api_improvements": [
+        "Tool implementations now have consistent async signature",
+        "Audit callbacks have explicit parameter types",
+        "ToolResults uses TypedDict for better IDE support"
+      ]
+    },
       "task": "redaction pattern improvements",
       "branch": "feature/agent-crew",
       "files_modified": [
