@@ -182,6 +182,26 @@
       ],
       "tests_added": 11
     },
+    "agent-29-dashboard": {
+      "task": "dashboard UI improvements and metrics display",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/control_plane_dashboard.py"
+      ],
+      "changes": [
+        "Added metrics row with total tasks and status breakdown",
+        "Added color-coded status dots for visual clarity",
+        "Improved empty states with descriptive messages",
+        "Added responsive grid layout for mobile devices",
+        "Added dark mode color variables for new status colors"
+      ],
+      "dashboard_improvements": [
+        "Metrics display shows task counts by status with colored indicators",
+        "Status dots provide quick visual scanning of task states",
+        "Empty states now show contextual messages instead of generic text",
+        "Mobile layout uses responsive grid with 2-column metrics on smaller screens"
+      ]
+    },
     "agent-21-prompt": {
       "task": "prompt engineering and workflow optimization",
       "branch": "feature/agent-crew",
