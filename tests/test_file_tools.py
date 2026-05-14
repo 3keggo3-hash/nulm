@@ -639,6 +639,120 @@ class TestCopyPathFileCountLimit:
 
 class TestSearchReDoSTimeout:
     def test_match_phase_timeout(self):
-        # Verified by code review: each pattern.search(line) is submitted to
-        # ThreadPoolExecutor and capped with future.result(timeout=2).
         assert True
+
+
+# ---------------------------------------------------------------------------
+# Symlink attack hardening
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePathSafe:
+    def test_blocks_symlink_in_project(self, temp_project):
+        real = temp_project / "secret.txt"
+        real.write_text("secret data")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        from claude_bridge.tool_utils import resolve_path_safe
+
+        with pytest.raises(PermissionError, match="symlink"):
+            resolve_path_safe(str(link))
+
+    def test_blocks_symlink_outside_project(self, temp_project):
+        outside = temp_project.parent / "outside.txt"
+        outside.write_text("external data")
+        link = temp_project / "evil_link.txt"
+        link.symlink_to(outside)
+        from claude_bridge.tool_utils import resolve_path_safe
+
+        with pytest.raises(PermissionError, match="symlink"):
+            resolve_path_safe(str(link))
+
+    def test_allows_regular_file(self, temp_project):
+        regular = temp_project / "regular.txt"
+        regular.write_text("normal content")
+        from claude_bridge.tool_utils import resolve_path_safe
+
+        result = resolve_path_safe(str(regular))
+        assert result == regular.resolve()
+
+
+class TestSymlinkHardenedRead:
+    @pytest.mark.asyncio
+    async def test_read_file_blocks_symlink(self, temp_project):
+        real = temp_project / "secret.txt"
+        real.write_text("secret")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        result = parse_payload(await ft.read_file("link.txt"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"
+
+    @pytest.mark.asyncio
+    async def test_read_multiple_files_blocks_symlink(self, temp_project):
+        real = temp_project / "secret.txt"
+        real.write_text("secret")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        result = parse_payload(await ft.read_multiple_files(["link.txt"]))
+        assert result["ok"] is True
+        assert result["details"]["files"][0]["ok"] is False
+        assert result["details"]["files"][0]["code"] == "path_outside_project"
+
+
+class TestSymlinkHardenedWrite:
+    @pytest.mark.asyncio
+    async def test_write_file_blocks_symlink(self, temp_project):
+        real = temp_project / "target.txt"
+        real.write_text("original")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        result = parse_payload(await ft.write_file("link.txt", "evil content"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"
+
+
+class TestSymlinkHardenedPatch:
+    @pytest.mark.asyncio
+    async def test_patch_file_blocks_symlink(self, temp_project):
+        real = temp_project / "target.py"
+        real.write_text("x = 1\n")
+        link = temp_project / "link.py"
+        link.symlink_to(real)
+        result = parse_payload(await ft.patch_file("link.py", "x = 1", "x = 2"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"
+
+    @pytest.mark.asyncio
+    async def test_preview_patch_blocks_symlink(self, temp_project):
+        real = temp_project / "target.py"
+        real.write_text("x = 1\n")
+        link = temp_project / "link.py"
+        link.symlink_to(real)
+        result = parse_payload(await ft.preview_patch("link.py", "x = 1", "x = 2"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"
+
+
+class TestSymlinkHardenedMove:
+    @pytest.mark.asyncio
+    async def test_move_file_blocks_symlink_source(self, temp_project):
+        real = temp_project / "source.txt"
+        real.write_text("content")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        result = parse_payload(await ft.move_file("link.txt", "dest.txt"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"
+
+
+class TestSymlinkHardenedCopy:
+    @pytest.mark.asyncio
+    async def test_copy_path_blocks_symlink_source(self, temp_project):
+        real = temp_project / "source.txt"
+        real.write_text("content")
+        link = temp_project / "link.txt"
+        link.symlink_to(real)
+        result = parse_payload(await ft.copy_path("link.txt", "dest.txt"))
+        assert result["ok"] is False
+        assert result["code"] == "path_outside_project"

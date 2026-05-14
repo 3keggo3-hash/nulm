@@ -188,6 +188,7 @@ def inspect_package(
     registry = get_registry(registry_root)
     existing = registry.get_meta(str(manifest.get("name", "")))
     risk = score_package_risk(manifest, code)
+    trust_level = str(manifest.get("trust_level", "unverified"))
     return {
         "manifest": manifest,
         "members": sorted(member_names),
@@ -196,6 +197,7 @@ def inspect_package(
         "duplicate": existing is not None,
         "existing_version": existing.version if existing is not None else None,
         "install_eligible": existing is None and risk["risk_level"] != "high",
+        "trust_level": trust_level,
     }, []
 
 
@@ -243,8 +245,12 @@ def import_skill_reviewed(
     package_path: Path,
     *,
     allow_high_risk: bool = False,
+    skip_unverified_approval: bool = False,
 ) -> tuple[bool, list[str]]:
-    """Import a package only after inspect-before-import risk checks."""
+    """Import a package only after inspect-before-import risk checks.
+
+    Unverified skills require explicit approval unless skip_unverified_approval is True.
+    """
     inspection, errors = inspect_package(package_path)
     if errors:
         return False, errors
@@ -254,6 +260,9 @@ def import_skill_reviewed(
         return False, ["Skill already registered; refusing to overwrite existing skill"]
     if risk["risk_level"] == "high" and not allow_high_risk:
         return False, ["High-risk skill package requires allow_high_risk=True"]
+    trust_level = inspection.get("trust_level", "unverified")
+    if trust_level == "unverified" and not skip_unverified_approval:
+        return False, ["Unverified skill requires explicit approval; import with --skip-unverified-approval or inspect and approve first"]
     return import_skill(package_path)
 
 

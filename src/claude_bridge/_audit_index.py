@@ -53,7 +53,7 @@ def append_audit_index_record(
         return
     entry = _index_entry_from_record(record, offset=offset)
     line = json.dumps(entry, ensure_ascii=False, sort_keys=True)
-    _append_audit_record(_audit_index_file(session_id), line)
+    _append_audit_record(_audit_index_file(session_id), line, skip_hash_chain=True)
 
 
 def load_audit_index(session_id: str) -> list[dict[str, Any]]:

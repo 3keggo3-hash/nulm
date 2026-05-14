@@ -558,28 +558,21 @@ class TestComputeAnomalyScores:
         assert result["scores"][0]["score"] >= 0
         assert result["overall_max_score"] >= 0
 
-    def test_new_tool_use_detected(self):
+    def test_new_dangerous_tool_detected(self):
         records = [
             {
                 "record_id": "r1",
                 "timestamp": "2024-01-15T14:00:00Z",
-                "tool_name": "read_file",
+                "tool_name": "run_shell",
                 "decision_action": "allow",
-                "decision_risk_level": "low",
-            },
-            {
-                "record_id": "r2",
-                "timestamp": "2024-01-15T14:01:00Z",
-                "tool_name": "write_file",
-                "decision_action": "allow",
-                "decision_risk_level": "low",
+                "decision_risk_level": "high",
             },
         ]
         result = compute_anomaly_scores(records)
         types_seen: set[str] = set()
         for s in result["scores"]:
             types_seen.update(s["anomaly_types"])
-        assert "new_tool_use" in types_seen
+        assert "new_dangerous_tool_use" in types_seen
 
     def test_sensitive_path_burst(self):
         base_ts = "2024-01-15T14:00:00Z"
@@ -636,19 +629,14 @@ class TestBuildAnomalySummary:
     def test_summary_includes_mvp_limits(self):
         summary = build_anomaly_summary(records=[], session_id="test", limit=10)
         assert "mvp_limits" in summary
-        assert summary["mvp_limits"]["scope"] == "rule-based, no ML model"
-        assert len(summary["mvp_limits"]["rules"]) == 16
+        assert summary["mvp_limits"]["scope"] == "critical security anomalies only, no ML model"
+        assert len(summary["mvp_limits"]["rules"]) == 6
         assert "exfiltration_pattern" in summary["mvp_limits"]["rules"]
         assert "privilege_escalation_attempt" in summary["mvp_limits"]["rules"]
-        assert "command_pattern_anomaly" in summary["mvp_limits"]["rules"]
-        assert "path_anomaly" in summary["mvp_limits"]["rules"]
-        assert "volume_anomaly" in summary["mvp_limits"]["rules"]
         assert "new_dangerous_tool_use" in summary["mvp_limits"]["rules"]
-        assert "rapid_tool_switch" in summary["mvp_limits"]["rules"]
+        assert "sensitive_path_burst" in summary["mvp_limits"]["rules"]
+        assert "high_risk_spike" in summary["mvp_limits"]["rules"]
         assert "suspicious_file_type" in summary["mvp_limits"]["rules"]
-        assert "network_activity" in summary["mvp_limits"]["rules"]
-        assert "process_spawn" in summary["mvp_limits"]["rules"]
-        assert "env_var_manipulation" in summary["mvp_limits"]["rules"]
 
     def test_critical_record_includes_policy_metadata(self):
         records = [

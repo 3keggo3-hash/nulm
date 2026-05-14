@@ -25,7 +25,7 @@ from claude_bridge.tool_utils import (
     path_outside_project_details,
     request_approval,
     require_approval,
-    resolve_path,
+    resolve_path_safe,
     safe_read_text,
     sensitive_file_blocked_details,
     sensitive_path_reason,
@@ -58,7 +58,7 @@ async def write_file(
         )
 
     try:
-        target = resolve_path(path)
+        target = resolve_path_safe(path)
     except PermissionError as exc:
         return json_response(
             False,
@@ -217,16 +217,6 @@ async def write_file(
             code="not_a_file",
             details={"path": path},
         )
-    try:
-        if target.is_symlink():
-            return json_response(
-                False,
-                f"Refusing to write through symlink: {path}",
-                code="symlink_blocked",
-                details={"path": path},
-            )
-    except OSError:
-        pass
     if target.exists() and not overwrite:
         return json_response(
             False,

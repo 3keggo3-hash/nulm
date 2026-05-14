@@ -135,7 +135,7 @@ class AuditLogger:
         session_id = self._current_session_id()
         path = _ops_session_file(session_id)
         line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-        _append_audit_record(path, line)
+        _append_audit_record(path, line, session_id=session_id, skip_hash_chain=True)
         return record_id
 
     def list_operations(

@@ -13,9 +13,11 @@ from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 from rich.text import Text
 
 from claude_bridge import __version__
+from claude_bridge._config_cli import config_app
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
 from claude_bridge.doctor import build_doctor_report, build_security_doctor_report
@@ -30,6 +32,12 @@ from claude_bridge.guard_policy import (
     validate_guard_policy_file,
 )
 from claude_bridge.policy_diff import load_bundle_from_file as _load_bundle_from_file
+
+console = Console()
+
+
+def _print_suggestion(command: str, description: str) -> None:
+    console.print(f"  [dim]→[/dim] [cyan]{command}[/cyan]  {description}")
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
 policy_app = typer.Typer(help="Validate and simulate local guard policy files")
@@ -48,9 +56,19 @@ app.add_typer(skill_app, name="skill")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(control_plane_app, name="control-plane")
+app.add_typer(config_app, name="config")
 control_plane_app.add_typer(tasks_app, name="tasks")
 control_plane_app.add_typer(approvals_app, name="approvals")
 console = Console()
+
+COMMAND_GROUPS = {
+    "Core": ["start", "init", "update"],
+    "Tools": ["skill", "benchmark"],
+    "Audit": ["audit", "appeal", "anomaly", "replay", "appeal-history"],
+    "Config": ["config"],
+    "MCP": ["install", "setup"],
+    "Admin": ["doctor", "policy", "dashboard", "workflow-preview"],
+}
 
 
 def _version_option(value: bool) -> None:
@@ -59,8 +77,50 @@ def _version_option(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.callback()
+def _print_grouped_help(ctx: typer.Context) -> None:
+    console.print(Panel.fit("[bold cyan]Claude Bridge[/bold cyan] command line interface", title="Help", border_style="cyan"))
+    console.print()
+
+    all_cmds: dict[str, Any] = {}
+    for cmd_info in app.registered_commands:
+        if cmd_info.name is not None:
+            all_cmds[cmd_info.name] = cmd_info
+    for subapp in [policy_app, anomaly_app, audit_app, doctor_app, skill_app, control_plane_app, config_app]:
+        for cmd_info in subapp.registered_commands:
+            if cmd_info.name is not None:
+                all_cmds[cmd_info.name] = cmd_info
+
+    rows = []
+    for group_name, cmd_names in COMMAND_GROUPS.items():
+        _cmds = []
+        for name in cmd_names:
+            if name in all_cmds:
+                _cmds.append(name)
+        if not _cmds:
+            continue
+        row = [f"[bold]{group_name}[/bold]", ""]
+        cmd_docs = []
+        for name in _cmds:
+            cmd_info = all_cmds[name]
+            doc = (cmd_info.callback.__doc__ or cmd_info.help or "").split("\n")[0].strip()
+            cmd_docs.append(f"[cyan]{name}[/cyan]  {doc}")
+        row[1] = "\n".join(cmd_docs)
+        rows.append(row)
+
+    table = Table(show_header=False, box=None, pad_edge=False, collapse_padding=True)
+    table.add_column(min_width=10, max_width=12, style="bold")
+    table.add_column(min_width=60)
+    for row in rows:
+        table.add_row(*row)
+
+    console.print(table)
+    console.print("  Use [cyan]--help[/cyan] on a specific command for detailed options.")
+    raise typer.Exit()
+
+
+@app.callback(invoke_without_command=True, help="Show this help message.")
 def root_options(
+    ctx: typer.Context,
     version_option: bool = typer.Option(
         False,
         "--version",
@@ -71,6 +131,8 @@ def root_options(
 ) -> None:
     """Claude Bridge command line interface."""
     _ = version_option
+    if ctx.invoked_subcommand is None:
+        _print_grouped_help(ctx)
 
 
 class _MCPProxy:
@@ -226,6 +288,10 @@ def policy_validate(
     for error in policy.errors:
         console.print(f"[red]error:[/red] {escape(error)}")
     if not policy.valid:
+        console.print()
+        console.print("[bold]Next steps:[/bold]")
+        _print_suggestion("claude-bridge doctor", "Check environment and config for issues")
+        _print_suggestion("claude-bridge policy --help", "See policy subcommands")
         raise typer.Exit(code=1)
 
 
@@ -842,8 +908,10 @@ def control_plane_dashboard(
     port: int = typer.Option(8765, "--port", help="Local dashboard port"),
     token: str | None = typer.Option(None, "--token", help="Optional dashboard token"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable startup info"),
+    tunnel: bool = typer.Option(False, "--tunnel", help="Expose dashboard via Cloudflare tunnel"),
 ) -> None:
     """Serve the local control-plane dashboard on a loopback address."""
+    from claude_bridge._tunnel_manager import TunnelManager
     from claude_bridge.control_plane_dashboard import create_dashboard_server
 
     try:
@@ -855,19 +923,44 @@ def control_plane_dashboard(
             console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from exc
     actual_port = server.server_address[1]
-    url = f"http://{host}:{actual_port}/?token={resolved_token}"
+    local_url = f"http://{host}:{actual_port}/?token={resolved_token}"
+    tunnel_url: str | None = None
+    if tunnel:
+        try:
+            with TunnelManager() as tm:
+                tunnel_url = tm.start(actual_port)
+                display_url = tunnel_url
+        except RuntimeError as exc:
+            if json_output:
+                console.print_json(data={"error": str(exc)})
+            else:
+                console.print(f"[red]Tunnel error:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+    else:
+        display_url = local_url
     if json_output:
         console.print_json(
             data={
                 "schema_version": "control_plane.dashboard_start.v1",
                 "host": host,
                 "port": actual_port,
-                "url": url,
+                "url": display_url,
+                "local_url": local_url,
+                "tunnel_url": tunnel_url,
             }
         )
     else:
-        console.print(f"Control-plane dashboard: [cyan]{escape(url)}[/cyan]")
-        console.print("Press Ctrl-C to stop.")
+        if tunnel and tunnel_url:
+            console.print(Panel.fit(
+                f"[bold link={tunnel_url}]Tunnel URL:[/bold link] [cyan]{tunnel_url}[/cyan]\n\n"
+                f"[dim]Local URL:[/dim] {local_url}\n\n"
+                f"Press Ctrl-C to stop.",
+                title="Tunnel Active",
+                border_style="green",
+            ))
+        else:
+            console.print(f"Control-plane dashboard: [cyan]{escape(display_url)}[/cyan]")
+            console.print("Press Ctrl-C to stop.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1109,12 +1202,50 @@ def skill_list(
         return
     for item in skills:
         meta = item["meta"]
-        console.print(f"[bold]{escape(meta['name'])}[/bold] v{escape(meta['version'])}")
+        trust = meta.get("trust_level", "unverified")
+        trust_badge = f"[dim][{trust}][/dim]" if trust != "unverified" else ""
+        console.print(f"[bold]{escape(meta['name'])}[/bold] v{escape(meta['version'])} {trust_badge}")
+
+
+@skill_app.command("trust-levels")
+def skill_trust_levels(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """List skills grouped by trust level.
+
+    Trust levels: official (signed), community, unverified.
+    """
+    from claude_bridge.skill_registry import get_registry
+
+    registry = get_registry()
+    by_level: dict[str, list[str]] = {
+        "official": [],
+        "community": [],
+        "unverified": [],
+    }
+    for skill in registry.list_skills():
+        level = skill.meta.trust_level
+        if level not in by_level:
+            by_level[level] = []
+        by_level[level].append(skill.meta.name)
+
+    payload = {"schema_version": "skill_trust_levels.v1", "trust_levels": by_level}
+    if json_output:
+        console.print_json(data=payload)
+        return
+    for level in ("official", "community", "unverified"):
+        names = by_level[level]
+        label = f"[bold]{level.upper()}[/bold]" if level != "unverified" else level.upper()
+        if names:
+            console.print(f"{label}: {', '.join(escape(n) for n in sorted(names))}")
+        else:
+            console.print(f"{label}: [dim]none[/dim]")
 
 
 @skill_app.command("inspect")
 def skill_inspect(
     name: str,
+    manifest: bool = typer.Option(False, "--manifest", help="Show full manifest including trust metadata"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Inspect a registered skill without executing it."""
@@ -1128,15 +1259,31 @@ def skill_inspect(
         else:
             console.print(f"[red]{escape(payload['error'])}[/red]")
         raise typer.Exit(code=1)
-    success_payload: dict[str, Any] = {
-        "schema_version": "skill_inspect.v1",
-        "skill": loaded.metadata_dict(),
-    }
+    if manifest:
+        success_payload: dict[str, Any] = {
+            "schema_version": "skill_inspect_manifest.v1",
+            "manifest": loaded.meta.to_dict(),
+            "code_loaded": bool(loaded.code),
+        }
+    else:
+        success_payload = {
+            "schema_version": "skill_inspect.v1",
+            "skill": loaded.metadata_dict(),
+        }
     if json_output:
         console.print_json(data=success_payload)
         return
-    meta = loaded.meta
-    console.print(Panel.fit(json.dumps(meta.to_dict(), indent=2), title=name))
+    if manifest:
+        trust = loaded.meta.trust_level
+        trust_color = {"official": "green", "community": "yellow", "unverified": "red"}.get(trust, "dim")
+        trust_label = f"[{trust_color}]{trust}[/{trust_color}]"
+        console.print(Panel.fit(
+            json.dumps(loaded.meta.to_dict(), indent=2),
+            title=f"{name} {trust_label}",
+            border_style=trust_color if trust != "unverified" else "dim",
+        ))
+    else:
+        console.print(Panel.fit(json.dumps(loaded.meta.to_dict(), indent=2), title=name))
 
 
 @skill_app.command("recommend")
@@ -1226,12 +1373,21 @@ def skill_import(
         "--allow-high-risk",
         help="Allow importing a package scored as high risk",
     ),
+    skip_unverified_approval: bool = typer.Option(
+        False,
+        "--skip-unverified-approval",
+        help="Skip approval prompt for unverified skills",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Import a reviewed skill package."""
     from claude_bridge.skill_marketplace import import_skill_reviewed
 
-    success, errors = import_skill_reviewed(package, allow_high_risk=allow_high_risk)
+    success, errors = import_skill_reviewed(
+        package,
+        allow_high_risk=allow_high_risk,
+        skip_unverified_approval=skip_unverified_approval,
+    )
     payload = {"ok": success, "errors": errors}
     if json_output:
         console.print_json(data=payload)
@@ -1240,6 +1396,10 @@ def skill_import(
     else:
         for error in errors:
             console.print(f"[red]{escape(error)}[/red]")
+        console.print()
+        console.print("[bold]Next steps:[/bold]")
+        _print_suggestion("claude-bridge skill list", "List available skills to inspect")
+        _print_suggestion("claude-bridge skill inspect <name>", "Inspect a specific skill")
     if not success:
         raise typer.Exit(code=1)
 
@@ -1302,6 +1462,60 @@ def update(
         console.print("Upgrade:   [cyan]pip install --upgrade claude-bridge[/cyan]")
 
 
+def _print_preset_explanation_table() -> None:
+    table = Table(title="Approval Preset Tradeoffs", show_header=True, header_style="bold")
+    table.add_column("Preset", style="cyan", width=14)
+    table.add_column("Tool Behavior", width=22)
+    table.add_column("Security Tradeoff", width=30)
+    table.add_column("Works Well For", width=22)
+
+    rows = [
+        (
+            "[cyan]read-only[/cyan]",
+            "All writes/shells [red]deny[/red]",
+            "Maximum safety; no accidental writes",
+            "Auditing, exploring repos",
+        ),
+        (
+            "[cyan]dev-safe[/cyan]",
+            "Writes need approval; system cmds blocked",
+            "Balanced: catches risky ops before exec",
+            "Daily development work",
+        ),
+        (
+            "[cyan]ci-like[/cyan]",
+            "Same as dev-safe; explicit preset for bots",
+            "Reviewable by humans; CI-friendly",
+            "Automated pipelines",
+        ),
+        (
+            "[cyan]power-user[/cyan]",
+            "Everything auto-approved (no prompt)",
+            "Fast but no guard rails — mistakes allowed",
+            "Trusted local environment",
+        ),
+    ]
+    for row in rows:
+        table.add_row(*row)
+
+    table2 = Table(title="What Succeeds vs Fails Per Preset", show_header=True, header_style="bold")
+    table2.add_column("Preset", style="cyan", width=14)
+    table2.add_column("[green]Succeeds[/green]", width=26)
+    table2.add_column("[red]Fails / Blocked[/red]", width=26)
+
+    examples = [
+        ("read-only", "ls, cat, git diff, grep", "write_file, run_shell, mv, rm"),
+        ("dev-safe", "ls, cat, write to project", "sudo, curl|bash, rm -rf /"),
+        ("ci-like", "ls, cat, git, npm test", "sudo, shutdown, rm -rf /"),
+        ("power-user", "anything in project dir", "Only built-in hard denies apply"),
+    ]
+    for row in examples:
+        table2.add_row(*row)
+
+    console.print(table)
+    console.print(table2)
+
+
 @app.command()
 def init(
     project_dir: str = typer.Option(".", "--project-dir", "-d", help="Project directory path"),
@@ -1341,6 +1555,7 @@ def init(
         presets = {"1": "read-only", "2": "dev-safe", "3": "ci-like", "4": "power-user"}
         mode = approval_mode or "dev-safe"
         if not non_interactive:
+            _print_preset_explanation_table()
             console.print("\n[b]Approval mode:[/b]")
             for key, val in presets.items():
                 desc = {

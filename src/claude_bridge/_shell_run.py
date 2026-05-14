@@ -11,7 +11,13 @@ from typing import Any, Awaitable, Callable
 import os as _os
 
 from claude_bridge.ai_evaluator import evaluate_tool_with_ai
-from claude_bridge.config import active_role, active_user, approval_mode, current_config
+from claude_bridge.config import (
+    active_role,
+    active_user,
+    approval_mode,
+    current_config,
+    should_auto_approve_risk,
+)
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -38,6 +44,8 @@ from claude_bridge._shell_analysis import (
 )
 from claude_bridge._shell_constants import (
     _LONG_RUNNING_TIMEOUT,
+    _MAX_INTERACTIVE_INPUT_CHARS,
+    _MAX_INTERACTIVE_TOTAL_INPUT,
     _MAX_PROCESS_OUTPUT_CHARS,
     _MAX_SHELL_OUTPUT_CHARS,
 )
@@ -318,13 +326,13 @@ async def run_shell(
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
     auto_approve_on, client_managed = approval_mode()
-    if analysis_risk in ("high", "critical") and auto_approve_on:
+    if auto_approve_on and not should_auto_approve_risk(analysis_risk):
         ask_decision = _shell_analysis_decision(
             analysis,
             action=DecisionAction.ASK,
             source=DecisionSource.BUILTIN_GUARD,
-            reason=f"Shell command risk level {analysis_risk} requires approval; "
-            "auto_approve is disabled for high+ risk commands",
+            reason=f"Shell command risk level {analysis_risk} exceeds auto_approve_risk_level; "
+            "approval required",
         )
         return json_response(
             False,
@@ -1069,4 +1077,407 @@ async def interact_with_process(
             "stdin_closed": session.stdin_closed,
             "last_input_at": session.last_input_at,
         },
+    )
+
+
+async def interactive_shell(
+    command: str,
+    *,
+    request_approval: Callable[[str, dict[str, Any]], Awaitable[bool]],
+    project_dir: Callable[[], Path],
+    ai_provider: Any = None,
+) -> str:
+    analysis = analyze_shell_command(command)
+    if not analysis["ok"]:
+        if analysis["code"] != "interactive_command_unsupported":
+            deny_decision = _shell_analysis_decision(
+                analysis,
+                action=DecisionAction.DENY,
+                source=DecisionSource.BUILTIN_GUARD,
+                reason=analysis["message"],
+            )
+            return json_response(
+                False,
+                analysis["message"],
+                code=analysis["code"],
+                details=analysis["details"],
+                decision=deny_decision,
+                decision_in_details=True,
+            )
+    elif not analysis["details"].get("is_interactive", False):
+        return json_response(
+            False,
+            "Command is not an interactive shell; use start_process for background processes",
+            code="not_interactive_command",
+            details={"command": command},
+        )
+
+    stripped = command.strip()
+    approval_decision: PolicyDecision | None = None
+    policy_context = ToolRequestContext(
+        tool_name="interactive_shell",
+        params={"command": stripped},
+        project_dir=str(project_dir()),
+        role=active_role(),
+        user=active_user(),
+    )
+    rule_decision = evaluate_runtime_policy_chain(policy_context)
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "interactive_shell",
+            {"command": stripped},
+            rejection_message=rule_decision.reason,
+            rejection_details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="shell_agent",
+                action="Start interactive shell",
+                reason=rule_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    rule_decision.risk_level.value, 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="interactive_shell",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Interactive shell approved after policy ASK decision",
+        )
+
+    config = current_config()
+    ai_enabled = bool(config.get("ai_evaluator_enabled", False))
+    ai_timeout = int(config.get("ai_evaluator_timeout", 5))
+    ai_fallback = str(config.get("ai_evaluator_fallback_action", "ask"))
+    ai_decision = await evaluate_tool_with_ai(
+        ToolRequestContext(
+            tool_name="interactive_shell",
+            params={"command": stripped},
+            project_dir=str(project_dir()),
+            role=active_role(),
+            user=active_user(),
+        ),
+        provider=ai_provider,
+        enabled=ai_enabled,
+        timeout=ai_timeout,
+        fallback_action=ai_fallback,
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "interactive_shell",
+            {"command": stripped},
+            rejection_message=ai_decision.reason,
+            rejection_details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="shell_agent",
+                action="Start interactive shell",
+                reason=ai_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    analysis["details"].get("risk_level", "low"), 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="interactive_shell",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Interactive shell approved after AI ASK decision",
+        )
+
+    analysis_risk = analysis["details"].get("risk_level", "low")
+    auto_approve_on, client_managed = approval_mode()
+    if analysis_risk in ("high", "critical") and auto_approve_on:
+        ask_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ASK,
+            source=DecisionSource.BUILTIN_GUARD,
+            reason=f"Interactive shell risk level {analysis_risk} requires approval; "
+            "auto_approve is disabled for high+ risk commands",
+        )
+        return json_response(
+            False,
+            f"Interactive shell requires approval (risk: {analysis_risk})",
+            code="approval_required",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis_risk,
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=ask_decision,
+            decision_in_details=True,
+        )
+
+    capacity = _process_session_capacity()
+    if not capacity["available"]:
+        return json_response(
+            False,
+            "Process session limit reached; stop an existing process before starting another.",
+            code="process_session_limit_exceeded",
+            details=capacity,
+            decision=approval_decision,
+            decision_in_details=True,
+        )
+
+    cwd_snapshot = project_dir()
+    try:
+        process = subprocess.Popen(
+            analysis["details"]["argv"],
+            shell=False,
+            cwd=cwd_snapshot,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=_sanitized_env(),
+        )
+    except OSError as exc:
+        return json_response(
+            False,
+            f"Failed to start interactive shell: {exc}",
+            code="command_error",
+            details={
+                "command": _mask_secrets(command),
+                "risk_level": analysis["details"]["risk_level"],
+                "risk_reasons": analysis["details"]["risk_reasons"],
+            },
+            decision=approval_decision,
+            decision_in_details=True,
+        )
+
+    session_id = uuid.uuid4().hex
+    session = _ProcessSession(
+        session_id=session_id,
+        command=command,
+        argv=list(analysis["details"]["argv"]),
+        cwd=cwd_snapshot,
+        process=process,
+        risk_level=str(analysis["details"]["risk_level"]),
+        risk_reasons=list(analysis["details"]["risk_reasons"]),
+    )
+    if not _register_process_session(session):
+        _terminate_unregistered_process(process)
+        return json_response(
+            False,
+            "Process session limit reached; stop an existing process before starting another.",
+            code="process_session_limit_exceeded",
+            details=_process_session_capacity(),
+            decision=approval_decision,
+            decision_in_details=True,
+        )
+    _start_stream_threads(session)
+    return json_response(
+        True,
+        "Interactive shell started",
+        details=session.snapshot(),
+        decision=approval_decision,
+        decision_in_details=True,
+    )
+
+
+async def send_to_process(
+    session_id: str,
+    input: str,
+    *,
+    request_approval: Callable[[str, dict[str, Any]], Awaitable[bool]],
+) -> str:
+    if len(input) > _MAX_INTERACTIVE_INPUT_CHARS:
+        return json_response(
+            False,
+            f"Input exceeds maximum length of {_MAX_INTERACTIVE_INPUT_CHARS} characters per call",
+            code="input_too_long",
+            details={"length": len(input), "max": _MAX_INTERACTIVE_INPUT_CHARS},
+        )
+    session = _get_process_session(session_id)
+    if session is None:
+        return json_response(
+            False,
+            f"Process session not found: {session_id}",
+            code="process_session_not_found",
+            details={"session_id": session_id},
+        )
+    session.refresh_status()
+    if session.exit_code is not None:
+        return json_response(
+            False,
+            f"Process already exited with code {session.exit_code}",
+            code="process_already_exited",
+            details={"session_id": session_id, "exit_code": session.exit_code},
+        )
+    total_input = session.input_chars + len(input)
+    if total_input > _MAX_INTERACTIVE_TOTAL_INPUT:
+        return json_response(
+            False,
+            f"Total input would exceed {_MAX_INTERACTIVE_TOTAL_INPUT} character limit for this session",
+            code="session_input_limit_exceeded",
+            details={
+                "session_id": session_id,
+                "current_input_chars": session.input_chars,
+                "this_input_length": len(input),
+                "max_total": _MAX_INTERACTIVE_TOTAL_INPUT,
+            },
+        )
+
+    risk_score = 30
+    interact_card = PermissionCard(
+        agent="process_agent",
+        action="Send input to process",
+        reason="Process interaction requires approval",
+        risk=risk_score,
+        files=_extract_files_from_command(session.command),
+        tool_name="send_to_process",
+        params={
+            "session_id": session_id,
+            "command": _mask_secrets(session.command),
+            "input_length": len(input),
+        },
+    )
+    rejection = await require_approval(
+        "send_to_process",
+        {
+            "session_id": session_id,
+            "command": session.command,
+            "input_length": len(input),
+        },
+        rejection_message="Process input rejected by user",
+        rejection_details={
+            "session_id": session_id,
+            "command": session.command,
+            "input_length": len(input),
+        },
+        request_approval_fn=request_approval,
+        card=interact_card,
+    )
+    if rejection is not None:
+        return rejection
+
+    stdin_stream = session.process.stdin
+    if stdin_stream is None:
+        return json_response(
+            False,
+            "Process stdin is not available",
+            code="stdin_unavailable",
+            details={"session_id": session_id},
+        )
+    if stdin_stream.closed or session.stdin_closed:
+        return json_response(
+            False,
+            "Process stdin is closed",
+            code="stdin_closed",
+            details={"session_id": session_id},
+        )
+    try:
+        with session.lock:
+            stdin_stream.write(input)
+            stdin_stream.flush()
+            session.record_input(input)
+    except (OSError, BrokenPipeError) as exc:
+        return json_response(
+            False,
+            f"Failed to write to process stdin: {exc}",
+            code="stdin_write_failed",
+            details={"session_id": session_id, "error": str(exc)},
+        )
+
+    return json_response(
+        True,
+        "Input sent to process",
+        details={
+            "session_id": session_id,
+            "command": session.command,
+            "input_length": len(input),
+            "pid": session.process.pid,
+            "input_chars": session.input_chars,
+            "input_events": session.input_events,
+            "stdin_closed": session.stdin_closed,
+            "last_input_at": session.last_input_at,
+        },
+    )
+
+
+async def get_process_status(session_id: str) -> str:
+    session = _get_process_session(session_id)
+    if session is None:
+        return json_response(
+            False,
+            f"Process session not found: {session_id}",
+            code="process_session_not_found",
+            details={"session_id": session_id},
+        )
+    session.refresh_status()
+    return json_response(
+        True,
+        "Process status retrieved",
+        details=session.snapshot(),
     )

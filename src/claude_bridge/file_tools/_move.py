@@ -26,7 +26,7 @@ from claude_bridge.tool_utils import (
     path_guard_decision,
     path_outside_project_details,
     require_approval,
-    resolve_path,
+    resolve_path_safe,
     sensitive_file_blocked_details,
     sensitive_path_reason,
 )
@@ -42,7 +42,7 @@ async def move_file(
     ai_provider: Any = None,
 ) -> str:
     try:
-        source_path = resolve_path(source)
+        source_path = resolve_path_safe(source)
     except PermissionError as exc:
         return json_response(
             False,
@@ -52,7 +52,7 @@ async def move_file(
             decision=path_guard_decision(source, "move", outside_workspace=True),
         )
     try:
-        destination_path = resolve_path(destination)
+        destination_path = resolve_path_safe(destination)
     except PermissionError as exc:
         return json_response(
             False,
@@ -80,16 +80,6 @@ async def move_file(
             code="source_not_found",
             details={"source": source},
         )
-    try:
-        if source_path.is_symlink():
-            return json_response(
-                False,
-                "Refusing to move symlink directly",
-                code="symlink_blocked",
-                details={"source": source},
-            )
-    except OSError:
-        pass
     if source_path == destination_path:
         return json_response(
             False,
@@ -293,7 +283,7 @@ async def copy_path(
     ai_provider: Any = None,
 ) -> str:
     try:
-        source_path = resolve_path(source)
+        source_path = resolve_path_safe(source)
     except PermissionError as exc:
         return json_response(
             False,
@@ -303,7 +293,7 @@ async def copy_path(
             decision=path_guard_decision(source, "copy", outside_workspace=True),
         )
     try:
-        destination_path = resolve_path(destination)
+        destination_path = resolve_path_safe(destination)
     except PermissionError as exc:
         return json_response(
             False,
@@ -331,16 +321,6 @@ async def copy_path(
             code="source_not_found",
             details={"source": source},
         )
-    try:
-        if source_path.is_symlink():
-            return json_response(
-                False,
-                "Refusing to copy symlink directly",
-                code="symlink_blocked",
-                details={"source": source},
-            )
-    except OSError:
-        pass
     if source_path == destination_path:
         return json_response(
             False,

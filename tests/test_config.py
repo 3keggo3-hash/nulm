@@ -317,7 +317,10 @@ def test_tool_profile_union_covers_public_server_exports():
         "reset_process_sessions",
         "run_mcp_server",
         "send_feedback_impl",
+        "send_to_process",
         "set_config",
+        "interactive_shell",
+        "get_process_status",
         "update_runtime_config",
     }
 
@@ -368,3 +371,62 @@ def test_essential_tool_profile_avoids_heavy_server_imports(tmp_path):
         "claude_bridge.workflow_tools": False,
         "claude_bridge.insights": False,
     }
+
+
+class TestAutoApproveRiskLevel:
+    async def test_default_risk_level_is_medium(self, temp_project):
+        config_module.apply_config(project_dir=temp_project)
+        cfg = config_module.current_config()
+        assert cfg["auto_approve_risk_level"] == "medium"
+
+    async def test_apply_config_accepts_risk_level(self, temp_project):
+        config_module.apply_config(project_dir=temp_project, auto_approve_risk_level="high")
+        cfg = config_module.current_config()
+        assert cfg["auto_approve_risk_level"] == "high"
+
+    async def test_invalid_risk_level_rejected(self, temp_project):
+        with pytest.raises(ValueError, match="auto_approve_risk_level must be one of"):
+            config_module.apply_config(project_dir=temp_project, auto_approve_risk_level="invalid")
+
+    async def test_update_runtime_config_risk_level(self, temp_project):
+        result = config_module.update_runtime_config("auto_approve_risk_level", "low")
+        assert result["auto_approve_risk_level"] == "low"
+
+    async def test_update_runtime_config_invalid_risk_level(self, temp_project):
+        with pytest.raises(ValueError, match="auto_approve_risk_level must be one of"):
+            config_module.update_runtime_config("auto_approve_risk_level", "critical")
+
+
+class TestShouldAutoApproveRisk:
+    def test_none_never_auto_approves(self):
+        config_module._CONFIG["auto_approve_risk_level"] = "none"
+        config_module._CONFIG["auto_approve"] = True
+        config_module._CONFIG["client_managed_approval"] = False
+        assert config_module.should_auto_approve_risk("low") is False
+        assert config_module.should_auto_approve_risk("medium") is False
+        assert config_module.should_auto_approve_risk("high") is False
+
+    def test_low_only_auto_approves_low(self):
+        config_module._CONFIG["auto_approve_risk_level"] = "low"
+        config_module._CONFIG["auto_approve"] = True
+        config_module._CONFIG["client_managed_approval"] = False
+        assert config_module.should_auto_approve_risk("low") is True
+        assert config_module.should_auto_approve_risk("medium") is False
+        assert config_module.should_auto_approve_risk("high") is False
+
+    def test_medium_auto_approves_low_and_medium(self):
+        config_module._CONFIG["auto_approve_risk_level"] = "medium"
+        config_module._CONFIG["auto_approve"] = True
+        config_module._CONFIG["client_managed_approval"] = False
+        assert config_module.should_auto_approve_risk("low") is True
+        assert config_module.should_auto_approve_risk("medium") is True
+        assert config_module.should_auto_approve_risk("high") is False
+
+    def test_high_auto_approves_low_medium_and_high(self):
+        config_module._CONFIG["auto_approve_risk_level"] = "high"
+        config_module._CONFIG["auto_approve"] = True
+        config_module._CONFIG["client_managed_approval"] = False
+        assert config_module.should_auto_approve_risk("low") is True
+        assert config_module.should_auto_approve_risk("medium") is True
+        assert config_module.should_auto_approve_risk("high") is True
+        assert config_module.should_auto_approve_risk("critical") is False

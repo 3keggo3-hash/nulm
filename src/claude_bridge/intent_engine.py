@@ -23,49 +23,28 @@ IntentType = Enum(
 
 INTENT_PATTERNS: dict[str, list[str]] = {
     "error_complaint": [
-        "çalışmıyor",
-        "hata",
         "crash",
         "broken",
-        "olmuyor",
-        "başarısız",
         "fail",
         "error",
         "exception",
         "traceback",
         "segfault",
-        "panik",
-        "kilitlen",
-        "çökme",
         "not responding",
-        "ölü",
         "deprecated",
     ],
     "performance_concern": [
-        "yavaş",
         "slow",
         "performance",
-        "hız",
-        "optimizasyon",
-        "gecikmeli",
         "timeout",
-        "ağır",
-        "gecikm",
-        "fps",
         "memory leak",
-        "ram",
         "cpu",
         "latency",
-        "yavaşlat",
     ],
     "security_concern": [
-        "güvenli mi",
         "secure",
         "risk",
-        "güvenlik",
-        "güvensiz",
         "hack",
-        "salary",
         "password",
         "secret",
         "api_key",
@@ -76,36 +55,23 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "cve",
         "xss",
         "sql injection",
-        "injection",
     ],
     "missing_feature": [
-        "eksik",
         "missing",
-        "yok",
-        "bulamadım",
-        "找不到",
-        "mevcut değil",
-        "destination",
-        "namoed",
-        "bulunamadı",
-        "gerçekleştirilemiyor",
+        "not found",
+        "doesn't exist",
+        "cannot find",
+        "unable to locate",
     ],
     "refactoring_concern": [
         "refactor",
-        "yeniden yapılandır",
-        "temizle",
         "cleanup",
-        "düzenle",
         "restructure",
         "code smell",
         "tech debt",
         "technical debt",
-        "karışık",
-        "bağımlılık",
         "coupling",
         "modular",
-        "extract",
-        "inheritance",
     ],
     "test_creation": [
         "test",
@@ -114,46 +80,20 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "integration test",
         "e2e",
         "coverage",
-        "test coverage",
-        "birim test",
-        "senaryo",
-        "assertion",
         "mock",
         "fixture",
-        "spec",
-        "tap",
     ],
     "documentation_request": [
-        "dokümantasyon",
         "docs",
         "documentation",
         "readme",
         "comment",
-        "yorum",
-        "açıklama",
         "explain",
         "wiki",
         "changelog",
-        "version",
-        "nasıl",
         "how to",
         "tutorial",
         "guide",
-    ],
-    "vague_indicators": [
-        "biraz karışık",
-        "nasıl yapacağımı bilmiyorum",
-        "ne yapacağımı bilmiyorum",
-        "hmm",
-        "şey",
-        "karışık",
-        "anlamadım",
-        "belki",
-        "fikrim yok",
-        "tahminden",
-        "acaba",
-        "orada bir",
-        "birisine",
     ],
 }
 
@@ -173,12 +113,6 @@ def detect_undecided(user_input: str) -> tuple[bool, VagueIntent]:
     intent_type = IntentType.VAGUE
     confidence = 0.0
     suggested_actions: list[str] = []
-
-    vague_indicators = INTENT_PATTERNS.get("vague_indicators", [])
-    for pattern in vague_indicators:
-        if pattern in normalized:
-            matched.append(pattern)
-            confidence = max(confidence, 0.7)
 
     for pattern_list in INTENT_PATTERNS.values():
         for pattern in pattern_list:
@@ -232,11 +166,7 @@ def detect_undecided(user_input: str) -> tuple[bool, VagueIntent]:
                 confidence = conf
                 suggested_actions = actions
 
-    is_vague = confidence >= 0.7 and (
-        len(matched) >= 2
-        or any(vi in normalized for vi in vague_indicators)
-        or intent_type == IntentType.VAGUE
-    )
+    is_vague = len(matched) >= 3 and confidence < 0.7
 
     if is_vague and not suggested_actions:
         suggested_actions = [
@@ -244,10 +174,6 @@ def detect_undecided(user_input: str) -> tuple[bool, VagueIntent]:
             "Identify potential approaches",
             "Present ranked options",
         ]
-
-    if confidence < 0.7 and intent_type == IntentType.VAGUE:
-        confidence = 0.0
-        suggested_actions = []
 
     vague_intent = VagueIntent(
         intent_type=intent_type,

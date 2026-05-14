@@ -76,6 +76,33 @@ def test_inspect_package_returns_manifest_and_risk(
     assert inspection["code_length"] > 0
     assert inspection["risk"]["risk_level"] == "low"
     assert inspection["install_eligible"] is True
+    assert inspection["trust_level"] == "unverified"
+
+
+def test_inspect_package_with_trust_metadata(
+    temp_skills_dir: Path,
+    tmp_path: Path,
+) -> None:
+    package = _package(
+        tmp_path / "official.tar.gz",
+        manifest={
+            "name": "official-skill",
+            "version": "1.0",
+            "trigger_phrases": ["official"],
+            "description": "An official skill",
+            "tags": ["official"],
+            "trust_level": "official",
+            "signature": "sig_abc123",
+        },
+    )
+
+    inspection, errors = inspect_package(package)
+
+    assert errors == []
+    assert inspection is not None
+    assert inspection["manifest"]["trust_level"] == "official"
+    assert inspection["manifest"]["signature"] == "sig_abc123"
+    assert inspection["trust_level"] == "official"
 
 
 def test_inspect_package_rejects_unsafe_tar_member(
@@ -113,6 +140,7 @@ def test_high_risk_package_requires_explicit_allow(
             "version": "1.0",
             "trigger_phrases": ["risky"],
             "permissions": ["execute"],
+            "trust_level": "community",
         },
         code="import subprocess\n\ndef run(ctx): subprocess.run(['true'])",
     )
@@ -158,3 +186,48 @@ def test_search_packages_matches_metadata(
 
     assert len(results) == 1
     assert results[0]["name"] == "docs"
+
+
+def test_unverified_skill_requires_approval(
+    temp_skills_dir: Path,
+    tmp_path: Path,
+) -> None:
+    package = _package(
+        tmp_path / "unverified.tar.gz",
+        manifest={
+            "name": "unverified-skill",
+            "version": "1.0",
+            "trigger_phrases": ["unverified"],
+            "description": "An unverified skill",
+            "tags": ["test"],
+            "trust_level": "unverified",
+        },
+    )
+
+    success, errors = import_skill_reviewed(package, skip_unverified_approval=False)
+    assert success is False
+    assert any("Unverified skill requires explicit approval" in error for error in errors)
+
+    success, errors = import_skill_reviewed(package, skip_unverified_approval=True)
+    assert success is True
+
+
+def test_community_skill_no_approval_required(
+    temp_skills_dir: Path,
+    tmp_path: Path,
+) -> None:
+    package = _package(
+        tmp_path / "community.tar.gz",
+        manifest={
+            "name": "community-skill",
+            "version": "1.0",
+            "trigger_phrases": ["community"],
+            "description": "A community skill",
+            "tags": ["test"],
+            "trust_level": "community",
+        },
+    )
+
+    success, errors = import_skill_reviewed(package, skip_unverified_approval=False)
+    assert success is True
+    assert errors == []

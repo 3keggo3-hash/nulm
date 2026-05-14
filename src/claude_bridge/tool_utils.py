@@ -18,6 +18,7 @@ from claude_bridge.config import (
     current_config,
     project_dir,
     shell_timeout,
+    should_auto_approve_risk,
 )
 from claude_bridge.guard_policy import (
     DecisionAction,
@@ -289,11 +290,34 @@ def resolve_path(user_path: str) -> Path:
     combined = base / candidate
     target = (
         combined.resolve()
-    )  # FIX: Removed pre-resolution ".." check; is_within_root after resolve() is sufficient
-    # Check resolved target against ALL allowed roots, not just the active project dir.
-    # This allows symlinks inside the workspace to point to secondary allowed roots.
+    )
     if not any(is_within_root(target, root) for root in allowed_roots()):
         raise PermissionError("Access denied: path outside allowed roots")
+    return target
+
+
+def resolve_path_safe(user_path: str) -> Path:
+    candidate = Path(user_path)
+    if candidate.is_absolute():
+        if candidate.is_symlink():
+            raise PermissionError("Access denied: symlink is not allowed")
+        target = candidate.resolve()
+        allowed = any(is_within_root(target, root) for root in allowed_roots())
+        if not allowed:
+            raise PermissionError("Access denied: path outside allowed roots")
+    else:
+        base = project_dir()
+        combined = base / candidate
+        is_link = False
+        try:
+            is_link = combined.is_symlink()
+        except OSError:
+            pass
+        if is_link:
+            raise PermissionError("Access denied: symlink is not allowed")
+        target = combined.resolve()
+        if not any(is_within_root(target, root) for root in allowed_roots()):
+            raise PermissionError("Access denied: path outside allowed roots")
     return target
 
 
@@ -399,18 +423,25 @@ async def require_approval(
     request_approval_fn: Callable[..., Awaitable[bool]] = request_approval,
     card: PermissionCard | None = None,
     allow_auto_approve: bool = True,
+    risk_level: str = "low",
 ) -> str | None:
     auto_approve, client_managed_approval = approval_mode()
-    if not allow_auto_approve and auto_approve and not client_managed_approval:
-        approved = False
-    else:
-        try:
-            result = request_approval_fn(tool_name, params, card=card)
-        except TypeError as exc:
-            if "card" not in str(exc):
-                raise
-            result = request_approval_fn(tool_name, params)
-        approved = bool(await result) if inspect.isawaitable(result) else bool(result)
+    if auto_approve and not client_managed_approval:
+        if not allow_auto_approve or not should_auto_approve_risk(risk_level):
+            return json_response(
+                False,
+                rejection_message,
+                code="approval_rejected",
+                details=rejection_details or {},
+            )
+        return None
+    try:
+        result = request_approval_fn(tool_name, params, card=card)
+    except TypeError as exc:
+        if "card" not in str(exc):
+            raise
+        result = request_approval_fn(tool_name, params)
+    approved = bool(await result) if inspect.isawaitable(result) else bool(result)
     if approved:
         return None
     return json_response(

@@ -46,11 +46,14 @@ from claude_bridge._shell_constants import (  # noqa: F401
 )
 from claude_bridge._shell_run import (  # noqa: F401
     _MAX_INTERACT_INPUT_CHARS,
+    get_process_status,
+    interactive_shell,
     interact_with_process,
     kill_process,
     list_process_sessions,
     read_process_output,
     run_shell,
+    send_to_process,
     start_process,
 )
 from claude_bridge._shell_safety import (  # noqa: F401
@@ -82,6 +85,8 @@ from claude_bridge._shell_safety import (  # noqa: F401
 __all__ = [
     "analyze_shell_command",
     "blocked_command_reason",
+    "get_process_status",
+    "interactive_shell",
     "interact_with_process",
     "is_interactive_command",
     "kill_process",
@@ -90,5 +95,6 @@ __all__ = [
     "read_process_output",
     "reset_process_sessions",
     "run_shell",
+    "send_to_process",
     "start_process",
 ]

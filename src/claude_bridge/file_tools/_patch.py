@@ -25,6 +25,7 @@ from claude_bridge.tool_utils import (
     request_approval,
     require_approval,
     resolve_path,
+    resolve_path_safe,
     sensitive_file_blocked_details,
     sensitive_path_reason,
 )
@@ -50,7 +51,7 @@ async def patch_file(
     ai_provider: Any = None,
 ) -> str:
     try:
-        target = resolve_path(file)
+        target = resolve_path_safe(file)
     except PermissionError as exc:
         return json_response(
             False,
@@ -82,13 +83,6 @@ async def patch_file(
             False,
             f"Not a file: {file}",
             code="not_a_file",
-            details={"path": file},
-        )
-    if target.is_symlink():
-        return json_response(
-            False,
-            f"Refusing to patch symlink: {file}",
-            code="symlink_blocked",
             details={"path": file},
         )
 
@@ -296,7 +290,7 @@ async def patch_file(
 
 async def preview_patch(file: str, search: str, replace: str) -> str:
     try:
-        target = resolve_path(file)
+        target = resolve_path_safe(file)
     except PermissionError as exc:
         return json_response(
             False,

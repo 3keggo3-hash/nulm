@@ -63,6 +63,5 @@ def log_tool_call(
         record.update(decision_fields)
 
     path = _session_file(session_id)
-    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
-    offset = _append_audit_record(path, line)
+    offset = _append_audit_record(path, record, session_id=session_id)
     append_audit_index_record(session_id, record, offset=offset)

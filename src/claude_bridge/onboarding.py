@@ -1,68 +1,76 @@
-"""Lightweight first-run onboarding hints for Claude Bridge."""
+"""Lightweight first-run onboarding hints for Claude Bridge.
+
+Only shown once per session on the FIRST tool call to help users discover
+available capabilities. Never shown again after dismissal.
+"""
 
 from __future__ import annotations
 
 import json
 import threading
-from typing import Any
+from pathlib import Path
 
 _ONBOARDING_LOCK = threading.RLock()
-_ONBOARDING_STATE = {
-    "tool_calls": 0,
-    "messages_shown": 0,
-}
-_ONBOARDING_TRIGGER_CALLS = {1, 3, 6}
-_ONBOARDING_MAX_TOOL_CALLS = 10
-_ONBOARDING_MAX_MESSAGES = 3
-_IGNORED_TOOLS = {"get_recent_tool_calls", "get_config", "set_config_value"}
+_ONBOARDING_SHOWN_KEY = "onboarding_shown"
 
 
 def reset_onboarding_state() -> None:
-    with _ONBOARDING_LOCK:
-        _ONBOARDING_STATE["tool_calls"] = 0
-        _ONBOARDING_STATE["messages_shown"] = 0
+    """Reset onboarding state - called when user dismisses or on new session."""
+    config_path = Path.home() / ".claude-bridge" / "config.json"
+    if config_path.exists():
+        try:
+            content = json.loads(config_path.read_text())
+            content.pop(_ONBOARDING_SHOWN_KEY, None)
+            config_path.write_text(json.dumps(content, indent=2))
+        except (OSError, json.JSONDecodeError):
+            pass
 
 
-def _tips_for_call(call_number: int) -> dict[str, Any]:
-    if call_number <= 1:
-        return {
-            "title": "Start With Structure",
-            "message": "Use list_directory or workspace_status first when you need to orient yourself before reading files.",
-            "quick_command": "claude-bridge doctor --project-dir .",
-            "suggested_tools": ["list_directory", "workspace_status"],
-        }
-    if call_number <= 3:
-        return {
-            "title": "Narrow Context Early",
-            "message": "Use find_relevant_files or read_multiple_files to compare a few strong candidates instead of reading many files one by one.",
-            "suggested_tools": ["find_relevant_files", "read_multiple_files"],
-        }
-    return {
-        "title": "Edit In Small Steps",
-        "message": "Preview risky edits, prefer patch_file for existing files, and run validation commands before concluding the task is done.",
-        "quick_command": "ruff check . && black --check .",
-        "suggested_tools": ["preview_patch", "patch_file", "suggest_validation_commands"],
-    }
+def _is_onboarding_enabled() -> bool:
+    try:
+        from claude_bridge.config import get_config_value
+        val = get_config_value("onboarding_enabled")
+        if val is not None:
+            return bool(val)
+    except Exception:
+        pass
+    return True
+
+
+def _mark_onboarding_shown() -> None:
+    config_path = Path.home() / ".claude-bridge" / "config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    content = {}
+    if config_path.exists():
+        try:
+            content = json.loads(config_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
+    content[_ONBOARDING_SHOWN_KEY] = True
+    config_path.write_text(json.dumps(content, indent=2))
+
+
+def _was_onboarding_shown() -> bool:
+    config_path = Path.home() / ".claude-bridge" / "config.json"
+    if not config_path.exists():
+        return False
+    try:
+        content = json.loads(config_path.read_text())
+        return bool(content.get(_ONBOARDING_SHOWN_KEY, False))
+    except (OSError, json.JSONDecodeError):
+        return False
 
 
 def apply_onboarding(tool_name: str, result: str, *, enabled: bool) -> str:
+    """Attach a one-time first-run hint on the very first tool call only.
+
+    Never again after the first call, regardless of message count.
+    """
     with _ONBOARDING_LOCK:
-        _ONBOARDING_STATE["tool_calls"] += 1
-        call_number = int(_ONBOARDING_STATE["tool_calls"])
-        messages_shown = int(_ONBOARDING_STATE["messages_shown"])
+        if _was_onboarding_shown() or not enabled or not _is_onboarding_enabled():
+            return result
 
-        should_attach = (
-            enabled
-            and tool_name not in _IGNORED_TOOLS
-            and call_number in _ONBOARDING_TRIGGER_CALLS
-            and call_number <= _ONBOARDING_MAX_TOOL_CALLS
-            and messages_shown < _ONBOARDING_MAX_MESSAGES
-        )
-        if should_attach:
-            _ONBOARDING_STATE["messages_shown"] += 1
-
-    if not should_attach:
-        return result
+        _mark_onboarding_shown()
 
     try:
         payload = json.loads(result)
@@ -76,11 +84,10 @@ def apply_onboarding(tool_name: str, result: str, *, enabled: bool) -> str:
         details = {}
         payload["details"] = details
 
-    hint = _tips_for_call(call_number)
-    hint["tool_calls_seen"] = call_number
-    hint["remaining_before_auto_hide"] = max(0, _ONBOARDING_MAX_TOOL_CALLS - call_number)
-    hint["dismiss_hint"] = (
-        'Disable later with set_config_value(key="onboarding_enabled", value=false).'
-    )
+    hint = {
+        "title": "Getting Started",
+        "message": " claude-bridge doctor --project-dir .  to check your setup, or  claude-bridge anomaly --help  to review audit logs.",
+        "dismiss": "This hint will not repeat.",
+    }
     details["onboarding"] = hint
     return json.dumps(payload, ensure_ascii=False)

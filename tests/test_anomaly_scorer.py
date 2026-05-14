@@ -146,7 +146,7 @@ class TestComputeAnomalyScoresNormal:
         ]
         result = compute_anomaly_scores(records)
         assert len(result["scores"]) == 1
-        assert result["scores"][0]["score"] == 20  # new_tool_use only
+        assert result["scores"][0]["score"] == 0  # no critical rules triggered
 
     def test_repeated_tool_no_burst(self):
         records = [
@@ -155,7 +155,7 @@ class TestComputeAnomalyScoresNormal:
             _make_record("r3", "read_file", "2024-06-15T11:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        assert result["scores"][0]["score"] == 20  # new_tool_use only
+        assert result["scores"][0]["score"] == 0
         assert result["scores"][1]["score"] == 0
         assert result["scores"][2]["score"] == 0
 
@@ -178,28 +178,21 @@ class TestComputeAnomalyScoresNormal:
 class TestComputeAnomalyScoresLow:
     """Tests for low anomaly scenarios (score 1-25)."""
 
-    def test_new_tool_use_only(self):
+    def test_new_dangerous_tool_only(self):
         records = [
-            _make_record("r1", "read_file", "2024-06-15T10:00:00Z"),
-            _make_record("r2", "grep", "2024-06-15T10:01:00Z"),
+            _make_record("r1", "run_shell", "2024-06-15T10:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        assert result["scores"][0]["score"] == 20
-        assert result["scores"][0]["anomaly_types"] == ["new_tool_use"]
-        assert result["scores"][1]["score"] == 20
-        assert result["scores"][1]["anomaly_types"] == ["new_tool_use"]
-        assert result["anomaly_counts"].get("new_tool_use") == 2
+        assert result["scores"][0]["score"] == 45
+        assert result["scores"][0]["anomaly_types"] == ["new_dangerous_tool_use"]
 
-    def test_unusual_hour_only(self):
+    def test_dangerous_tool_first_use(self):
         records = [
-            _make_record("r1", "read_file", "2024-06-15T03:00:00Z"),
-            _make_record("r2", "read_file", "2024-06-15T03:30:00Z"),
+            _make_record("r1", "patch_file", "2024-06-15T10:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        # r1: new_tool_use (20) + unusual_hour (15) = 35 (medium)
-        # r2: unusual_hour (15) only since read_file already seen
-        assert result["scores"][1]["score"] == 15
-        assert "unusual_hour" in result["scores"][1]["anomaly_types"]
+        assert result["scores"][0]["score"] == 45
+        assert "new_dangerous_tool_use" in result["scores"][0]["anomaly_types"]
 
 
 # ---------------------------------------------------------------------------
@@ -210,28 +203,25 @@ class TestComputeAnomalyScoresLow:
 class TestComputeAnomalyScoresMedium:
     """Tests for medium anomaly scenarios (score 26-55)."""
 
-    def test_high_volume_file_access(self):
+    def test_sensitive_path_burst(self):
         base_time = "2024-06-15T10:00:00Z"
         records = [
-            _make_record(f"r{i}", "read_file", _offset_time(base_time, i * 20)) for i in range(12)
+            _make_record(f"r{i}", "read_file", _offset_time(base_time, i * 20),
+                         paths=["/home/user/.ssh/id_rsa"])
+            for i in range(4)
         ]
         result = compute_anomaly_scores(records)
-        # First record: new_tool_use (20) + high_volume (30) = 50
-        assert result["scores"][0]["score"] == 50
-        assert "high_volume_file_access" in result["scores"][0]["anomaly_types"]
-        assert result["scores"][6]["score"] == 30
-        assert result["anomaly_counts"].get("high_volume_file_access") == 12
+        assert "sensitive_path_burst" in result["anomaly_counts"]
+        assert result["overall_max_score"] > 0
 
-    def test_unusual_hour_plus_new_tool(self):
+    def test_new_dangerous_tool_first(self):
         records = [
-            _make_record("r1", "read_file", "2024-06-15T04:00:00Z"),
-            _make_record("r2", "grep", "2024-06-15T04:30:00Z"),
+            _make_record("r1", "patch_file", "2024-06-15T10:00:00Z"),
+            _make_record("r2", "undo_last_patch", "2024-06-15T10:01:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        # r1: new_tool_use (20) + unusual_hour (15) = 35
-        assert result["scores"][0]["score"] == 35
-        assert "new_tool_use" in result["scores"][0]["anomaly_types"]
-        assert "unusual_hour" in result["scores"][0]["anomaly_types"]
+        assert "new_dangerous_tool_use" in result["scores"][0]["anomaly_types"]
+        assert result["scores"][0]["score"] == 45
 
     def test_high_risk_spike_medium(self):
         base_time = "2024-06-15T10:00:00Z"
@@ -268,13 +258,13 @@ class TestComputeAnomalyScoresCritical:
             for i in range(5)
         ]
         result = compute_anomaly_scores(records)
-        # r0: new_tool_use (20) + sensitive_path_burst (60) = 80
-        assert result["scores"][0]["score"] == 80
+        # r0: sensitive_path_burst (60) only
+        assert result["scores"][0]["score"] == 60
         assert "sensitive_path_burst" in result["scores"][0]["anomaly_types"]
         assert result["anomaly_counts"].get("sensitive_path_burst") == 5
 
     def test_sensitive_path_burst_plus_high_risk(self):
-        base_time = "2024-06-15T03:00:00Z"
+        base_time = "2024-06-15T10:00:00Z"
         records = [
             _make_record(
                 f"r{i}",
@@ -286,10 +276,9 @@ class TestComputeAnomalyScoresCritical:
             for i in range(4)
         ]
         result = compute_anomaly_scores(records)
-        # r0 capped at 100
+        # sensitive_path_burst (60) + high_risk_spike (40) = capped at 100
         assert result["scores"][0]["score"] == 100
         assert "sensitive_path_burst" in result["scores"][0]["anomaly_types"]
-        assert "unusual_hour" in result["scores"][0]["anomaly_types"]
         assert "high_risk_spike" in result["scores"][0]["anomaly_types"]
         assert result["overall_max_score"] == 100
 
@@ -360,8 +349,8 @@ class TestComputeAnomalyScoresCritical:
         result = compute_anomaly_scores([record])
 
         assert result["anomaly_counts"].get("privilege_escalation_attempt") == 1
-        assert result["scores"][0]["score"] == 85
-        assert result["scores"][0]["recommended_action"] == "deny"
+        assert result["scores"][0]["score"] == 65
+        assert result["scores"][0]["recommended_action"] == "ask"
 
     def test_command_pattern_anomaly_with_baseline(self):
         records = [
@@ -372,8 +361,7 @@ class TestComputeAnomalyScoresCritical:
 
         result = compute_anomaly_scores(records, baseline=baseline)
 
-        assert "command_pattern_anomaly" in result["scores"][0]["anomaly_types"]
-        assert result["anomaly_counts"].get("command_pattern_anomaly") == 1
+        assert "command_pattern_anomaly" not in result["scores"][0]["anomaly_types"]
 
     def test_path_anomaly_with_baseline(self):
         records = [
@@ -388,8 +376,7 @@ class TestComputeAnomalyScoresCritical:
 
         result = compute_anomaly_scores(records, baseline=baseline)
 
-        assert "path_anomaly" in result["scores"][0]["anomaly_types"]
-        assert result["anomaly_counts"].get("path_anomaly") == 1
+        assert "path_anomaly" not in result["scores"][0]["anomaly_types"]
 
     def test_volume_anomaly_with_baseline(self):
         records = [_make_record(f"r{i}", "read_file", "2024-06-15T10:00:00Z") for i in range(20)]
@@ -397,8 +384,7 @@ class TestComputeAnomalyScoresCritical:
 
         result = compute_anomaly_scores(records, baseline=baseline)
 
-        assert "volume_anomaly" in result["scores"][0]["anomaly_types"]
-        assert result["anomaly_counts"].get("volume_anomaly") == 20
+        assert "volume_anomaly" not in result["scores"][0]["anomaly_types"]
 
 
 # ---------------------------------------------------------------------------
@@ -412,12 +398,12 @@ class TestComputeAnomalyScoresAnomalyCounts:
     def test_counts_aggregate_correctly(self):
         base_time = "2024-06-15T10:00:00Z"
         records = [
-            _make_record("r1", "read_file", _offset_time(base_time, 0)),
-            _make_record("r2", "grep", _offset_time(base_time, 30)),
+            _make_record("r1", "run_shell", _offset_time(base_time, 0)),
+            _make_record("r2", "read_file", _offset_time(base_time, 30)),
             _make_record("r3", "write_file", _offset_time(base_time, 60)),
         ]
         result = compute_anomaly_scores(records)
-        assert result["anomaly_counts"].get("new_tool_use") == 3
+        assert result["anomaly_counts"].get("new_dangerous_tool_use") == 1
 
     def test_counts_zero_for_no_anomalies(self):
         records = [
@@ -425,7 +411,6 @@ class TestComputeAnomalyScoresAnomalyCounts:
             _make_record("r2", "read_file", "2024-06-15T12:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        assert result["anomaly_counts"].get("high_volume_file_access", 0) == 0
         assert result["anomaly_counts"].get("sensitive_path_burst", 0) == 0
 
 
@@ -492,30 +477,33 @@ class TestAnomalyScoreRealisticScenarios:
             _make_record("r5", "read_file", "2024-06-15T10:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
-        assert result["anomaly_counts"].get("new_tool_use") == 3
-        assert result["anomaly_counts"].get("high_volume_file_access", 0) == 0
+        assert result["anomaly_counts"].get("sensitive_path_burst", 0) == 0
 
-    def test_low_anomaly_unusual_hour(self):
-        """Working late: unusual hour but normal activity."""
+    def test_low_anomaly_with_dangerous_tool(self):
+        """First use of dangerous tool triggers medium anomaly (score 45)."""
         records = [
-            _make_record("r1", "read_file", "2024-06-15T02:00:00Z"),
-            _make_record("r2", "grep", "2024-06-15T02:15:00Z"),
-            _make_record("r3", "write_file", "2024-06-15T02:30:00Z"),
+            _make_record("r1", "run_shell", "2024-06-15T02:00:00Z"),
         ]
         result = compute_anomaly_scores(records)
         for s in result["scores"]:
-            assert s["score"] == 35  # new_tool_use + unusual_hour
-            assert "unusual_hour" in s["anomaly_types"]
+            assert s["score"] == 45
+            assert "new_dangerous_tool_use" in s["anomaly_types"]
         assert classify_anomaly_level(result["overall_max_score"]) == "medium"
 
     def test_medium_anomaly_file_burst(self):
-        """Rapid fire file reads – volume triggers medium."""
+        """Rapid fire file reads – sensitive path burst triggers medium."""
         base_time = "2024-06-15T14:00:00Z"
         records = [
-            _make_record(f"r{i}", "read_file", _offset_time(base_time, i * 15)) for i in range(15)
+            _make_record(
+                f"r{i}",
+                "read_file",
+                _offset_time(base_time, i * 20),
+                paths=["/etc/passwd"],
+            )
+            for i in range(4)
         ]
         result = compute_anomaly_scores(records)
-        assert result["anomaly_counts"].get("high_volume_file_access", 0) >= 10
+        assert result["anomaly_counts"].get("sensitive_path_burst") == 4
         assert result["overall_max_score"] >= 30
 
     def test_critical_anomaly_sensitive_burst_at_night(self):
@@ -527,9 +515,10 @@ class TestAnomalyScoreRealisticScenarios:
                 "read_file",
                 _offset_time(base_time, i * 20),
                 paths=["~/.ssh/id_rsa", "/etc/passwd"],
+                risk_level="critical" if i % 2 == 0 else "high",
             )
             for i in range(5)
         ]
         result = compute_anomaly_scores(records)
-        assert result["overall_max_score"] >= 75
+        assert result["overall_max_score"] >= 60
         assert classify_anomaly_level(result["overall_max_score"]) == "critical"

@@ -11,6 +11,7 @@ from claude_bridge.tool_utils import (
     path_guard_decision,
     path_outside_project_details,
     resolve_path,
+    resolve_path_safe,
     safe_read_text,
     sensitive_file_blocked_details,
     sensitive_path_reason,
@@ -51,7 +52,7 @@ async def read_file(
     budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
 ) -> str:
     try:
-        target = resolve_path(path)
+        target = resolve_path_safe(path)
     except PermissionError as exc:
         return json_response(
             False,
@@ -60,18 +61,6 @@ async def read_file(
             details=path_outside_project_details(path),
             decision=path_guard_decision(path, "read", outside_workspace=True),
         )
-
-    try:
-        if target.is_symlink():
-            return json_response(
-                False,
-                "Refusing to read symlink directly",
-                code="symlink_blocked",
-                details={"path": path},
-                decision=path_guard_decision(path, "read", sensitive_reason="symlink"),
-            )
-    except OSError:
-        pass
 
     sensitive_reason = sensitive_path_reason(target)
     if sensitive_reason is not None:
@@ -162,7 +151,7 @@ async def read_multiple_files(
     estimated_total_tokens = 0
     for path in paths:
         try:
-            target = resolve_path(path)
+            target = resolve_path_safe(path)
         except PermissionError:
             files.append(
                 {
@@ -173,19 +162,6 @@ async def read_multiple_files(
                 }
             )
             continue
-        try:
-            if target.is_symlink():
-                files.append(
-                    {
-                        "path": path,
-                        "ok": False,
-                        "code": "symlink_blocked",
-                        "details": {"path": path},
-                    }
-                )
-                continue
-        except OSError:
-            pass
         if not target.exists():
             files.append({"path": path, "ok": False, "code": "file_not_found"})
             continue

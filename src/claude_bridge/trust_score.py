@@ -1,4 +1,4 @@
-"""Trust Score — audit log analysis with explainable trust scoring."""
+"""Trust Score — audit log analysis with actionable diagnostic insights."""
 
 from __future__ import annotations
 
@@ -8,11 +8,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from claude_bridge.audit import _audit_dir
-
 
 @dataclass
-class TrustSignals:
+class TrustDiagnostics:
     deny_rate: float = 0.0
     anomaly_frequency: float = 0.0
     consecutive_denies: int = 0
@@ -29,36 +27,15 @@ class TrustSignals:
 
 
 @dataclass
-class TrustFactors:
-    deny_penalty: float
-    anomaly_penalty: float
-    consecutive_deny_penalty: float
-    error_penalty: float
-    slow_response_penalty: float
-    trend_adjustment: float
-
-    def to_dict(self) -> dict[str, float]:
-        return {
-            "deny_penalty": self.deny_penalty,
-            "anomaly_penalty": self.anomaly_penalty,
-            "consecutive_deny_penalty": self.consecutive_deny_penalty,
-            "error_penalty": self.error_penalty,
-            "slow_response_penalty": self.slow_response_penalty,
-            "trend_adjustment": self.trend_adjustment,
-        }
-
-
-TRUST_WEIGHTS = {
-    "deny": 35,
-    "anomaly": 25,
-    "consecutive_deny": 15,
-    "error": 10,
-    "slow_response": 10,
-    "trend_boost": 5,
-}
+class TrustInsight:
+    severity: str
+    category: str
+    message: str
+    affected_tools: list[str] = field(default_factory=list)
+    recommendation: str = ""
 
 SLOW_RESPONSE_THRESHOLD_MS = 5000
-MAX_CONSECUTIVE_FOR_PENALTY = 5
+MAX_CONSECUTIVE_FOR_REVIEW = 5
 
 
 def _parse_timestamp(ts: str) -> datetime | None:
@@ -70,77 +47,116 @@ def _parse_timestamp(ts: str) -> datetime | None:
     return None
 
 
-def _compute_trust_factors(signals: TrustSignals, days: int) -> TrustFactors:
-    deny_penalty = signals.deny_rate * TRUST_WEIGHTS["deny"]
-    anomaly_penalty = signals.anomaly_frequency * TRUST_WEIGHTS["anomaly"]
+def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
+    insights: list[TrustInsight] = []
 
-    consecutive_deny_penalty = 0.0
-    if signals.max_consecutive_denies >= 2:
-        consecutive_deny_penalty = (
-            min(signals.max_consecutive_denies, MAX_CONSECUTIVE_FOR_PENALTY)
-            / MAX_CONSECUTIVE_FOR_PENALTY
-        ) * TRUST_WEIGHTS["consecutive_deny"]
+    if diagnostics.total_requests == 0:
+        return insights
 
-    error_penalty = signals.error_rate * TRUST_WEIGHTS["error"]
-    slow_penalty = signals.slow_response_rate * TRUST_WEIGHTS["slow_response"]
+    if diagnostics.deny_rate > 0.3:
+        insights.append(
+            TrustInsight(
+                severity="high",
+                category="deny_rate",
+                message=f"High deny rate: {diagnostics.deny_rate:.1%} of requests denied",
+                recommendation="Review denied tool calls - consider adjusting guard policy rules or approval thresholds",
+            )
+        )
+    elif diagnostics.deny_rate > 0.1:
+        insights.append(
+            TrustInsight(
+                severity="medium",
+                category="deny_rate",
+                message=f"Moderate deny rate: {diagnostics.deny_rate:.1%} of requests denied",
+                recommendation="Some requests are being denied - check if tool usage patterns are clear to the agent",
+            )
+        )
 
-    trend_adjustment = 0.0
-    if signals.total_requests > 10 and signals.daily_deny_rates:
-        sorted_dates = sorted(signals.daily_deny_rates.keys())
+    if diagnostics.max_consecutive_denies >= MAX_CONSECUTIVE_FOR_REVIEW:
+        insights.append(
+            TrustInsight(
+                severity="high",
+                category="consecutive_denies",
+                message=f"{diagnostics.max_consecutive_denies} consecutive denies detected",
+                recommendation="Investigate the denied pattern - agent may be stuck in a failing approach",
+            )
+        )
+
+    high_error_tools = [
+        tool for tool, rate in diagnostics.tool_deny_rates.items() if rate > 0.5
+    ]
+    if high_error_tools:
+        insights.append(
+            TrustInsight(
+                severity="high",
+                category="tool_errors",
+                message=f"High error rate for tools: {', '.join(high_error_tools[:3])}",
+                affected_tools=high_error_tools,
+                recommendation="These tools frequently result in errors - verify tool parameters or check for permission issues",
+            )
+        )
+
+    if diagnostics.slow_response_rate > 0.2:
+        insights.append(
+            TrustInsight(
+                severity="medium",
+                category="performance",
+                message=f"Slow responses: {diagnostics.slow_response_rate:.1%} exceed {SLOW_RESPONSE_THRESHOLD_MS}ms",
+                recommendation="Consider enabling result caching or reducing batch sizes for slow operations",
+            )
+        )
+
+    if diagnostics.anomaly_frequency > 0.2:
+        insights.append(
+            TrustInsight(
+                severity="medium",
+                category="anomaly",
+                message=f"Frequent anomalies: {diagnostics.anomaly_frequency:.1%} of requests flagged",
+                recommendation="Review anomaly patterns - may indicate unusual usage that needs policy adjustment",
+            )
+        )
+
+    if len(diagnostics.daily_deny_rates) >= 3:
+        sorted_dates = sorted(diagnostics.daily_deny_rates.keys())
         if len(sorted_dates) >= 2:
-            recent = signals.daily_deny_rates.get(sorted_dates[-1], 0)
-            older = signals.daily_deny_rates.get(sorted_dates[0], 0)
-            if older > 0:
-                change_ratio = recent / older
-                if change_ratio > 1.5:
-                    trend_adjustment = -TRUST_WEIGHTS["trend_boost"]
-                elif change_ratio < 0.67:
-                    trend_adjustment = TRUST_WEIGHTS["trend_boost"]
+            recent = diagnostics.daily_deny_rates.get(sorted_dates[-1], 0)
+            older = diagnostics.daily_deny_rates.get(sorted_dates[0], 0)
+            if recent > older * 1.5 and older > 0:
+                insights.append(
+                    TrustInsight(
+                        severity="high",
+                        category="trend",
+                        message="Deny rate trending upward significantly",
+                        recommendation="Recent activity shows increasing denials - investigate root cause",
+                    )
+                )
 
-    return TrustFactors(
-        deny_penalty=round(deny_penalty, 2),
-        anomaly_penalty=round(anomaly_penalty, 2),
-        consecutive_deny_penalty=round(consecutive_deny_penalty, 2),
-        error_penalty=round(error_penalty, 2),
-        slow_response_penalty=round(slow_penalty, 2),
-        trend_adjustment=round(trend_adjustment, 2),
+    return insights
+
+
+def _compute_diagnostics(signals: dict[str, Any]) -> TrustDiagnostics:
+    return TrustDiagnostics(
+        deny_rate=signals.get("deny_rate", 0.0),
+        anomaly_frequency=signals.get("anomaly_frequency", 0.0),
+        consecutive_denies=signals.get("consecutive_denies", 0),
+        max_consecutive_denies=signals.get("max_consecutive_denies", 0),
+        error_rate=signals.get("error_rate", 0.0),
+        slow_response_rate=signals.get("slow_response_rate", 0.0),
+        tool_deny_rates=signals.get("tool_deny_rates", {}),
+        daily_deny_rates=signals.get("daily_deny_rates", {}),
+        total_requests=signals.get("total_requests", 0),
+        anomaly_score_sum=signals.get("anomaly_score_sum", 0.0),
+        response_time_avg=signals.get("response_time_avg", 0.0),
     )
-
-
-def _calculate_score(factors: TrustFactors, signals: TrustSignals) -> tuple[int, str]:
-    base_score = 100.0
-    deductions = (
-        factors.deny_penalty
-        + factors.anomaly_penalty
-        + factors.consecutive_deny_penalty
-        + factors.error_penalty
-        + factors.slow_response_penalty
-    )
-    score = max(0, min(100, base_score - deductions + factors.trend_adjustment))
-    reason = (
-        f"deny:{signals.deny_rate:.1%}, "
-        f"anomaly:{signals.anomaly_frequency:.1%}, "
-        f"consecutive:{signals.max_consecutive_denies}"
-    )
-    return int(round(score)), reason
-
-
-def _explain_score(score: int, signals: TrustSignals, factors: TrustFactors) -> str:
-    if score >= 90:
-        return "High trust: low deny rate and minimal anomalies"
-    elif score >= 70:
-        return "Moderate trust: some denies or anomalies detected"
-    elif score >= 50:
-        return "Low trust: elevated deny rate or anomaly frequency"
-    else:
-        return "Critical trust: high deny rate, anomalies, or errors"
 
 
 def get_trust_signals(days: int = 7) -> dict[str, Any]:
-    """Extract raw trust signals from audit logs without calculating score."""
+    """Extract raw diagnostic signals from audit logs."""
+    from claude_bridge.audit import _audit_dir
+
     audit_dir = _audit_dir()
     if not audit_dir.exists():
-        return {"ok": True, "signals": TrustSignals().__dict__, "total_requests": 0}
+        return {"ok": True, "signals": TrustDiagnostics().__dict__, "total_requests": 0}
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     total = 0
@@ -243,28 +259,22 @@ def get_trust_signals(days: int = 7) -> dict[str, Any]:
 
 
 def get_trust_score(days: int = 7) -> dict[str, Any]:
-    """Calculate an explainable trust score based on recent audit records.
+    """Calculate actionable diagnostic insights from recent audit records.
 
-    Returns a dict with keys: score, deny_rate, anomaly_frequency,
-    approval_rejection_trend, total_requests, last_updated, explanation,
-    and breakdown of penalty factors.
+    Returns insights with severity, category, message, and recommendations
+    instead of an arbitrary score number.
     """
+    from claude_bridge.audit import _audit_dir
+
     audit_dir = _audit_dir()
     if not audit_dir.exists():
         return {
             "ok": True,
-            "score": 100,
+            "has_data": False,
             "message": "No audit data available",
             "details": {
-                "score": 100,
-                "deny_rate": 0.0,
-                "anomaly_frequency": 0.0,
-                "approval_rejection_trend": "stable",
-                "total_requests": 0,
                 "days_analyzed": days,
                 "last_updated": datetime.now(timezone.utc).isoformat(),
-                "explanation": "No audit data — defaulting to full trust",
-                "factors": TrustFactors(0, 0, 0, 0, 0, 0).to_dict(),
             },
         }
 
@@ -340,27 +350,19 @@ def get_trust_score(days: int = 7) -> dict[str, Any]:
     except (OSError, FileNotFoundError):
         pass
 
-    deny_rate = round(denies / max(total, 1), 3)
-    anomaly_frequency = round(anomalies / max(total, 1), 3)
-    error_rate = round(errors / max(total, 1), 3)
-    slow_response_rate = round(slow_responses / max(total, 1), 3)
-
-    tool_deny_rates = {
-        tool: round(tool_denies[tool] / max(tool_counts[tool], 1), 3) for tool in tool_counts
-    }
-    daily_deny_rates = {
-        d: round(daily_denies[d] / max(daily_counts[d], 1), 3) for d in daily_counts
-    }
-
-    signals = TrustSignals(
-        deny_rate=deny_rate,
-        anomaly_frequency=anomaly_frequency,
+    diagnostics = TrustDiagnostics(
+        deny_rate=round(denies / max(total, 1), 3),
+        anomaly_frequency=round(anomalies / max(total, 1), 3),
         consecutive_denies=consecutive_count,
         max_consecutive_denies=max_consecutive,
-        error_rate=error_rate,
-        slow_response_rate=slow_response_rate,
-        tool_deny_rates=tool_deny_rates,
-        daily_deny_rates=daily_deny_rates,
+        error_rate=round(errors / max(total, 1), 3),
+        slow_response_rate=round(slow_responses / max(total, 1), 3),
+        tool_deny_rates={
+            tool: round(tool_denies[tool] / max(tool_counts[tool], 1), 3) for tool in tool_counts
+        },
+        daily_deny_rates={
+            d: round(daily_denies[d] / max(daily_counts[d], 1), 3) for d in daily_counts
+        },
         total_requests=total,
         anomaly_score_sum=round(anomaly_score_sum, 2),
         response_time_avg=(
@@ -368,42 +370,20 @@ def get_trust_score(days: int = 7) -> dict[str, Any]:
         ),
     )
 
-    factors = _compute_trust_factors(signals, days)
-    score, score_reason = _calculate_score(factors, signals)
-    explanation = _explain_score(score, signals, factors)
-
-    recent_days = sorted(daily_counts.keys())[-3:]
-    if len(recent_days) >= 2:
-        first = daily_denies.get(recent_days[0], 0) / max(daily_counts[recent_days[0]], 1)
-        last = daily_denies.get(recent_days[-1], 0) / max(daily_counts[recent_days[-1]], 1)
-        if last > first * 1.2:
-            trend = "increasing"
-        elif last < first * 0.8:
-            trend = "decreasing"
-        else:
-            trend = "stable"
-    else:
-        trend = "stable"
+    insights = _generate_insights(diagnostics)
 
     return {
         "ok": True,
-        "score": score,
-        "message": f"Trust score: {score}/100",
+        "has_data": total > 0,
+        "message": f"Trust diagnostics: {len(insights)} issue(s) found" if insights else "Trust diagnostics: no issues detected",
         "details": {
-            "score": score,
-            "deny_rate": deny_rate,
-            "anomaly_frequency": anomaly_frequency,
-            "approval_rejection_trend": trend,
-            "total_requests": total,
             "days_analyzed": days,
             "last_updated": datetime.now(timezone.utc).isoformat(),
-            "explanation": explanation,
-            "factors": factors.to_dict(),
-            "max_consecutive_denies": max_consecutive,
-            "error_rate": error_rate,
-            "slow_response_rate": slow_response_rate,
-            "tool_deny_rates": tool_deny_rates,
-            "daily_deny_rates": daily_deny_rates,
-            "avg_response_time_ms": signals.response_time_avg,
+            "total_requests": total,
+            "deny_rate": diagnostics.deny_rate,
+            "max_consecutive_denies": diagnostics.max_consecutive_denies,
+            "error_rate": diagnostics.error_rate,
+            "slow_response_rate": diagnostics.slow_response_rate,
+            "insights": [ins.__dict__ for ins in insights],
         },
     }

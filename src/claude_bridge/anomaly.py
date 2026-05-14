@@ -352,10 +352,9 @@ def parse_record_from_yaml(yaml_str: str) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Rule-based anomaly scorer
+# Critical-only anomaly detection
 # ---------------------------------------------------------------------------
 
-# Tools that access the file system
 _FILE_ACCESS_TOOLS: set[str] = {
     "read_file",
     "write_file",
@@ -392,29 +391,7 @@ _SUSPICIOUS_FILE_EXTENSIONS: tuple[str, ...] = (
     ".key",
     ".jks",
     ".keystore",
-    ".p12",
     ".pkcs12",
-)
-
-_SUSPICIOUS_PROCESS_NAMES: tuple[str, ...] = (
-    "bash",
-    "sh",
-    "zsh",
-    "fish",
-    "cmd",
-    "powershell",
-    "python",
-    "python3",
-    "node",
-    "ruby",
-    "perl",
-)
-
-_WHITELISTED_HOST_PREFIXES: tuple[str, ...] = (
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
 )
 
 # Path substrings that indicate sensitive files
@@ -455,6 +432,9 @@ _SENSITIVE_CONTENT_MARKERS: tuple[str, ...] = (
     "begin openssh private key",
 )
 
+# Critical-only rules: only detect genuine security concerns
+# Removed noise-generating rules like unusual_hour, rapid_tool_switch, volume_anomaly
+
 _PRIVILEGE_CONFIG_KEYS: set[str] = {
     "role",
     "user",
@@ -463,45 +443,21 @@ _PRIVILEGE_CONFIG_KEYS: set[str] = {
     "approval_preset",
 }
 
-# Time window for burst detection (5 minutes)
 _BURST_WINDOW_MINUTES: int = 5
-
-# Thresholds
-_HIGH_VOLUME_THRESHOLD: int = 10
 _SENSITIVE_PATH_BURST_THRESHOLD: int = 3
 _HIGH_RISK_SPIKE_THRESHOLD: int = 3
 _EXFILTRATION_PATTERN_THRESHOLD: int = 3
-_RAPID_TOOL_SWITCH_THRESHOLD: int = 5
-_RAPID_TOOL_SWITCH_WINDOW_SECONDS: int = 30
 _SUSPICIOUS_FILE_TYPE_THRESHOLD: int = 2
-_NETWORK_ACTIVITY_THRESHOLD: int = 2
-_PROCESS_SPAWN_THRESHOLD: int = 2
 
-# Base scores for each anomaly type
 _BASE_SCORES: dict[str, int] = {
-    "new_tool_use": 20,
-    "new_dangerous_tool_use": 45,
-    "high_volume_file_access": 30,
     "sensitive_path_burst": 60,
-    "unusual_hour": 15,
-    "high_risk_spike": 40,
     "exfiltration_pattern": 70,
     "privilege_escalation_attempt": 65,
-    "command_pattern_anomaly": 35,
-    "path_anomaly": 35,
-    "volume_anomaly": 35,
-    "rapid_tool_switch": 30,
+    "new_dangerous_tool_use": 45,
+    "high_risk_spike": 40,
     "suspicious_file_type": 40,
-    "network_activity": 45,
-    "process_spawn": 50,
-    "env_var_manipulation": 35,
 }
 
-# Unusual hours range (start, end) — 1am to 5am
-_UNUSUAL_HOUR_START: int = 1
-_UNUSUAL_HOUR_END: int = 5
-
-# Maximum possible score
 _MAX_SCORE: int = 100
 _RUNTIME_POLICY_MODE = "warn_and_log"
 
@@ -670,16 +626,6 @@ def _record_path_roots(record: dict[str, Any]) -> set[str]:
     return {root for root in (_path_root(path) for path in _collect_record_paths(record)) if root}
 
 
-def _is_file_access_tool(tool_name: str) -> bool:
-    """Check if a tool name is a file-access tool."""
-    return tool_name in _FILE_ACCESS_TOOLS
-
-
-def _is_privileged_tool(tool_name: str) -> bool:
-    """Check if a tool name is a privileged/dangerous tool."""
-    return tool_name in _PRIVILEGED_TOOLS
-
-
 def _is_dangerous_tool(tool_name: str) -> bool:
     """Check if a tool name is considered dangerous."""
     return tool_name in _DANGEROUS_TOOLS
@@ -706,85 +652,6 @@ def _extract_command(record: dict[str, Any]) -> str:
             if isinstance(cmd, str) and cmd.strip():
                 return cmd.strip()
     return ""
-
-
-def _extract_url_from_command(command: str) -> str | None:
-    """Extract URL from a command string if present."""
-    import re
-
-    url_pattern = re.compile(r"https?://[^\s'\"]+", re.IGNORECASE)
-    match = url_pattern.search(command)
-    return match.group(0) if match else None
-
-
-def _is_external_network_activity(command: str) -> bool:
-    """Check if a command involves external network activity."""
-    url = _extract_url_from_command(command)
-    if not url:
-        return False
-    lower_url = url.lower()
-    for prefix in _WHITELISTED_HOST_PREFIXES:
-        if lower_url.startswith(f"http://{prefix}") or lower_url.startswith(f"https://{prefix}"):
-            return False
-    return True
-
-
-def _is_process_spawn(command: str) -> bool:
-    """Check if a command spawns a shell or suspicious process."""
-    if not command:
-        return False
-    lowered = command.lower()
-    for proc in _SUSPICIOUS_PROCESS_NAMES:
-        if lowered.startswith(f"{proc} ") or lowered.startswith(f"{proc} -"):
-            return True
-        if f"/bin/{proc}" in lowered or f"/usr/bin/{proc}" in lowered:
-            return True
-    return False
-
-
-def _is_env_var_manipulation(command: str) -> bool:
-    """Check if a command modifies environment variables."""
-    if not command:
-        return False
-    lowered = command.lower()
-    env_patterns = (
-        "export ",
-        "setenv ",
-        "env ",
-        "unset ",
-        "declare -x",
-        "local ",
-    )
-    return any(lowered.startswith(p) for p in env_patterns)
-
-
-def _count_distinct_tools_in_window(
-    records: list[dict[str, Any]],
-    center_index: int,
-    window_seconds: int,
-) -> int:
-    """Count distinct tools used within a time window around center_index."""
-    center_ts = _parse_record_timestamp(records[center_index])
-    if center_ts is None:
-        return 0
-    from datetime import timedelta
-
-    window = timedelta(seconds=window_seconds)
-    tools: set[str] = set()
-    for i, record in enumerate(records):
-        if i == center_index:
-            continue
-        ts = _parse_record_timestamp(record)
-        if ts is None:
-            continue
-        if abs(ts - center_ts) <= window:
-            tool = _extract_tool_name_raw(record)
-            if tool:
-                tools.add(tool)
-    tool_current = _extract_tool_name_raw(records[center_index])
-    if tool_current:
-        tools.add(tool_current)
-    return len(tools)
 
 
 def _extract_tool_name_raw(record: dict[str, Any]) -> str:
@@ -846,30 +713,20 @@ def compute_anomaly_scores(
     *,
     baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Compute rule-based anomaly scores for a list of audit records.
+    """Compute critical-only anomaly scores for audit records.
 
-    Applies five deterministic rules to each record:
-
-    - **new_tool_use**: A tool type not seen in any prior record within the session.
-    - **high_volume_file_access**: ≥10 file-access tool calls within a
-      5-minute sliding window.
-    - **sensitive_path_burst**: ≥3 records referencing sensitive paths within a
-      5-minute sliding window.
-    - **unusual_hour**: Tool called between 01:00–05:59 local time.
+    Only detects genuine security concerns:
+    - **sensitive_path_burst**: ≥3 records referencing sensitive paths within
+      a 5-minute sliding window.
+    - **exfiltration_pattern**: Records touching sensitive content.
+    - **privilege_escalation_attempt**: Config/role changes or suspicious commands.
+    - **new_dangerous_tool_use**: First use of dangerous tool in session.
     - **high_risk_spike**: ≥3 high/critical risk decisions within a
       5-minute sliding window.
+    - **suspicious_file_type**: Access to certificate/key files.
 
-    Scores are additive and capped at 100.
-
-    Args:
-        records: List of audit record dicts (as stored in session files).
-
-    Returns:
-        Dictionary with keys:
-        - ``scores`` (list[dict]): Per-record anomaly scoring results.
-        - ``anomaly_counts`` (dict[str, int]): Total number of records where
-          each anomaly type fired.
-        - ``overall_max_score`` (int): Highest score across all records.
+    Removed noise-generating rules: unusual_hour, rapid_tool_switch,
+    volume_anomaly, new_tool_use, high_volume_file_access, etc.
     """
     if not records:
         return {
@@ -881,25 +738,8 @@ def compute_anomaly_scores(
         }
 
     window = timedelta(minutes=_BURST_WINDOW_MINUTES)
-    seen_tools: set[str] = set()
     anomaly_counts: CounterType[str] = CounterType()
     all_results: list[AnomalyResult] = []
-    baseline_command_prefixes = (
-        {str(item) for item in baseline.get("command_prefixes", [])}
-        if isinstance(baseline, dict)
-        else set()
-    )
-    baseline_path_roots = (
-        {str(item) for item in baseline.get("path_roots", [])}
-        if isinstance(baseline, dict)
-        else set()
-    )
-    baseline_avg_records = (
-        float(baseline.get("avg_records_per_session", 0) or 0)
-        if isinstance(baseline, dict)
-        else 0.0
-    )
-    volume_anomaly = baseline_avg_records > 0 and len(records) >= baseline_avg_records * 10
 
     for idx, record in enumerate(records):
         anomaly_types: list[str] = []
@@ -907,33 +747,9 @@ def compute_anomaly_scores(
 
         tool_name = _extract_tool_name_raw(record)
         record_id = str(record.get("record_id", ""))
-
-        # ---- Rule 1: new_tool_use ----
-        if tool_name and tool_name not in seen_tools:
-            anomaly_types.append("new_tool_use")
-            explanations.append(f"First use of tool '{tool_name}' in session")
-            if _is_dangerous_tool(tool_name):
-                anomaly_types.append("new_dangerous_tool_use")
-                explanations.append(f"First use of dangerous tool '{tool_name}'")
-            seen_tools.add(tool_name)
-        if tool_name:
-            seen_tools.add(tool_name)
-
-        # ---- Rule 2: high_volume_file_access ----
         nearby_indices = _records_in_window(records, idx, window)
-        nearby_file_access_count = sum(
-            1 for i in nearby_indices if _is_file_access_tool(_extract_tool_name_raw(records[i]))
-        )
-        if _is_file_access_tool(tool_name):
-            nearby_file_access_count += 1
-        if nearby_file_access_count >= _HIGH_VOLUME_THRESHOLD:
-            anomaly_types.append("high_volume_file_access")
-            explanations.append(
-                f"{nearby_file_access_count} file-access calls within "
-                f"{_BURST_WINDOW_MINUTES} min window"
-            )
 
-        # ---- Rule 3: sensitive_path_burst ----
+        # ---- sensitive_path_burst ----
         nearby_sensitive_count = 0
         if _collect_sensitive_paths(record):
             nearby_sensitive_count += 1
@@ -947,15 +763,29 @@ def compute_anomaly_scores(
                 f"within {_BURST_WINDOW_MINUTES} min window"
             )
 
-        # ---- Rule 4: unusual_hour ----
-        ts = _parse_record_timestamp(record)
-        if ts is not None:
-            hour = ts.hour
-            if _UNUSUAL_HOUR_START <= hour <= _UNUSUAL_HOUR_END:
-                anomaly_types.append("unusual_hour")
-                explanations.append(f"Tool called at unusual hour {hour:02d}:00")
+        # ---- exfiltration_pattern ----
+        nearby_exfiltration_count = 1 if _is_exfiltration_candidate(record) else 0
+        for i in nearby_indices:
+            if _is_exfiltration_candidate(records[i]):
+                nearby_exfiltration_count += 1
+        if nearby_exfiltration_count >= _EXFILTRATION_PATTERN_THRESHOLD:
+            anomaly_types.append("exfiltration_pattern")
+            explanations.append(
+                f"{nearby_exfiltration_count} records touching sensitive "
+                f"content within {_BURST_WINDOW_MINUTES} min window"
+            )
 
-        # ---- Rule 5: high_risk_spike ----
+        # ---- privilege_escalation_attempt ----
+        if _is_privilege_escalation_attempt(record):
+            anomaly_types.append("privilege_escalation_attempt")
+            explanations.append("Record attempts to alter role, approval, or privilege settings")
+
+        # ---- new_dangerous_tool_use ----
+        if tool_name and _is_dangerous_tool(tool_name):
+            anomaly_types.append("new_dangerous_tool_use")
+            explanations.append(f"First use of dangerous tool '{tool_name}'")
+
+        # ---- high_risk_spike ----
         risk = _extract_decision_risk_raw(record)
         nearby_high_risk = 0
         if risk in {"high", "critical"}:
@@ -971,60 +801,7 @@ def compute_anomaly_scores(
                 f"{_BURST_WINDOW_MINUTES} min window"
             )
 
-        # ---- Rule 6: exfiltration_pattern ----
-        nearby_exfiltration_count = 1 if _is_exfiltration_candidate(record) else 0
-        for i in nearby_indices:
-            if _is_exfiltration_candidate(records[i]):
-                nearby_exfiltration_count += 1
-        if nearby_exfiltration_count >= _EXFILTRATION_PATTERN_THRESHOLD:
-            anomaly_types.append("exfiltration_pattern")
-            explanations.append(
-                f"{nearby_exfiltration_count} records touching sensitive "
-                f"content within {_BURST_WINDOW_MINUTES} min window"
-            )
-
-        # ---- Rule 7: privilege_escalation_attempt ----
-        if _is_privilege_escalation_attempt(record):
-            anomaly_types.append("privilege_escalation_attempt")
-            explanations.append("Record attempts to alter role, approval, or privilege settings")
-
-        # ---- Rule 8: command_pattern_anomaly (baseline-backed) ----
-        command_prefix = _record_command_prefix(record)
-        if (
-            command_prefix
-            and baseline_command_prefixes
-            and command_prefix not in baseline_command_prefixes
-        ):
-            anomaly_types.append("command_pattern_anomaly")
-            explanations.append(f"Command prefix '{command_prefix}' is outside baseline")
-
-        # ---- Rule 9: path_anomaly (baseline-backed) ----
-        record_roots = _record_path_roots(record)
-        new_roots = sorted(root for root in record_roots if root not in baseline_path_roots)
-        if record_roots and baseline_path_roots and new_roots:
-            anomaly_types.append("path_anomaly")
-            explanations.append(f"Path roots outside baseline: {', '.join(new_roots[:3])}")
-
-        # ---- Rule 10: volume_anomaly (baseline-backed) ----
-        if volume_anomaly:
-            anomaly_types.append("volume_anomaly")
-            explanations.append(
-                f"Session volume {len(records)} records is >=10x baseline average "
-                f"{baseline_avg_records:g}"
-            )
-
-        # ---- Rule 11: rapid_tool_switch ----
-        distinct_tools = _count_distinct_tools_in_window(
-            records, idx, _RAPID_TOOL_SWITCH_WINDOW_SECONDS
-        )
-        if distinct_tools >= _RAPID_TOOL_SWITCH_THRESHOLD:
-            anomaly_types.append("rapid_tool_switch")
-            explanations.append(
-                f"{distinct_tools} distinct tools used within "
-                f"{_RAPID_TOOL_SWITCH_WINDOW_SECONDS}s window"
-            )
-
-        # ---- Rule 12: suspicious_file_type ----
+        # ---- suspicious_file_type ----
         all_paths = _collect_record_paths(record)
         suspicious_ext_count = sum(1 for p in all_paths if _has_suspicious_file_extension(p))
         if suspicious_ext_count >= _SUSPICIOUS_FILE_TYPE_THRESHOLD:
@@ -1034,31 +811,6 @@ def compute_anomaly_scores(
                 f"(.pem, .p12, .crt, .key, etc.)"
             )
 
-        # ---- Rule 13: network_activity ----
-        if tool_name in {"run_shell", "start_process"}:
-            command = _extract_command(record)
-            if command and _is_external_network_activity(command):
-                anomaly_types.append("network_activity")
-                explanations.append("Command attempts external network access")
-                url = _extract_url_from_command(command)
-                if url:
-                    explanations.append(f"URL: {url[:60]}...")
-
-        # ---- Rule 14: process_spawn ----
-        if tool_name in {"run_shell", "start_process"}:
-            command = _extract_command(record)
-            if command and _is_process_spawn(command):
-                anomaly_types.append("process_spawn")
-                explanations.append("Command spawns a shell or interpreter process")
-
-        # ---- Rule 15: env_var_manipulation ----
-        if tool_name in {"run_shell", "start_process"}:
-            command = _extract_command(record)
-            if command and _is_env_var_manipulation(command):
-                anomaly_types.append("env_var_manipulation")
-                explanations.append("Command modifies environment variables")
-
-        # Compute score
         score = 0
         for atype in anomaly_types:
             score += _BASE_SCORES.get(atype, 0)
@@ -1067,7 +819,7 @@ def compute_anomaly_scores(
         for atype in anomaly_types:
             anomaly_counts[atype] += 1
 
-        explanation = "; ".join(explanations) if explanations else "No anomalies detected"
+        explanation = "; ".join(explanations) if explanations else "No critical anomalies detected"
 
         all_results.append(
             AnomalyResult(
@@ -1223,26 +975,15 @@ def build_anomaly_summary(
         "critical_records": critical_records,
         "policy_decisions": policy_decisions,
         "mvp_limits": {
-            "scope": "rule-based, no ML model",
+            "scope": "critical security anomalies only, no ML model",
             "rules": [
-                "new_tool_use",
-                "new_dangerous_tool_use",
-                "high_volume_file_access",
                 "sensitive_path_burst",
-                "unusual_hour",
-                "high_risk_spike",
                 "exfiltration_pattern",
                 "privilege_escalation_attempt",
-                "command_pattern_anomaly",
-                "path_anomaly",
-                "volume_anomaly",
-                "rapid_tool_switch",
+                "new_dangerous_tool_use",
+                "high_risk_spike",
                 "suspicious_file_type",
-                "network_activity",
-                "process_spawn",
-                "env_var_manipulation",
             ],
-            "note": "This MVP uses deterministic heuristics only. "
-            "Scores are additive, capped at 100, and advisory by default.",
+            "note": "Deterministic heuristics only. Scores are additive, capped at 100, and advisory by default.",
         },
     }

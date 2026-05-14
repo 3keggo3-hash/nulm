@@ -102,6 +102,32 @@ deployments):
 
 ---
 
+## Mobile Dashboard and Tunnel Safety
+
+The dashboard binds to `localhost`/`127.0.0.1` by default, restricting access to the local machine only.
+
+### Tunnel Access
+
+Enabling the tunnel exposes the dashboard externally, increasing the attack surface. External access requires a mandatory token — requests without a valid token are rejected.
+
+### Token Security Risks
+
+- **URL exposure** — tokens may appear in browser history or shared links
+- **Query parameters** — tokens in URLs can leak via referrer headers and server logs
+- **Application logs** — framework and server logs often record requested URLs
+- **Screenshots** — terminal or dashboard screenshots can capture visible tokens
+
+### Mitigation Recommendations
+
+- Use **short-lived tokens** with automatic expiry
+- Apply `Cache-Control: no-store` headers to prevent browser caching of pages containing tokens
+- Redact tokens from log output before sharing diagnostics
+- Avoid sending tokens via chat or screenshot-based communication channels
+
+### Mutating Actions
+
+Write operations and destructive tool calls over tunnel connections require explicit confirmation and are logged to the audit trail with user identity.
+
 ## Threat Model Summary
 
 | Threat | Mitigation |

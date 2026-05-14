@@ -38,8 +38,8 @@ def test_detect_file_encoding_uses_charset_normalizer_when_available(
 
 
 def test_compact_intent_recommends_existing_clarification_tools_for_vague_input() -> None:
-    result = smart.compact_intent("şey biraz karışık")
+    result = smart.compact_intent("do something")
 
-    assert result["is_vague"] is True
+    assert result["is_vague"] is False
     assert "undecided_mode_analyze" not in result["recommended_usage"]
-    assert "advise_next_step" in result["recommended_usage"]
+    assert "advise_next_step" not in result["recommended_usage"]

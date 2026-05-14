@@ -420,8 +420,67 @@ def _blocked_fork_bomb(
     return None
 
 
+_METACHAR_INJECTION_PATTERNS = (
+    ("$(", "dollar-paren substitution"),
+    ("`", "backtick substitution"),
+    ("${", "dollar-brace expansion"),
+    ("$'", "dollar-ANSI-C quoting"),
+    ('$"', "dollar-locale translation"),
+)
+
+
+def _find_argument_injection(stripped: str) -> str | None:
+    """Check for shell meta-character injection in command arguments.
+
+    Detects dangerous shell constructs appearing unquoted that could
+    lead to command injection when the command is processed by a shell.
+    """
+    in_single = False
+    in_double = False
+    escaped = False
+    for index, char in enumerate(stripped):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and not in_single:
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            continue
+        if in_single:
+            continue
+        if char == "`":
+            return "backtick substitution"
+        if char == "$" and index + 1 < len(stripped):
+            next_char = stripped[index + 1]
+            if next_char == "(":
+                return "$() substitution"
+            if next_char == "{":
+                return "${} expansion"
+            if next_char == "'":
+                return "$' ANSI-C quoting"
+            if next_char == '"':
+                return '$" locale translation'
+    return None
+
+
+def _blocked_argument_injection(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    return _find_argument_injection(stripped)
+
+
 _BLOCKED_MATCHERS = [
     _blocked_shell_construct,
+    _blocked_argument_injection,
     _blocked_custom_policy,
     _blocked_whitelist,
     _blocked_direct_commands,
