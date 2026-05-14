@@ -25,6 +25,7 @@ class WorkflowState(Enum):
     IDLE = "idle"
     PLANNING = "planning"
     APPROVAL_PENDING = "approval_pending"
+    PAUSED = "paused"
     APPLYING = "applying"
     TESTING = "testing"
     REPORTING = "reporting"
@@ -102,6 +103,7 @@ class WorkflowEngine:
         self.project_dir = project_dir
         self.checkpoint_name: str | None = None
         self.execution_log: list[dict[str, Any]] = []
+        self._state_metadata: dict[str, Any] = {}
 
     def create_plan(self, task: str) -> list[WorkflowStep]:
         """Decompose task into steps using LLM-based analysis."""
@@ -343,10 +345,24 @@ class WorkflowEngine:
                 WorkflowState.REJECTED,
                 WorkflowState.IDLE,
             },
-            WorkflowState.APPLYING: {WorkflowState.TESTING, WorkflowState.REJECTED},
-            WorkflowState.TESTING: {WorkflowState.REPORTING, WorkflowState.REJECTED},
-            WorkflowState.REPORTING: {WorkflowState.DONE},
-            WorkflowState.DONE: {WorkflowState.IDLE},
+            WorkflowState.PAUSED: {
+                WorkflowState.PLANNING,
+                WorkflowState.APPROVAL_PENDING,
+                WorkflowState.REJECTED,
+                WorkflowState.IDLE,
+            },
+            WorkflowState.APPLYING: {
+                WorkflowState.TESTING,
+                WorkflowState.PAUSED,
+                WorkflowState.REJECTED,
+            },
+            WorkflowState.TESTING: {
+                WorkflowState.REPORTING,
+                WorkflowState.PAUSED,
+                WorkflowState.REJECTED,
+            },
+            WorkflowState.REPORTING: {WorkflowState.DONE, WorkflowState.PAUSED},
+            WorkflowState.DONE: {WorkflowState.IDLE, WorkflowState.PLANNING},
             WorkflowState.REJECTED: {WorkflowState.IDLE},
         }
 
@@ -450,6 +466,8 @@ class WorkflowEngine:
             "steps": [s.to_dict() for s in self.steps],
             "execution_log": self.execution_log,
             "checkpoint_name": self.checkpoint_name,
+            "paused": self.state == WorkflowState.PAUSED,
+            "pause_reason": self._state_metadata.get("pause_reason"),
         }
 
     async def _run_self_review(self) -> dict[str, Any]:
@@ -538,6 +556,30 @@ class WorkflowEngine:
             self._log_event("rollback", {"checkpoint": self.checkpoint_name})
             return result
         return {"ok": False, "error": "No checkpoint available for rollback"}
+
+    def pause(self, reason: str = "") -> None:
+        """Pause workflow execution at current step for later resumption."""
+        self._state_metadata["last_active_state"] = self.state
+        self.transition_to(WorkflowState.PAUSED)
+        self._state_metadata["pause_reason"] = reason
+        self._log_event("workflow_paused", {"reason": reason})
+
+    def resume(self) -> bool:
+        """Resume a paused workflow from the saved state metadata."""
+        if self.state != WorkflowState.PAUSED:
+            return False
+        allowed_from_paused = {
+            WorkflowState.PLANNING,
+            WorkflowState.APPROVAL_PENDING,
+            WorkflowState.APPLYING,
+            WorkflowState.TESTING,
+        }
+        last_active = self._state_metadata.get("last_active_state")
+        if last_active in allowed_from_paused:
+            self.transition_to(last_active)
+            return True
+        self.transition_to(WorkflowState.PLANNING)
+        return True
 
     def reset(self) -> None:
         """Reset workflow to IDLE state."""
