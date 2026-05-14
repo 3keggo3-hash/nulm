@@ -420,28 +420,11 @@ def _blocked_fork_bomb(
     return None
 
 
-def _blocked_sudo_n(
-    head: str,
-    lower_tokens: list[str],
-    all_lower_tokens: list[str],
-    stripped: str,
-    normalized: str,
-) -> str | None:
-    if head != "sudo":
-        return None
-    if any(token == "-n" for token in lower_tokens):
-        return "sudo -n"
-    if any(token == "-E" for token in lower_tokens):
-        return "sudo -E"
-    return None
-
-
 _BLOCKED_MATCHERS = [
     _blocked_shell_construct,
     _blocked_custom_policy,
     _blocked_whitelist,
     _blocked_direct_commands,
-    _blocked_sudo_n,
     _blocked_inline_interpreter,
     _blocked_curl_wget,
     _blocked_dd,
@@ -499,6 +482,8 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         if "=" in token and not token.startswith("-"):
             var_name = token.split("=", 1)[0].lower()
             if var_name in _DANGEROUS_ENV_VARS:
+                return f"env {var_name}"
+            if var_name.upper() in {"LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "PATH"}:
                 return f"env {var_name}"
 
     for matcher in _BLOCKED_MATCHERS:

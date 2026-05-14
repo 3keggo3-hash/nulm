@@ -67,7 +67,6 @@ from claude_bridge._shell_safety import (  # noqa: F401
     _blocked_pipe_targets,
     _blocked_rm,
     _blocked_shell_construct,
-    _blocked_sudo_n,
     _blocked_tee_pv,
     _blocked_whitelist,
     _blocked_wrappers,
