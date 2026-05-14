@@ -303,3 +303,141 @@ def git_blame(file_path: str, *, project_dir: Path) -> list[dict[str, Any]]:
         blame_entries.append(current_entry)
 
     return blame_entries
+
+
+_BRANCE_NAME_RE = re.compile(r"^[a-zA-Z0-9._/-]+$")
+
+
+def git_branch_list(project_dir: Path) -> dict[str, Any]:
+    """List local branches with current HEAD indicator and tracking info."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "branches": [], "output": "No git repository found"}
+    repo_root = Path(root).resolve()
+
+    result = _run_git(["git", "branch", "-v"], cwd=repo_root)
+    if result.returncode != 0:
+        return {"ok": False, "branches": [], "output": result.stderr}
+
+    branches: list[dict[str, str]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        current = line.startswith("*")
+        parts = line[2:].split(None, 1)
+        name = parts[0] if parts else ""
+        tracking = parts[1] if len(parts) > 1 else ""
+        branches.append({"name": name, "current": current, "tracking": tracking})
+
+    return {"ok": True, "branches": branches, "output": result.stdout}
+
+
+def git_branch_create(
+    name: str,
+    *,
+    project_dir: Path,
+    base_branch: str | None = None,
+) -> dict[str, Any]:
+    """Create a new branch with optional base branch."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "output": "No git repository found"}
+
+    if not _BRANCE_NAME_RE.match(name):
+        return {
+            "ok": False,
+            "output": f"Invalid branch name '{name}'. Use alphanumeric, dots, underscores, hyphens, and slashes only.",
+        }
+
+    repo_root = Path(root).resolve()
+    base = base_branch or "HEAD"
+    result = _run_git(["git", "branch", name, base], cwd=repo_root)
+    if result.returncode != 0:
+        return {"ok": False, "output": result.stderr}
+    return {"ok": True, "output": f"Created branch '{name}' from {base}"}
+
+
+def git_merge(
+    target: str,
+    *,
+    project_dir: Path,
+    no_fast_forward: bool = False,
+    squash: bool = False,
+) -> dict[str, Any]:
+    """Merge a branch into the current branch with conflict detection."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "output": "No git repository found"}
+
+    repo_root = Path(root).resolve()
+    cmd = ["git", "merge"]
+    if no_fast_forward:
+        cmd.append("--no-ff")
+    if squash:
+        cmd.append("--squash")
+    cmd.append(target)
+
+    result = _run_git(cmd, cwd=repo_root)
+    has_conflicts = result.returncode != 0 and "CONFLICT" in result.stdout + result.stderr
+
+    conflicts: list[str] = []
+    if has_conflicts:
+        status = _run_git(["git", "status", "--porcelain"], cwd=repo_root)
+        for line in status.stdout.splitlines():
+            if line.startswith("UU ") or line.startswith("AA ") or line.startswith("DD "):
+                parts = line[3:].strip().split(" -> ")
+                if parts:
+                    conflicts.append(parts[-1])
+
+    return {
+        "ok": result.returncode == 0,
+        "merged": target,
+        "conflicts": conflicts,
+        "has_conflicts": has_conflicts,
+        "output": result.stdout + result.stderr,
+    }
+
+
+def git_stash(
+    *,
+    project_dir: Path,
+    message: str | None = None,
+    include_untracked: bool = True,
+) -> dict[str, Any]:
+    """Stash working directory changes with optional message."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "output": "No git repository found"}
+    repo_root = Path(root).resolve()
+
+    cmd = ["git", "stash"]
+    if include_untracked:
+        cmd.append("-u")
+    if message:
+        cmd.extend(["-m", message])
+
+    result = _run_git(cmd, cwd=repo_root)
+    return {
+        "ok": result.returncode == 0,
+        "stashed": result.returncode == 0,
+        "output": result.stdout + result.stderr,
+    }
+
+
+def git_stash_pop(
+    *,
+    project_dir: Path,
+    restore_conflicts: bool = False,
+) -> dict[str, Any]:
+    """Pop the most recent stash, optionally with conflict restoration."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "output": "No git repository found"}
+    repo_root = Path(root).resolve()
+
+    cmd = ["git", "stash", "pop"]
+    result = _run_git(cmd, cwd=repo_root)
+    return {
+        "ok": result.returncode == 0,
+        "output": result.stdout + result.stderr,
+    }
