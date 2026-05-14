@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import re
 from hashlib import sha256
@@ -97,7 +96,6 @@ def _summarize_value(value: Any, *, depth: int = 0) -> Any:
     return repr(value)
 
 
-@functools.lru_cache(maxsize=256)
 def _hash_utf8(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
