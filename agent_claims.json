@@ -275,6 +275,27 @@
         "Discovery methods allow runtime tool introspection"
       ]
     }
+    "agent-28-onboarding": {
+      "task": "onboarding flow and doctor diagnostics improvement",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/onboarding.py",
+        "src/claude_bridge/doctor.py"
+      ],
+      "changes": [
+        "Added quick_command field to onboarding tips for first-run quick wins",
+        "Added fix_suggestion field to DoctorCheck dataclass",
+        "Added quick_fixes tuple to DoctorReport for actionable fixes",
+        "Added _update_check helper to consolidate check building",
+        "Added quick_fixes aggregation from failed checks"
+      ],
+      "improvements": [
+        "Onboarding tips now include quick_command for immediate user wins",
+        "Doctor checks now provide fix_suggestion when check fails",
+        "DoctorReport exposes quick_fixes tuple for tooling integration",
+        "Security doctor report uses same helper for consistency"
+      ]
+    }
   },
   "conflicts": [],
   "resolved": []

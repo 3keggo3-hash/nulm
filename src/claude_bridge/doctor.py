@@ -48,7 +48,9 @@ def command_available(command_name: str) -> bool:
 def _update_check(
     checks: list[DoctorCheck], label: str, ok: bool, detail: str, fix: str | None
 ) -> None:
-    checks.append(DoctorCheck(label=label, ok=ok, detail=detail, fix_suggestion=fix if not ok else None))
+    checks.append(
+        DoctorCheck(label=label, ok=ok, detail=detail, fix_suggestion=fix if not ok else None)
+    )
 
 
 def build_doctor_report(
