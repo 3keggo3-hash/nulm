@@ -153,56 +153,7 @@
         "src/claude_bridge/lifecycle.py"
       ]
     },
-    "agent-27": {
-      "task": "error message clarity and actionable suggestions",
-      "branch": "feature/agent-crew",
-      "files_modified": [
-        "src/claude_bridge/resilience.py",
-        "src/claude_bridge/config.py",
-        "src/claude_bridge/ai_evaluator.py"
-      ],
-      "changes": [
-        "Added actionable suggestions to RetryExhaustedError",
-        "Added circuit breaker recovery hint to circuit breaker errors",
-        "Added valid options to config ValueError messages",
-        "Added provider URL validation guidance to ai_evaluator errors"
-      ],
-      "error_improvements": [
-        "RetryExhaustedError now includes retry count and suggestion",
-        "Circuit breaker errors now include recovery timeout hint",
-        "Config validation errors now list valid options",
-        "Provider URL errors now explain private host blocking"
-      ]
-    },
-    "agent-26-cli": {
-      "task": "CLI ergonomics and error messages improvements",
-      "branch": "feature/agent-crew",
-      "files_modified": ["src/claude_bridge/cli.py"],
-      "changes": [
-        "Add agent-26-cli claim to agent_claims.json"
-      ]
-    },
-    "agent-24-shell-analysis": {
-      "task": "shell command parsing and analysis improvements",
-      "branch": "feature/agent-crew",
-      "files_modified": [
-        "src/claude_bridge/_shell_analysis.py",
-        "src/claude_bridge/_shell_constants.py"
-      ],
-      "changes": [
-        "Add _parse_error_details() for informative parse error messages with position",
-        "Add compound command analysis (&&, ||, ;) for chained risky operations",
-        "Add _extract_git_subcommand() helper to replace duplicated git parsing logic",
-        "Add dangerous glob pattern detection (*, ?, [] in rm/cd commands)",
-        "Add _COMPOUND_CONTROL_COMMANDS to constants for control flow detection"
-      ],
-      "analysis_improvements": [
-        "Parse errors now include character position and problematic character",
-        "Compound commands with && and || are flagged as medium-high risk",
-        "Git subcommand extraction refactored to avoid duplication",
-        "Glob patterns in rm/mkdir/rmdir commands detected as potential risk"
-      ]
-    }
+    "agent-19-explorer": {
       "task": "approach explorer improvements",
       "branch": "feature/agent-crew",
       "files_modified": [
@@ -230,27 +181,24 @@
         "Relevance scoring ranks approaches by keyword frequency"
       ],
       "tests_added": 11
-    }
-    "agent-23-smart-tools": {
-      "task": "smart tool intelligence and adaptive behaviors",
+    },
+    "agent-21-prompt": {
+      "task": "prompt engineering and workflow optimization",
       "branch": "feature/agent-crew",
       "files_modified": [
-        "src/claude_bridge/smart.py",
-        "src/claude_bridge/smart_tool_registration.py"
+        "src/claude_bridge/workflow_presets.py"
       ],
       "changes": [
-        "Added ToolMetrics dataclass for measurable intelligence scoring",
-        "Added token efficiency scoring for tool selection",
-        "Added estimate_context_savings() to measure compact_intent effectiveness",
-        "Added get_tool_recommendation() for adaptive tool selection",
-        "Added caching for token counting operations",
-        "Enhanced compact_intent() with confidence scoring and intelligence metrics"
-      ],
-      "intelligence_improvements": [
-        "Token efficiency scoring quantifies tool usefulness",
-        "Context savings measurement tracks smart compression effectiveness",
-        "Tool recommendation engine provides adaptive selection based on query analysis",
-        "Confidence scoring (0-1) measures intent detection reliability"
+        "Added compact, benchmark, platform to SUPPORTED_WORKFLOW_MODES for consistency",
+        "Added missing PROMPT_ARGUMENTS entries for compact, benchmark, platform workflows",
+        "Added missing PROMPT_FOCUS_ARG mappings for compact, benchmark, platform",
+        "Added compact, benchmark, platform to WORKFLOW_STEPS",
+        "Added compact, benchmark, platform to WORKFLOW_EXAMPLES",
+        "Added missing compact, benchmark, platform to WORKFLOW_DISCOVERY_TERMS",
+        "Added missing compact, benchmark, platform to WORKFLOW_DEFAULT_FOCUS",
+        "Added compact, benchmark, platform to WORKFLOW_PROMPT_TEMPLATES",
+        "Improved optimize template with concrete low-risk improvement guidance",
+        "Improved debug template with hypothesis-driven approach"
       ]
     }
   },
