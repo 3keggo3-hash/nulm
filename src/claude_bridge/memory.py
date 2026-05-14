@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import threading
 from dataclasses import asdict, dataclass, field
@@ -24,9 +25,13 @@ except ImportError:  # pragma: no cover - exercised only in minimal installs
 MEMORY_DIR = Path(".claude-bridge")
 MEMORY_FILE = MEMORY_DIR / "memory.json.enc"
 KEY_FILE = MEMORY_DIR / ".memory.key"
+_BACKUP_FILE = MEMORY_DIR / "memory.json.enc.bak"
 _MEMORY_LOCK = threading.RLock()
 
 _ENV_KEY_VAR = "CLAUDE_BRIDGE_MEMORY_KEY"
+
+DEFAULT_MAX_LESSONS = 500
+DEFAULT_LESSON_TTL_DAYS = 90
 
 
 def _get_key() -> bytes:
@@ -291,6 +296,59 @@ class MemoryStore:
 
             scored.sort(key=lambda x: x[0], reverse=True)
             return [lesson for _, lesson in scored]
+
+    def cleanup_lessons(
+        self,
+        *,
+        max_lessons: int = DEFAULT_MAX_LESSONS,
+        ttl_days: int = DEFAULT_LESSON_TTL_DAYS,
+    ) -> dict[str, int]:
+        with _MEMORY_LOCK:
+            data = self._read_raw()
+            lessons_raw = data.get("lessons_learned", [])
+            lessons = [LessonLearned.from_dict(entry) for entry in lessons_raw]
+
+            now = datetime.now(timezone.utc)
+            cutoff = now.timestamp() - (ttl_days * 86400)
+            expired: list[int] = []
+            for i, lesson in enumerate(lessons):
+                try:
+                    lesson_ts = datetime.fromisoformat(lesson.timestamp).timestamp()
+                    if lesson_ts < cutoff:
+                        expired.append(i)
+                except (ValueError, TypeError):
+                    expired.append(i)
+
+            kept_by_ttl = [lesson for i, lesson in enumerate(lessons) if i not in expired]
+
+            if len(kept_by_ttl) > max_lessons:
+                kept_by_ttl.sort(key=lambda lesson: (lesson.hits, lesson.pattern))
+                kept_by_ttl = kept_by_ttl[-max_lessons:]
+
+            removed_expired = len(expired)
+            removed_overflow = len(lessons) - len(kept_by_ttl) - removed_expired
+            if removed_overflow < 0:
+                removed_overflow = 0
+
+            data["lessons_learned"] = [entry.to_dict() for entry in kept_by_ttl]
+            self._write_raw(data)
+
+            return {
+                "expired_removed": removed_expired,
+                "overflow_removed": removed_overflow,
+                "remaining": len(kept_by_ttl),
+            }
+
+    def clear_all(self) -> None:
+        with _MEMORY_LOCK:
+            MEMORY_FILE.unlink(missing_ok=True)
+            _BACKUP_FILE.unlink(missing_ok=True)
+
+    def backup(self) -> Path:
+        with _MEMORY_LOCK:
+            if MEMORY_FILE.exists():
+                shutil.copy2(MEMORY_FILE, _BACKUP_FILE)
+            return _BACKUP_FILE
 
 
 _memory_store: MemoryStore | None = None

@@ -292,3 +292,78 @@ class TestKeyManagement:
             memory_module.KEY_FILE = orig_file
             if key_file.exists():
                 key_file.unlink()
+
+
+class TestMemoryCleanup:
+    def test_cleanup_removes_old_lessons(self, memory_store):
+        from unittest.mock import patch
+        from datetime import datetime, timezone
+
+        memory_store.add_lesson("old_pattern", "old_solution", project="test")
+        memory_store.add_lesson("new_pattern", "new_solution", project="test")
+
+        old_timestamp = "2020-01-01T00:00:00Z"
+        with patch.object(memory_store, "_read_raw") as mock_read:
+            mock_read.return_value = {
+                "lessons_learned": [
+                    {
+                        "pattern": "old_pattern",
+                        "solution": "old_solution",
+                        "project": "test",
+                        "timestamp": old_timestamp,
+                        "hits": 1,
+                    },
+                    {
+                        "pattern": "new_pattern",
+                        "solution": "new_solution",
+                        "project": "test",
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "hits": 1,
+                    },
+                ]
+            }
+            result = memory_store.cleanup_lessons(ttl_days=30)
+
+        assert result["expired_removed"] == 1
+        assert result["remaining"] == 1
+
+    def test_cleanup_removes_overflow(self, memory_store):
+        for i in range(10):
+            memory_store.add_lesson(f"pattern_{i}", f"solution_{i}")
+
+        result = memory_store.cleanup_lessons(max_lessons=5)
+
+        assert result["overflow_removed"] >= 5
+        assert result["remaining"] == 5
+
+    def test_cleanup_keeps_high_hits(self, memory_store):
+        memory_store.add_lesson("low_hit", "solution_a")
+        for _ in range(5):
+            memory_store.add_lesson("high_hit", "solution_b")
+
+        memory_store.cleanup_lessons(max_lessons=2)
+
+        lessons = memory_store.search_lessons("")
+        patterns = [lesson.pattern for lesson in lessons]
+        assert "high_hit" in patterns
+
+    def test_clear_all(self, memory_store):
+        memory_store.add_lesson("pattern", "solution")
+        memory_store.clear_all()
+
+        assert not memory_store.load()
+
+    def test_backup(self, memory_store):
+        memory_store.add_lesson("pattern", "solution")
+
+        from claude_bridge import memory as memory_module
+
+        orig_backup = memory_module._BACKUP_FILE
+        memory_module._BACKUP_FILE = memory_store._storage_path.parent / "backup_test.bak"
+        try:
+            backup_path = memory_store.backup()
+            assert backup_path.exists()
+        finally:
+            memory_module._BACKUP_FILE = orig_backup
+            if backup_path.exists():
+                backup_path.unlink()
