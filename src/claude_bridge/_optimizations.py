@@ -8,8 +8,10 @@ reduced redundant operations.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
+import shlex
 import threading
 from pathlib import Path
 from typing import Any
@@ -29,20 +31,18 @@ _SECRET_PATTERNS: dict[str, str] = {
     "github_token": r"ghp_[A-Za-z0-9]{20,}",
 }
 
-_COMPILED_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] | None = None
+_COMPILED_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (name, re.compile(pattern)) for name, pattern in _SECRET_PATTERNS.items()
+]
 _COMPILED_SECRET_LOCK = threading.Lock()
 _CUSTOM_PATTERNS_CACHE: tuple[tuple[str, re.Pattern[str]], ...] | None = None
 _CUSTOM_PATTERNS_VERSION: int = 0
 
+_NORMALIZE_WHITESPACE_RE = re.compile(r"\s+")
+
 
 def _get_compiled_secret_patterns_optimized() -> list[tuple[str, re.Pattern[str]]]:
-    global _COMPILED_SECRET_PATTERNS
-    with _COMPILED_SECRET_LOCK:
-        if _COMPILED_SECRET_PATTERNS is not None:
-            return _COMPILED_SECRET_PATTERNS
-        compiled = [(name, re.compile(pattern)) for name, pattern in _SECRET_PATTERNS.items()]
-        _COMPILED_SECRET_PATTERNS = compiled
-        return compiled
+    return _COMPILED_SECRET_PATTERNS
 
 
 def find_secret_patterns_optimized(content: str) -> list[str]:
@@ -70,7 +70,7 @@ def load_bridgeignore_patterns_optimized(project_root: Path) -> list[str]:
     with _BRIDGEIGNORE_LOCK:
         cached = _BRIDGEIGNORE_CACHE.get(cache_key)
         if cached is not None:
-            return list(cached)
+            return cached
     if not bridgeignore.is_file():
         with _BRIDGEIGNORE_LOCK:
             _BRIDGEIGNORE_CACHE[cache_key] = []
@@ -88,7 +88,7 @@ def load_bridgeignore_patterns_optimized(project_root: Path) -> list[str]:
         for k in old_keys:
             _BRIDGEIGNORE_CACHE.pop(k, None)
         _BRIDGEIGNORE_CACHE[cache_key] = patterns
-    return list(patterns)
+    return patterns
 
 
 def _mask_secrets_optimized(
@@ -110,18 +110,15 @@ def _get_custom_patterns_cached() -> list[tuple[str, re.Pattern[str]]]:
     global _CUSTOM_PATTERNS_CACHE, _CUSTOM_PATTERNS_VERSION
     from claude_bridge.guard_policy import load_guard_policy
 
-    with _COMPILED_SECRET_LOCK:
-        current_version = _CUSTOM_PATTERNS_VERSION
     policy = load_guard_policy()
     new_version = id(policy.get("secret_patterns", {}))
-    if new_version == current_version and _CUSTOM_PATTERNS_CACHE is not None:
+    if new_version == _CUSTOM_PATTERNS_VERSION and _CUSTOM_PATTERNS_CACHE is not None:
         return list(_CUSTOM_PATTERNS_CACHE)
     patterns = [
         (name, re.compile(pattern)) for name, pattern in policy.get("secret_patterns", {}).items()
     ]
-    with _COMPILED_SECRET_LOCK:
-        _CUSTOM_PATTERNS_CACHE = tuple(patterns)
-        _CUSTOM_PATTERNS_VERSION = new_version
+    _CUSTOM_PATTERNS_CACHE = tuple(patterns)
+    _CUSTOM_PATTERNS_VERSION = new_version
     return list(_CUSTOM_PATTERNS_CACHE)
 
 
@@ -148,8 +145,26 @@ _SENSITIVE_FILENAMES = frozenset(
         "claude_desktop_config.json",
     }
 )
-_GIT_PARTS_CACHE: dict[str, tuple[str, ...]] = {}
-_DOCKER_PARTS_CACHE: dict[str, tuple[str, ...]] = {}
+_PATH_PARTS_CACHE: dict[str, tuple[str, ...]] = {}
+_PATH_PARTS_CACHE_MAX = 256
+
+
+def _get_path_parts_cached(target: Path) -> tuple[str, ...]:
+    try:
+        cache_key = str(target.resolve())
+    except (OSError, ValueError):
+        cache_key = str(target)
+    if cache_key in _PATH_PARTS_CACHE:
+        return _PATH_PARTS_CACHE[cache_key]
+    parts = tuple(p.lower() for p in target.resolve().parts)
+    if len(_PATH_PARTS_CACHE) >= _PATH_PARTS_CACHE_MAX:
+        try:
+            oldest_key = next(iter(_PATH_PARTS_CACHE))
+            _PATH_PARTS_CACHE.pop(oldest_key, None)
+        except StopIteration:
+            pass
+    _PATH_PARTS_CACHE[cache_key] = parts
+    return parts
 
 
 def sensitive_path_reason_optimized(target: Path, project_dir_fn: Any = None) -> str | None:
@@ -158,10 +173,7 @@ def sensitive_path_reason_optimized(target: Path, project_dir_fn: Any = None) ->
         return name
     if any(name.endswith(suffix) for suffix in _SENSITIVE_SUFFIXES):
         return target.suffix.lower()
-    try:
-        resolved_parts = tuple(p.lower() for p in target.resolve().parts)
-    except (OSError, ValueError):
-        resolved_parts = tuple(p.lower() for p in target.parts)
+    resolved_parts = _get_path_parts_cached(target)
     if ".git" in resolved_parts:
         return ".git directory"
     if ".docker" in resolved_parts:
@@ -179,8 +191,6 @@ def sensitive_path_reason_optimized(target: Path, project_dir_fn: Any = None) ->
         relative = target.name
     candidates = {target.name, relative}
     for pattern in load_bridgeignore_patterns_optimized(project_dir_fn()):
-        import fnmatch
-
         if any(fnmatch.fnmatchcase(c, pattern) for c in candidates):
             return f"bridgeignore pattern: {pattern}"
     from claude_bridge.guard_policy import custom_sensitive_path_reason
@@ -287,9 +297,7 @@ def blocked_command_reason_fastpath(stripped: str, tokens: list[str]) -> str | N
         head = _command_basename_fastpath(command_tokens[0])
     lower_tokens = [token.lower() for token in command_tokens]
     all_lower_tokens = [token.lower() for token in tokens]
-    import re
-
-    normalized = re.sub(r"\s+", " ", stripped.strip()).lower()
+    normalized = _NORMALIZE_WHITESPACE_RE.sub(" ", stripped.strip()).lower()
     return blocked_command_reason_optimized(
         stripped, tokens, head, lower_tokens, all_lower_tokens, normalized
     )
@@ -302,8 +310,6 @@ def _command_basename_fastpath(token: str) -> str:
 def _tokens_after_env_fastpath(tokens: list[str]) -> list[str]:
     if not tokens or _command_basename_fastpath(tokens[0]) != "env":
         return tokens
-    import shlex
-
     for index, token in enumerate(tokens[1:], start=1):
         if "=" in token and not token.startswith("-"):
             continue
@@ -334,8 +340,6 @@ def analyze_shell_command_optimized(command: str) -> dict[str, Any]:
             return _SHELL_ANALYSIS_CACHE[cache_key]
     if not stripped:
         return _shell_analysis_empty_result(command)
-    import shlex
-
     try:
         tokens = shlex.split(stripped)
     except ValueError as exc:
