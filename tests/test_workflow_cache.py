@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import time
 from collections import OrderedDict
 from unittest.mock import patch
 
-import pytest
-
 from claude_bridge.workflow_cache import (
     _CONTEXT_PACK_CACHE,
-    _MAX_WORKFLOW_CACHE_ENTRIES,
-    _MAX_WORKFLOW_DISK_CACHE_BYTES,
-    _MAX_WORKFLOW_DISK_CACHE_FILES,
     _safe_cached_json_payload,
     _store_cache_entry,
     _touch_cache_entry,
@@ -25,9 +19,9 @@ from claude_bridge.workflow_cache import (
 
 class TestCacheEntryOperations:
     def test_touch_cache_entry_moves_to_end(self) -> None:
-        cache: OrderedDict[tuple[str, ...], str] = OrderedDict()
-        cache[("key1",)] = "value1"
-        cache[("key2",)] = "value2"
+        cache: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
+        cache[("key1",)] = ("value1", time.time() + 3600)
+        cache[("key2",)] = ("value2", time.time() + 3600)
 
         result = _touch_cache_entry(cache, ("key1",))
         assert result == "value1"
@@ -35,13 +29,20 @@ class TestCacheEntryOperations:
         assert keys[-1] == ("key1",)
 
     def test_touch_cache_entry_missing(self) -> None:
-        cache: OrderedDict[tuple[str, ...], str] = OrderedDict()
+        cache: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
         result = _touch_cache_entry(cache, ("missing",))
         assert result is None
 
+    def test_touch_cache_entry_expired(self) -> None:
+        cache: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
+        cache[("key1",)] = ("value1", time.time() - 1)
+
+        result = _touch_cache_entry(cache, ("key1",))
+        assert result is None
+        assert ("key1",) not in cache
+
     def test_store_cache_entry_evicts_oldest(self) -> None:
-        cache: OrderedDict[tuple[str, ...], str] = OrderedDict()
-        original_max = _MAX_WORKFLOW_CACHE_ENTRIES
+        cache: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
         with patch("claude_bridge.workflow_cache._MAX_WORKFLOW_CACHE_ENTRIES", 3):
             for i in range(5):
                 _store_cache_entry(cache, (f"key{i}",), f"value{i}")
@@ -116,8 +117,8 @@ class TestWorkflowCacheFile:
 class TestClearWorkflowCaches:
     def test_clear_caches_removes_all_entries(self) -> None:
         _CONTEXT_PACK_CACHE.clear()
-        _CONTEXT_PACK_CACHE[("test1",)] = "value1"
-        _CONTEXT_PACK_CACHE[("test2",)] = "value2"
+        _CONTEXT_PACK_CACHE[("test1",)] = ("value1", time.time() + 3600)
+        _CONTEXT_PACK_CACHE[("test2",)] = ("value2", time.time() + 3600)
 
         clear_workflow_caches()
 
@@ -129,9 +130,7 @@ class TestDiskCachePruning:
         cache_dir = temp_project / "cache"
         cache_dir.mkdir(parents=True)
         monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(cache_dir))
-        monkeypatch.setattr(
-            "claude_bridge.workflow_cache._MAX_WORKFLOW_DISK_CACHE_FILES", 10
-        )
+        monkeypatch.setattr("claude_bridge.workflow_cache._MAX_WORKFLOW_DISK_CACHE_FILES", 10)
         monkeypatch.setattr(
             "claude_bridge.workflow_cache._MAX_WORKFLOW_DISK_CACHE_BYTES", 1024 * 1024 * 100
         )

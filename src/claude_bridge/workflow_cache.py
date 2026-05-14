@@ -163,3 +163,29 @@ def _safe_cached_json_payload(raw: str) -> dict[str, Any] | None:
     except (json.JSONDecodeError, TypeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def clear_disk_cache() -> int:
+    """Clear all workflow disk cache files. Returns count of files deleted."""
+    cache_dir = _workflow_cache_dir()
+    try:
+        entries = [path for path in cache_dir.glob("*.json") if path.is_file()]
+    except OSError:
+        return 0
+    removed = 0
+    for path in entries:
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def invalidate_workflow_cache_pattern(prefix: str) -> int:
+    """Invalidate in-memory cache entries matching prefix pattern."""
+    removed = 0
+    with _WORKFLOW_CACHE_LOCK:
+        removed += _invalidate_pattern_from_cache(_CONTEXT_PACK_CACHE, prefix)
+        removed += _invalidate_pattern_from_cache(_WORKFLOW_PLAN_CACHE, prefix)
+    return removed
