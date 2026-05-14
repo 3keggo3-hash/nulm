@@ -70,10 +70,17 @@ async def retry_with_backoff(
                 delay = _compute_delay(config, attempt)
                 await asyncio.sleep(delay)
     if last_exception is not None:
+        hint = (
+            " Consider increasing max_retries, using a higher base_delay, "
+            "or checking if the service is reachable."
+        )
         raise RetryExhaustedError(
-            f"Retry exhausted after {config.max_retries} attempts"
+            f"Retry exhausted after {config.max_retries} attempts. Last error: {last_exception}{hint}"
         ) from last_exception
-    raise RetryExhaustedError("Retry exhausted with no exception")
+    raise RetryExhaustedError(
+        "Retry exhausted with no exception. "
+        "Ensure your async function is properly awaited or check retry configuration."
+    )
 
 
 class CircuitState(str):
@@ -140,10 +147,18 @@ class CircuitBreaker:
         with self._lock:
             current_state = self._evaluate_state()
             if current_state == CircuitState.OPEN:
-                raise RuntimeError("Circuit breaker is OPEN")
+                recovery = self._config.recovery_timeout
+                raise RuntimeError(
+                    f"Circuit breaker is OPEN. Service is temporarily unavailable. "
+                    f"Retry after {recovery:.0f}s or reset the circuit breaker."
+                )
             if current_state == CircuitState.HALF_OPEN:
                 if self._half_open_calls >= self._config.half_open_max_calls:
-                    raise RuntimeError("Circuit breaker is HALF-OPEN, max calls reached")
+                    raise RuntimeError(
+                        f"Circuit breaker is HALF-OPEN (testing recovery). "
+                        f"Max probe calls ({self._config.half_open_max_calls}) reached. "
+                        f"Wait {self._config.recovery_timeout:.0f}s for full recovery."
+                    )
                 self._half_open_calls += 1
         try:
             if inspect.iscoroutinefunction(func):
