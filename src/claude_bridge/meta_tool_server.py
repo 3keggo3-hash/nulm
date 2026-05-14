@@ -890,6 +890,7 @@ def register_meta_tools(
             smart_avail = smart_available()
             from claude_bridge.ai_evaluator import ai_latency_summary
             from claude_bridge.agent_advisor import agent_quality_telemetry_summary
+            from claude_bridge.control_plane import list_approvals, summarize_tasks
             from claude_bridge.skill_registry import get_registry
 
             profile_name = str(config_snapshot.get("context_budget_profile", "balanced"))
@@ -900,6 +901,8 @@ def register_meta_tools(
                 1 for skill in skills if "execute" in set(skill.meta.permissions)
             )
             high_risk_count = sum(1 for skill in skills if skill.meta.risk_level == "high")
+            task_summary_payload = summarize_tasks()
+            pending_approval_count = len(list_approvals(status="pending"))
             result = json_response(
                 True,
                 "Bridge status loaded",
@@ -988,6 +991,11 @@ def register_meta_tools(
                         "storage_root": str(get_registry(project_dir()).root),
                         "source_visibility": "metadata_only",
                     },
+                    "control_plane": {
+                        "task_summary": task_summary_payload,
+                        "pending_approval_count": pending_approval_count,
+                        "local_first": True,
+                    },
                     "smart_features": smart_avail,
                     "session_telemetry": session_summary.get("telemetry", {}),
                     "escalations": {
@@ -1072,6 +1080,14 @@ def register_meta_tools(
                             "run_agent_loop_step",
                         ],
                         "telemetry": ["session_insights", "usage_insights", "smart_status"],
+                        "control_plane": [
+                            "list_tasks",
+                            "task_status",
+                            "task_summary",
+                            "list_pending_approvals",
+                            "approve_pending_action",
+                            "reject_pending_action",
+                        ],
                     },
                     "notes": [
                         "Agent quality tools turn rough goals into safer plans and config advice.",

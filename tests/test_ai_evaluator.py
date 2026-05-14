@@ -658,7 +658,9 @@ class TestMeasureComplexity:
     def test_capped_at_one(self) -> None:
         from claude_bridge.ai_evaluator import measure_complexity
 
-        score = measure_complexity(" ".join(["word"] * 200), {"file_count": 100, "nested_depth": 100})
+        score = measure_complexity(
+            " ".join(["word"] * 200), {"file_count": 100, "nested_depth": 100}
+        )
         assert score == 1.0
 
 
@@ -757,7 +759,9 @@ class TestBudgetStorage:
         assert loaded.monthly_limit == 50000
         assert loaded.used == 25000
 
-    def test_load_budget_missing_file_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_load_budget_missing_file_returns_default(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
         path = tmp_path / "nonexistent.json"
         loaded = load_budget(str(path))
 

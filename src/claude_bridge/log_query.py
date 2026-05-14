@@ -102,9 +102,7 @@ class LogQueryEngine:
             result_value = len(values)
         return AggregationResult(func=func, field=field, value=result_value, count=len(values))
 
-    def group_by(
-        self, query: LogQuery, group_field: str
-    ) -> dict[str, list[LogEntry]]:
+    def group_by(self, query: LogQuery, group_field: str) -> dict[str, list[LogEntry]]:
         entries = self._load_entries()
         filtered = self._filter_entries(entries, query)
         groups: dict[str, list[LogEntry]] = {}
@@ -153,7 +151,9 @@ class LogQueryEngine:
                 continue
             try:
                 data = json.loads(line)
-                timestamp = datetime.fromisoformat(data.get("timestamp", datetime.now().isoformat()))
+                timestamp = datetime.fromisoformat(
+                    data.get("timestamp", datetime.now().isoformat())
+                )
                 level_str = data.get("level", "info")
                 try:
                     level = LogLevel(level_str.lower())
@@ -186,9 +186,7 @@ class LogQueryEngine:
         if query.tool_name:
             filtered = [e for e in filtered if e.tool_name == query.tool_name]
         if query.user_goal:
-            filtered = [
-                e for e in filtered if query.user_goal.lower() in e.message.lower()
-            ]
+            filtered = [e for e in filtered if query.user_goal.lower() in e.message.lower()]
         return filtered
 
 

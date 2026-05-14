@@ -44,9 +44,7 @@ class ProjectScanner:
 
     def _detect_language(self) -> None:
         py_files = list(self.project_path.rglob("*.py"))
-        js_files = list(self.project_path.rglob("*.js")) + list(
-            self.project_path.rglob("*.ts")
-        )
+        js_files = list(self.project_path.rglob("*.js")) + list(self.project_path.rglob("*.ts"))
         go_files = list(self.project_path.rglob("*.go"))
         rust_files = list(self.project_path.rglob("*.rs"))
 
@@ -218,18 +216,11 @@ class OptionGenerator:
         options: list[dict[str, Any]] = []
         user_lower = self.user_input.lower()
 
-        if any(
-            word in user_lower
-            for word in ["yavaş", "performance", "hız", "slow", "optimiz"]
-        ):
+        if any(word in user_lower for word in ["yavaş", "performance", "hız", "slow", "optimiz"]):
             options.extend(self._performance_options())
-        elif any(
-            word in user_lower for word in ["güvenli", "security", "hack", "risk"]
-        ):
+        elif any(word in user_lower for word in ["güvenli", "security", "hack", "risk"]):
             options.extend(self._security_options())
-        elif any(
-            word in user_lower for word in ["eksik", "missing", "yok", "çalışmıyor"]
-        ):
+        elif any(word in user_lower for word in ["eksik", "missing", "yok", "çalışmıyor"]):
             options.extend(self._feature_options())
         else:
             options.extend(self._general_options())
@@ -395,9 +386,7 @@ def format_analysis_report(result: AnalysisResult) -> str:
         for opt in result.options:
             prob = opt.get("probability", 0)
             lines.append("")
-            lines.append(
-                f"{opt.get('id', '?')}. [{prob}%] {opt.get('title', 'Unknown')}"
-            )
+            lines.append(f"{opt.get('id', '?')}. [{prob}%] {opt.get('title', 'Unknown')}")
             lines.append(f"   • Est. improvement: {opt.get('estimated_improvement', 'N/A')}")
             lines.append(f"   • Risk: {opt.get('risk', 'unknown')}")
             lines.append(f"   • Effort: {opt.get('effort_hours', '?')} hours")
@@ -409,9 +398,7 @@ def format_analysis_report(result: AnalysisResult) -> str:
     return "\n".join(lines)
 
 
-def analyze_project(
-    project_path: str | Path, user_input: str
-) -> AnalysisResult:
+def analyze_project(project_path: str | Path, user_input: str) -> AnalysisResult:
     scanner = ProjectScanner(project_path)
     scan_data = scanner.scan()
 

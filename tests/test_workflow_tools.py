@@ -1,12 +1,14 @@
 """Tests for workflow tools."""
 
 import json
+import time
 from pathlib import Path  # noqa: F401
 
 import pytest  # noqa: F401
 
 from claude_bridge import server as mcp_server
 from claude_bridge import workflow_agent_loop as wf_agent_loop
+from claude_bridge import workflow_cache
 from claude_bridge import workflow_tools as wf
 from claude_bridge.workflow_runner import run_workflow as run_workflow_impl
 
@@ -61,6 +63,23 @@ class TestBuildContextPack:
         assert payload["ok"] is True
         assert any("test_main.py" in f for f in payload["details"]["test_files"])
 
+    def test_workflow_disk_cache_limits_total_size(self, temp_project, monkeypatch):
+        cache_dir = temp_project / ".cache" / "workflow"
+        cache_dir.mkdir(parents=True)
+        monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(temp_project / ".cache"))
+        monkeypatch.setattr(workflow_cache, "_MAX_WORKFLOW_DISK_CACHE_FILES", 10)
+        monkeypatch.setattr(workflow_cache, "_MAX_WORKFLOW_DISK_CACHE_BYTES", 10)
+
+        for index in range(3):
+            path = cache_dir / f"context-v1-{index}.json"
+            path.write_text("12345", encoding="utf-8")
+            time.sleep(0.01)
+
+        workflow_cache._prune_workflow_disk_cache()
+        remaining = sorted(path.name for path in cache_dir.glob("*.json"))
+
+        assert remaining == ["context-v1-1.json", "context-v1-2.json"]
+
 
 class TestSuggestValidationCommands:
     def test_python_validation(self, temp_project):
@@ -77,6 +96,19 @@ class TestSuggestValidationCommands:
 
 
 class TestRunAgentLoopStep:
+    def test_validation_allowlist_includes_format_and_typecheck_commands(self):
+        allowed = [
+            "ruff format --check .",
+            "npm run typecheck",
+            "pnpm lint",
+            "cargo fmt --check",
+            "go vet ./...",
+            "deno check main.ts",
+        ]
+
+        for command in allowed:
+            assert wf_agent_loop._validation_command_error(command) is None
+
     async def test_agent_loop_step_patch_and_validate(self, temp_project, monkeypatch):
         monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
         mcp_server.set_config(project_dir=temp_project, auto_approve=True)

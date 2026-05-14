@@ -84,6 +84,7 @@ async def test_orchestrator_handles_partial_failure():
     class FailingAgent(ResearchAgent):
         async def execute(self, task: str, context: dict):
             from claude_bridge.agents.result import AgentResult
+
             return AgentResult.failure(error="Simulated failure", agent_name=self.name)
 
     agents = [FailingAgent()]

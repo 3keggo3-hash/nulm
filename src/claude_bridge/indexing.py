@@ -32,6 +32,7 @@ _BINARY_SNIFF_BYTES = 512
 _DISK_CACHE_VERSION = 1
 _MAX_DISK_CACHE_FILES = 32
 _MAX_DISK_CACHE_AGE_SECONDS = 7 * 24 * 60 * 60
+_MAX_DISK_CACHE_BYTES = 50 * 1024 * 1024
 _SKIP_DIRS = {
     ".git",
     ".hg",
@@ -764,13 +765,35 @@ def _prune_disk_cache(cache_dir: Path) -> None:
                 path.unlink()
             except OSError:
                 pass
-    if len(entries) <= _MAX_DISK_CACHE_FILES:
-        return
+    entries = [path for path in entries if path.exists()]
     for path in entries[_MAX_DISK_CACHE_FILES:]:
         try:
             path.unlink()
         except OSError:
             pass
+    _prune_disk_cache_size([path for path in entries[:_MAX_DISK_CACHE_FILES] if path.exists()])
+
+
+def _prune_disk_cache_size(entries: list[Path]) -> None:
+    total_size = 0
+    sized_entries: list[tuple[Path, int]] = []
+    for path in entries:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        total_size += size
+        sized_entries.append((path, size))
+    if total_size <= _MAX_DISK_CACHE_BYTES:
+        return
+    for path, size in reversed(sized_entries):
+        try:
+            path.unlink()
+        except OSError:
+            continue
+        total_size -= size
+        if total_size <= _MAX_DISK_CACHE_BYTES:
+            return
 
 
 def _token_metadata_for_index_entry(

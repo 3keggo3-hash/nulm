@@ -166,9 +166,7 @@ class TestBudgetAwareReadLimits:
             path.write_text("x\n")
             paths.append(path.name)
 
-        result = parse_payload(
-            await mcp_server.read_multiple_files(paths, budget_tokens=2000)
-        )
+        result = parse_payload(await mcp_server.read_multiple_files(paths, budget_tokens=2000))
 
         assert result["ok"] is False
         assert result["code"] == "too_many_paths"

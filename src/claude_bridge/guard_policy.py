@@ -153,10 +153,7 @@ def custom_secret_pattern_matches(content: str) -> list[str]:
     matches: list[str] = []
     compiled = _get_compiled_secret_patterns()
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        futures = {
-            executor.submit(compiled[name].search, content): name
-            for name in compiled
-        }
+        futures = {executor.submit(compiled[name].search, content): name for name in compiled}
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
             try:
@@ -598,9 +595,7 @@ _COMPILED_SECRET_LOCK = threading.Lock()
 def _get_compiled_secret_patterns() -> dict[str, re.Pattern]:
     with _COMPILED_SECRET_LOCK:
         patterns = load_guard_policy()["secret_patterns"]
-        stale = [
-            name for name in _COMPILED_SECRET_PATTERNS if name not in patterns
-        ]
+        stale = [name for name in _COMPILED_SECRET_PATTERNS if name not in patterns]
         for name in stale:
             del _COMPILED_SECRET_PATTERNS[name]
         for name, pattern in patterns.items():

@@ -217,6 +217,16 @@ async def write_file(
             code="not_a_file",
             details={"path": path},
         )
+    try:
+        if target.is_symlink():
+            return json_response(
+                False,
+                f"Refusing to write through symlink: {path}",
+                code="symlink_blocked",
+                details={"path": path},
+            )
+    except OSError:
+        pass
     if target.exists() and not overwrite:
         return json_response(
             False,

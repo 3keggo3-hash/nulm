@@ -8,6 +8,11 @@ Quick pre-release verification before sharing publicly.
   tool server.
 - README clearly separates current implemented runtime features from planned Agent Quality Layer
   features.
+- README is MCP-client-agnostic by default, with Claude Desktop, generic stdio, and VS Code framed
+  as target examples rather than the whole product.
+- Public docs describe Claude Bridge as a local-first control plane direction only where accurate;
+  they describe the localhost-only dashboard as local state inspection/intervention, not hosted
+  monitoring or a remote service.
 - `docs/product-vision.md`, `docs/roadmap.md`, and `docs/agent-quality-layer-plan.md` agree on the
   public direction.
 - No active public doc presents the old AI-security-layer pivot as the final product.
@@ -33,11 +38,12 @@ Quick pre-release verification before sharing publicly.
 ## Installation Experience
 
 - README covers installation in under 2 minutes.
-- `claude-bridge install ...` flow is visible in README.
-- If publishing to PyPI, `pipx install claude-bridge-mcp` flow is documented while the installed
-  CLI remains `claude-bridge`.
-- Source releases clearly note future install plans.
-- Source install flow is clear.
+- `pipx install claude-bridge-mcp` is the primary public install path.
+- `claude-bridge init`, `claude-bridge doctor`, and `claude-bridge install ...` flow is visible in
+  README.
+- The installed CLI is consistently documented as `claude-bridge`.
+- Editable source install is kept under Development, not the user-facing quick start.
+- Source install flow is clear for contributors.
 - Example config is copy-pasteable and understandable.
 
 ## Value Proposition
@@ -46,6 +52,8 @@ Quick pre-release verification before sharing publicly.
 - Differentiation from similar tools is stated.
 - Distinguishing features like multi-root workspace switching are visible.
 - Workflow tools and structured JSON outputs are visible.
+- Feature evaluation principle is visible: keep, rework, hide, or remove; no feature should remain
+  just for show.
 
 ## Pre-Release Final Check
 
@@ -53,6 +61,8 @@ Quick pre-release verification before sharing publicly.
 - `python -m build` and `twine check dist/*` pass before PyPI.
 - README behavior matches actual behavior.
 - Agent Quality Layer claims match implemented behavior, or are explicitly marked planned.
+- Feature lists do not overstate experimental, hidden, optional, or planned capabilities.
+- Control-plane docs match implemented CLI, MCP, and localhost-dashboard behavior.
 - Example chat flows match current behavior in `docs/agent-quality-chat-flows.md`.
 - Agent Quality provider/parser claims mention fail-safe parsing and telemetry, not automatic
   provider execution.

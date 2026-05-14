@@ -25,6 +25,7 @@ class SkillMeta:
     source: str = "local"
     homepage: str = ""
     risk_level: str = "low"
+    dependencies: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -39,6 +40,7 @@ class SkillMeta:
             "source": self.source,
             "homepage": self.homepage,
             "risk_level": self.risk_level,
+            "dependencies": list(self.dependencies),
         }
 
     @classmethod
@@ -55,6 +57,7 @@ class SkillMeta:
             source=str(data.get("source", "local")),
             homepage=str(data.get("homepage", "")),
             risk_level=str(data.get("risk_level", "low")),
+            dependencies=list(data.get("dependencies", [])),
         )
 
 
@@ -133,6 +136,11 @@ SKILL_JSON_SCHEMA = {
             "enum": ["low", "medium", "high"],
             "default": "low",
         },
+        "dependencies": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Other skills this skill depends on",
+        },
     },
 }
 
@@ -170,6 +178,9 @@ def validate_skill_json(data: dict[str, Any]) -> tuple[bool, list[str]]:
         errors.append("Validation error: tags must be a string array")
     if "auto_load" in data and not isinstance(data["auto_load"], bool):
         errors.append("Validation error: auto_load must be a boolean")
+    dependencies = data.get("dependencies", [])
+    if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
+        errors.append("Validation error: dependencies must be a string array")
     for key in ("description", "source", "homepage"):
         if key in data and not isinstance(data[key], str):
             errors.append(f"Validation error: {key} must be a string")
@@ -215,6 +226,7 @@ def create_skill_json(
     source: str = "local",
     homepage: str = "",
     risk_level: str = "low",
+    dependencies: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a skill JSON dictionary."""
     return {
@@ -229,6 +241,7 @@ def create_skill_json(
         "source": source,
         "homepage": homepage,
         "risk_level": risk_level,
+        "dependencies": dependencies or [],
     }
 
 
@@ -253,3 +266,25 @@ def save_skill_json(path: Path, data: dict[str, Any]) -> tuple[bool, list[str]]:
 def get_current_timestamp() -> str:
     """Return current UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def parse_version(version: str) -> tuple[int, int]:
+    """Parse semantic version string into (major, minor) tuple."""
+    try:
+        parts = version.split(".")
+        return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        return 0, 0
+
+
+def versions_compatible(requested: str, available: str) -> bool:
+    """Check if available version satisfies the requested version constraint.
+
+    Uses semantic versioning with minor version compatibility.
+    """
+    req_major, req_minor = parse_version(requested)
+    avail_major, avail_minor = parse_version(available)
+
+    if req_major != avail_major:
+        return req_major > avail_major
+    return avail_minor >= req_minor

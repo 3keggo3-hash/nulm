@@ -80,6 +80,16 @@ async def move_file(
             code="source_not_found",
             details={"source": source},
         )
+    try:
+        if source_path.is_symlink():
+            return json_response(
+                False,
+                "Refusing to move symlink directly",
+                code="symlink_blocked",
+                details={"source": source},
+            )
+    except OSError:
+        pass
     if source_path == destination_path:
         return json_response(
             False,
@@ -321,6 +331,16 @@ async def copy_path(
             code="source_not_found",
             details={"source": source},
         )
+    try:
+        if source_path.is_symlink():
+            return json_response(
+                False,
+                "Refusing to copy symlink directly",
+                code="symlink_blocked",
+                details={"source": source},
+            )
+    except OSError:
+        pass
     if source_path == destination_path:
         return json_response(
             False,

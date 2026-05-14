@@ -72,6 +72,22 @@ class TestIndexingCache:
         remaining = sorted(path.name for path in cache_dir.glob("index-*.json"))
         assert len(remaining) == 2
 
+    def test_prune_disk_cache_limits_total_size(self, temp_project, monkeypatch):
+        cache_dir = temp_project / ".cache"
+        cache_dir.mkdir()
+        monkeypatch.setattr(indexing_module, "_MAX_DISK_CACHE_FILES", 10)
+        monkeypatch.setattr(indexing_module, "_MAX_DISK_CACHE_BYTES", 10)
+
+        for index in range(3):
+            path = cache_dir / f"index-{index}.json"
+            path.write_text("12345", encoding="utf-8")
+            time.sleep(0.01)
+
+        indexing_module._prune_disk_cache(cache_dir)
+        remaining = sorted(path.name for path in cache_dir.glob("index-*.json"))
+
+        assert remaining == ["index-1.json", "index-2.json"]
+
     def test_get_cached_index_returns_defensive_copy(self):
         indexing_module.clear_index_cache()
         indexing_module.set_cached_index(
