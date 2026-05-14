@@ -1522,20 +1522,28 @@ def register_meta_tools(
             include_meta: bool = True,
         ) -> str:
             started_at = time.perf_counter()
-            reflective_tools = [
-                "reflect_on_recent_work",
-                "meta_review",
-                "self_critique",
-                "review_result_quality",
-                "plan_quality_review",
-            ] if include_reflective else []
-            meta_tools = [
-                "advise_next_step",
-                "improve_request",
-                "suggest_bridge_config",
-                "bridge_status",
-                "tools_overview",
-            ] if include_meta else []
+            reflective_tools = (
+                [
+                    "reflect_on_recent_work",
+                    "meta_review",
+                    "self_critique",
+                    "review_result_quality",
+                    "plan_quality_review",
+                ]
+                if include_reflective
+                else []
+            )
+            meta_tools = (
+                [
+                    "advise_next_step",
+                    "improve_request",
+                    "suggest_bridge_config",
+                    "bridge_status",
+                    "tools_overview",
+                ]
+                if include_meta
+                else []
+            )
             result = json_response(
                 True,
                 "Agent introspection complete",

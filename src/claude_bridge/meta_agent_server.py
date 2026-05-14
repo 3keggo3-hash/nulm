@@ -15,9 +15,7 @@ _MAX_REFLECT_RECURSION_DEPTH = 3
 _MAX_META_REVIEW_ITEMS = 20
 
 
-def _build_reflection_summary(
-    records: list[dict[str, Any]], depth: int
-) -> dict[str, Any]:
+def _build_reflection_summary(records: list[dict[str, Any]], depth: int) -> dict[str, Any]:
     if depth >= _MAX_REFLECT_RECURSION_DEPTH:
         return {
             "truncated": True,
@@ -61,6 +59,7 @@ def register_meta_agent_tools(
     create_checkpoint_impl: Callable[..., dict[str, Any]],
     restore_checkpoint_impl: Callable[..., dict[str, Any]],
     list_checkpoints_impl: Callable[..., dict[str, Any]],
+    get_recent_tool_calls_impl: Callable[..., dict[str, Any]] | None = None,
     enabled_names: set[str] | None = None,
 ) -> dict[str, Any]:
     _enabled = enabled_names
@@ -381,7 +380,11 @@ def register_meta_agent_tools(
             started_at = time.perf_counter()
             safe_limit = max(1, min(limit, 100))
             safe_depth = max(0, min(depth, _MAX_REFLECT_RECURSION_DEPTH))
-            records = get_recent_tool_calls_impl(limit=safe_limit) if get_recent_tool_calls_impl else {"records": []}
+            records = (
+                get_recent_tool_calls_impl(limit=safe_limit)
+                if get_recent_tool_calls_impl
+                else {"records": []}
+            )
             raw_records = records.get("records", [])
             summary = _build_reflection_summary(raw_records, safe_depth)
             suggestions: list[str] = []
@@ -389,7 +392,9 @@ def register_meta_agent_tools(
                 suggestions.append("High error rate detected; review failed tool calls for pattern")
             if summary.get("unique_tools", 0) < 3:
                 suggestions.append("Limited tool diversity; consider exploring more capabilities")
-            top_tool = max(summary.get("tool_counts", {}).items(), key=lambda x: x[1], default=(None, 0))
+            top_tool = max(
+                summary.get("tool_counts", {}).items(), key=lambda x: x[1], default=(None, 0)
+            )
             if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.5:
                 suggestions.append(f"Heavy reliance on {top_tool[0]}; investigate alternatives")
             result = json_response(
@@ -429,10 +434,14 @@ def register_meta_agent_tools(
                     "Invalid JSON for results",
                     details={"error": str(exc)},
                 )
-                return audit_tool_call("meta_review", {"results_json": "<invalid>"}, result, started_at=started_at)
+                return audit_tool_call(
+                    "meta_review", {"results_json": "<invalid>"}, result, started_at=started_at
+                )
             if not isinstance(tool_results, list):
                 result = json_response(False, "results_json must be a JSON array", details={})
-                return audit_tool_call("meta_review", {"results_json": "<invalid>"}, result, started_at=started_at)
+                return audit_tool_call(
+                    "meta_review", {"results_json": "<invalid>"}, result, started_at=started_at
+                )
             limited = tool_results[:_MAX_META_REVIEW_ITEMS]
             if len(tool_results) > _MAX_META_REVIEW_ITEMS:
                 limited = tool_results[:_MAX_META_REVIEW_ITEMS]
@@ -457,7 +466,9 @@ def register_meta_agent_tools(
                     "truncated": len(tool_results) > _MAX_META_REVIEW_ITEMS,
                 },
             )
-            return audit_tool_call("meta_review", {"results_count": len(tool_results)}, result, started_at=started_at)
+            return audit_tool_call(
+                "meta_review", {"results_count": len(tool_results)}, result, started_at=started_at
+            )
 
         results["meta_review"] = meta_review
 
