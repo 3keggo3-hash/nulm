@@ -23,7 +23,7 @@ RULES:
 - Document your decisions in comments
 - After completing your task, mark your claims as complete in agent_claims.json
 
-OUTPUT: When done, write a brief summary of what you changed and why."""
+OUTPUT: When done, write a brief summary of what you changed and why.""",
     },
     {
         "id": 2,
@@ -44,7 +44,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-02-shell-security: {summary}
 - Do NOT weaken existing security measures
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 3,
@@ -65,7 +65,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-03-audit-system: {summary}
 - Ensure audit logs remain machine-parseable
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 4,
@@ -86,7 +86,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-04-indexing: {summary}
 - Performance matters for indexing operations
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 5,
@@ -107,7 +107,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-05-workflow-engine: {summary}
 - Consider idempotency in all operations
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 6,
@@ -128,7 +128,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-06-skill-registry: {summary}
 - Keep skill schema backward compatible
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 7,
@@ -149,7 +149,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-07-file-ops: {summary}
 - Never leave files in corrupted state
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 8,
@@ -170,7 +170,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-08-testing: {summary}
 - Do not break existing tests
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 9,
@@ -191,7 +191,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-09-documentation: {summary}
 - Use clear, concise language
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 10,
@@ -212,7 +212,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-10-performance: {summary}
 - Don't sacrifice correctness for speed
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 11,
@@ -233,7 +233,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-11-git: {summary}
 - Never lose user work with destructive git ops
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 12,
@@ -254,7 +254,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-12-guard-policy: {summary}
 - Policy changes should be backward compatible
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 13,
@@ -275,7 +275,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-13-anomaly: {summary}
 - Detection should be deterministic
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 14,
@@ -296,7 +296,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-14-replay: {summary}
 - Determinism is the key goal
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 15,
@@ -317,7 +317,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-15-control-plane: {summary}
 - Local-first, no remote required
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 16,
@@ -338,7 +338,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-16-intent: {summary}
 - Graceful degradation on unknown intents
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 17,
@@ -359,7 +359,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-17-planning: {summary}
 - Plans should have clear success criteria
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 18,
@@ -380,7 +380,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-18-self-critique: {summary}
 - Be honest but actionable in critique
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 19,
@@ -401,7 +401,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-19-explorer: {summary}
 - Cover edge cases without infinite loops
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 20,
@@ -422,7 +422,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-20-lifecycle: {summary}
 - Proper resource cleanup on shutdown
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 21,
@@ -443,7 +443,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-21-prompt: {summary}
 - Token efficiency matters
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 22,
@@ -464,7 +464,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-22-tool-reg: {summary}
 - Backward compatibility in tool API
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 23,
@@ -485,7 +485,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-23-smart-tools: {summary}
 - Intelligence should be measurable
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 24,
@@ -506,7 +506,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-24-shell-analysis: {summary}
 - Parse errors should be informative
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 25,
@@ -527,7 +527,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-25-redaction: {summary}
 - No false negatives on sensitive data
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 26,
@@ -548,7 +548,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-26-cli: {summary}
 - Follow Unix CLI conventions
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 27,
@@ -569,7 +569,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-27-errors: {summary}
 - Never expose internal details in errors
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 28,
@@ -590,7 +590,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-28-onboarding: {summary}
 - Guide users to quick wins
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 29,
@@ -611,7 +611,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-29-dashboard: {summary}
 - Mobile-friendly if possible
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 30,
@@ -632,7 +632,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-30-observability: {summary}
 - Key metrics should be actionable
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 31,
@@ -653,7 +653,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-31-memory: {summary}
 - No memory leaks
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 32,
@@ -674,7 +674,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-32-caching: {summary}
 - Cache misses should be handled
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 33,
@@ -695,7 +695,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-33-resilience: {summary}
 - Fail gracefully, recover cleanly
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 34,
@@ -716,7 +716,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-34-api: {summary}
 - Backward compatibility is key
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 35,
@@ -737,7 +737,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-35-config: {summary}
 - Fail fast on invalid config
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 36,
@@ -758,7 +758,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-36-meta: {summary}
 - Avoid infinite recursion
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 37,
@@ -779,7 +779,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-37-detective: {summary}
 - Minimize false positives
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 38,
@@ -800,7 +800,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-38-benchmarking: {summary}
 - Measure real-world scenarios
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 39,
@@ -821,7 +821,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-39-snapshot: {summary}
 - Fast snapshot creation
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 40,
@@ -842,7 +842,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-40-trust: {summary}
 - Trust scores should be explainable
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 41,
@@ -863,7 +863,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-41-relevance: {summary}
 - Ranking should be deterministic
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 42,
@@ -884,7 +884,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-42-policy: {summary}
 - Rule changes should be auditable
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 43,
@@ -905,7 +905,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-43-feedback: {summary}
 - Minimize feedback fatigue
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 44,
@@ -926,7 +926,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-44-update: {summary}
 - Never brick on update failure
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 45,
@@ -947,7 +947,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-45-dist-cache: {summary}
 - Handle network partitions gracefully
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 46,
@@ -968,7 +968,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-46-multi-format: {summary}
 - Handle malformed input gracefully
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 47,
@@ -989,7 +989,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-47-url-tools: {summary}
 - Prevent SSRF attacks
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 48,
@@ -1010,7 +1010,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-48-team-policy: {summary}
 - Principle of least privilege
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 49,
@@ -1031,7 +1031,7 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-49-permissions: {summary}
 - Fail-closed by default
-- After work, update agent_claims.json status"""
+- After work, update agent_claims.json status""",
     },
     {
         "id": 50,
@@ -1052,9 +1052,10 @@ RULES:
 - If conflict, discuss via agent_discussion.json
 - Commit format: agent-50-security: {summary}
 - Document security assumptions
-- After work, update agent_claims.json status"""
-    }
+- After work, update agent_claims.json status""",
+    },
 ]
+
 
 def get_agent_prompt(agent_id: int) -> str:
     """Get prompt for a specific agent by ID."""
@@ -1062,6 +1063,7 @@ def get_agent_prompt(agent_id: int) -> str:
         if agent["id"] == agent_id:
             return agent["prompt"]
     raise ValueError(f"Agent {agent_id} not found")
+
 
 def get_all_prompts() -> dict:
     """Get all agent prompts organized by ID."""
