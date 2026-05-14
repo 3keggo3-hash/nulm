@@ -23,6 +23,15 @@ _FIELD_REASON_MAP: dict[str, str] = {
     "imports": "import_match",
     "content": "content_match",
 }
+_SUBTOKEN_INDEX: dict[str, set[str]] = {}
+_SUBTOKEN_INDEX_LOCK = threading.Lock()
+_MIN_SUBTOKEN_LEN = 3
+
+
+def clear_relevance_cache() -> None:
+    """Clear in-memory relevance ranking cache."""
+    with _RELEVANCE_CACHE_LOCK:
+        _RELEVANCE_CACHE.clear()
 
 
 def query_terms(query: str) -> list[str]:
@@ -159,6 +168,25 @@ def rank_indexed_files(
             if term in content_tokens:
                 content_term_hits += 1
                 content_matched_terms.add(term)
+            if len(term) >= _MIN_SUBTOKEN_LEN:
+                for i in range(len(term) - _MIN_SUBTOKEN_LEN + 1):
+                    for length in range(_MIN_SUBTOKEN_LEN, len(term) - i + 1):
+                        subtoken = term[i : i + length]
+                        for field, haystack in haystacks.items():
+                            if subtoken in haystack.lower():
+                                term_score += 1
+                                phase_one_fields.add(field)
+                        for token_set, field in [
+                            (function_tokens, "functions"),
+                            (class_tokens, "classes"),
+                            (import_tokens, "imports"),
+                        ]:
+                            if subtoken in {t.lower() for t in token_set}:
+                                term_score += 1
+                                phase_one_fields.add(field)
+                        if subtoken in content_tokens:
+                            content_term_hits += 1
+                            content_matched_terms.add(subtoken)
             if term_score:
                 if parser_backend == "tree_sitter":
                     term_score += 2
@@ -242,17 +270,41 @@ def rank_indexed_files(
     return payload
 
 
+def _subtoken_index_key(term: str) -> str:
+    return term.lower()
+
+
+def _build_subtoken_index(terms: list[str]) -> dict[str, list[str]]:
+    subtoken_map: dict[str, list[str]] = {}
+    for term in terms:
+        key = _subtoken_index_key(term)
+        subtoken_map[key] = []
+        if len(term) >= _MIN_SUBTOKEN_LEN:
+            for i in range(len(term) - _MIN_SUBTOKEN_LEN + 1):
+                for length in range(_MIN_SUBTOKEN_LEN, len(term) - i + 1):
+                    subtoken = term[i : i + length]
+                    if len(subtoken) >= _MIN_SUBTOKEN_LEN:
+                        subtoken_map[key].append(subtoken)
+    return subtoken_map
+
+
 def _candidate_files(index_payload: dict[str, Any], terms: list[str]) -> list[dict[str, Any]]:
     term_index = index_payload.get("_term_file_index")
     files = index_payload.get("files", [])
     if not isinstance(term_index, dict):
         return list(files)
 
+    subtoken_map = _build_subtoken_index(terms)
     paths: set[str] = set()
     for term in terms:
         raw_paths = term_index.get(term, [])
         if isinstance(raw_paths, list):
             paths.update(str(path) for path in raw_paths)
+    for term_key, subtokens in subtoken_map.items():
+        for subtoken in subtokens:
+            raw_paths = term_index.get(subtoken, [])
+            if isinstance(raw_paths, list):
+                paths.update(str(path) for path in raw_paths)
     for item in files:
         haystack = " ".join(
             [
@@ -262,8 +314,26 @@ def _candidate_files(index_payload: dict[str, Any], terms: list[str]) -> list[di
                 " ".join(str(name).lower() for name in item.get("imports", [])),
             ]
         )
+        haystack_lower = haystack.lower()
         if any(term in haystack for term in terms):
             paths.add(str(item.get("path")))
+        else:
+            term_matched = False
+            for term in terms:
+                key = _subtoken_index_key(term)
+                if key in subtoken_map or len(term) >= _MIN_SUBTOKEN_LEN:
+                    term_parts = set()
+                    for i in range(len(term) - _MIN_SUBTOKEN_LEN + 1):
+                        for length in range(_MIN_SUBTOKEN_LEN, len(term) - i + 1):
+                            term_parts.add(term[i : i + length])
+                    for part in term_parts:
+                        if part in haystack_lower:
+                            term_matched = True
+                            break
+                    if term_matched:
+                        break
+            if term_matched:
+                paths.add(str(item.get("path")))
     if not paths:
         return list(files)
 
