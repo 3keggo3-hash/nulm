@@ -60,7 +60,9 @@
           "file": "src/claude_bridge/workflow_engine.py",
           "issue": "Turkish comment in docstring",
           "action": "Fixed to English"
-"agent-39-snapshot": {
+        }
+      },
+      "agent-39-snapshot": {
       "task": "snapshot efficiency and incremental snapshots",
       "branch": "feature/agent-crew",
       "files_modified": [
