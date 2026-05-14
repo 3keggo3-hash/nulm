@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -56,11 +57,6 @@ def current_session_id() -> str:
 
 
 def log_session_start(session_id: str, agent_id: str | None = None) -> int | None:
-    import json
-    import time
-    import uuid
-    from hashlib import sha256
-
     record: dict[str, Any] = {
         "record_id": uuid.uuid4().hex,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -88,11 +84,6 @@ def log_session_start(session_id: str, agent_id: str | None = None) -> int | Non
 
 
 def log_session_end(session_id: str, reason: str = "normal") -> int | None:
-    import json
-    import time
-    import uuid
-    from hashlib import sha256
-
     record: dict[str, Any] = {
         "record_id": uuid.uuid4().hex,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -270,8 +261,6 @@ def log_policy_change(
     Returns:
         The file offset where the record was written, or None on error.
     """
-    from hashlib import sha256
-
     from claude_bridge._audit_redaction import _redact_sensitive_values, _summarize_value
     from claude_bridge._audit_index import append_audit_index_record
 
