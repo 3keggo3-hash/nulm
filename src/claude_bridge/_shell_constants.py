@@ -21,6 +21,8 @@ _INTERACTIVE_COMMANDS = {
     "nano",
 }
 _DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore", "revert"}
+_COMPOUND_CONTROL_COMMANDS = frozenset({"&&", "||", ";"})
+_DANGEROUS_GLOB_COMMANDS = {"rm", "rmdir", "mkdir", "mv", "cp", "find"}
 _FORK_BOMB_RE = re.compile(
     r""":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"""
     r"""|(\w+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""
@@ -166,3 +168,5 @@ _PIPE_TARGET_REGEX = re.compile(
     rf"(?:[|;]|&&)\s*(?:\S*/)?({'|'.join(sorted(_BLOCKED_PIPE_TARGETS))})\b",
     re.IGNORECASE,
 )
+_COMPOUND_OPERATOR_REGEX = re.compile(r"\s*(?:&&|\|\|)\s*")
+_UNQUOTED_GLOB_CHARS = frozenset({"*", "?", "["})

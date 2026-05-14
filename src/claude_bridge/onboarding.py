@@ -28,6 +28,7 @@ def _tips_for_call(call_number: int) -> dict[str, Any]:
         return {
             "title": "Start With Structure",
             "message": "Use list_directory or workspace_status first when you need to orient yourself before reading files.",
+            "quick_command": "claude-bridge doctor --project-dir .",
             "suggested_tools": ["list_directory", "workspace_status"],
         }
     if call_number <= 3:
@@ -39,6 +40,7 @@ def _tips_for_call(call_number: int) -> dict[str, Any]:
     return {
         "title": "Edit In Small Steps",
         "message": "Preview risky edits, prefer patch_file for existing files, and run validation commands before concluding the task is done.",
+        "quick_command": "ruff check . && black --check .",
         "suggested_tools": ["preview_patch", "patch_file", "suggest_validation_commands"],
     }
 

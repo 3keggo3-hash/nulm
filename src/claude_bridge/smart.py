@@ -1,8 +1,10 @@
-"""Smart utilities: token counting, encoding detection."""
+"""Smart utilities: token counting, encoding detection, tool intelligence."""
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -48,6 +50,105 @@ _MODE_HINTS = {
     "benchmark": {"benchmark", "latency", "startup", "profiling"},
     "fix": {"fix", "bug", "patch", "resolve"},
 }
+
+
+@dataclass
+class ToolMetrics:
+    token_efficiency_score: float
+    context_savings_percent: float
+    intelligence_confidence: float
+    recommendation_reason: str
+
+
+@lru_cache(maxsize=128)
+def _cached_tokenEstimate(text_hash: int, text_len: int, model: str) -> int:
+    return max(1, (text_len + 3) // 4)
+
+
+def estimate_context_savings(
+    original_tokens: int, compact_tokens: int, overhead_tokens: int
+) -> dict[str, Any]:
+    if original_tokens <= 0:
+        return {"error": "original_tokens must be positive"}
+    total_savings = original_tokens - compact_tokens - overhead_tokens
+    savings_percent = (total_savings / original_tokens) * 100
+    return {
+        "original_tokens": original_tokens,
+        "compact_tokens": compact_tokens,
+        "overhead_tokens": overhead_tokens,
+        "total_savings_tokens": max(0, total_savings),
+        "savings_percent": round(max(0, savings_percent), 1),
+        "efficiency_score": round(max(0, min(100, savings_percent)) / 100, 3),
+    }
+
+
+def get_tool_recommendation(
+    query: str,
+    available_tools: list[str],
+    context_budget: int = DEFAULT_CONTEXT_BUDGET_TOKENS,
+) -> dict[str, Any]:
+    query_lower = query.lower()
+    recommended: list[dict[str, Any]] = []
+    scores: dict[str, float] = {tool: 0.0 for tool in available_tools}
+
+    query_hints: dict[str, float] = {
+        "count_file_tokens": 0.0,
+        "context_fit": 0.0,
+        "smart_status": 0.0,
+        "batch_token_estimate": 0.0,
+        "compact_intent": 0.0,
+        "budget_metadata": 0.0,
+    }
+
+    file_mention = bool(_PATH_TOKEN_RE.search(query))
+    if file_mention:
+        query_hints["count_file_tokens"] += 0.8
+        query_hints["batch_token_estimate"] += 0.6
+
+    context_keywords = {"fit", "context", "limit", "token", "budget", "window", "overflow"}
+    if any(kw in query_lower for kw in context_keywords):
+        query_hints["context_fit"] += 0.9
+        query_hints["budget_metadata"] += 0.5
+
+    smart_keywords = {"available", "status", "feature", "smart", "tiktoken"}
+    if any(kw in query_lower for kw in smart_keywords):
+        query_hints["smart_status"] += 0.95
+
+    compact_keywords = {"compact", "summary", "intent", "analyze", "understand", "query"}
+    if any(kw in query_lower for kw in compact_keywords):
+        query_hints["compact_intent"] += 0.85
+
+    batch_keywords = {"batch", "multiple", "files", "estimate", "total"}
+    if any(kw in query_lower for kw in batch_keywords):
+        query_hints["batch_token_estimate"] += 0.7
+
+    for tool, score in query_hints.items():
+        if tool in scores:
+            scores[tool] = score
+
+    sorted_tools = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    for tool, score in sorted_tools:
+        if score > 0:
+            reason_map = {
+                "count_file_tokens": "File path detected - token counting recommended",
+                "batch_token_estimate": "Multiple files or batch operation suggested",
+                "context_fit": "Context limit check needed",
+                "smart_status": "Feature availability query detected",
+                "compact_intent": "Intent analysis or query understanding requested",
+                "budget_metadata": "Budget planning requested",
+            }
+            recommended.append(
+                {"tool": tool, "score": round(score, 2), "reason": reason_map.get(tool, "")}
+            )
+
+    return {
+        "query": query,
+        "context_budget": context_budget,
+        "recommendations": recommended,
+        "primary_tool": recommended[0]["tool"] if recommended else None,
+    }
+
+
 try:
     from charset_normalizer import (  # type: ignore[import-not-found]
         from_bytes as _imported_detect_encoding_bytes,
@@ -251,6 +352,23 @@ def compact_intent(
     compact_tokens = estimate_token_count(compact_prompt)
 
     is_vague, vague_intent = detect_undecided(normalized)
+    confidence = vague_intent.confidence if is_vague else 1.0 - (len(keywords) / 20)
+
+    context_savings = estimate_context_savings(
+        original_tokens, compact_summary_tokens, compact_tokens - compact_summary_tokens
+    )
+    token_efficiency = context_savings.get("efficiency_score", 0.0)
+
+    intelligence_metrics = ToolMetrics(
+        token_efficiency_score=token_efficiency,
+        context_savings_percent=context_savings.get("savings_percent", 0.0),
+        intelligence_confidence=round(max(0.0, min(1.0, confidence)), 3),
+        recommendation_reason=(
+            f"compact_intent reduces tokens by {context_savings.get('savings_percent', 0):.0f}%"
+            if token_efficiency > 0.1
+            else "minimal compression benefit detected"
+        ),
+    )
 
     result: dict[str, Any] = {
         "original_text": normalized,
@@ -263,6 +381,12 @@ def compact_intent(
         "estimated_token_delta": compact_summary_tokens - original_tokens,
         "estimated_prompt_overhead_tokens": compact_tokens - compact_summary_tokens,
         "is_vague": is_vague,
+        "intelligence_metrics": {
+            "token_efficiency_score": intelligence_metrics.token_efficiency_score,
+            "context_savings_percent": intelligence_metrics.context_savings_percent,
+            "intelligence_confidence": intelligence_metrics.intelligence_confidence,
+            "recommendation_reason": intelligence_metrics.recommendation_reason,
+        },
         "recommended_usage": (
             "Use the canonical intent object for internal routing and keep the original text only when nuance is needed."
         ),

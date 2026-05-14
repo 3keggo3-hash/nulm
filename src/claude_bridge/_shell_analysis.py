@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from typing import Any
 
 from claude_bridge._shell_constants import (
+    _COMPOUND_CONTROL_COMMANDS,
+    _COMPOUND_OPERATOR_REGEX,
+    _DANGEROUS_GLOB_COMMANDS,
     _DESTRUCTIVE_GIT_SUBCOMMANDS,
     _INTERACTIVE_COMMANDS,
     _LONG_RUNNING_COMMANDS,
     _MAX_SHELL_OUTPUT_CHARS,
+    _UNQUOTED_GLOB_CHARS,
 )
 from claude_bridge._shell_safety import (
     _command_basename,
@@ -124,6 +129,68 @@ def _policy_risk_from_shell_risk(risk_level: str) -> RiskLevel:
     return RiskLevel.CRITICAL
 
 
+def _parse_error_details(command: str, exc: ValueError) -> dict[str, Any]:
+    """Extract useful context from a shlex parse error."""
+    error_msg = str(exc)
+    details: dict[str, Any] = {"error": error_msg}
+    match = re.search(r"position (\d+)", error_msg)
+    if match:
+        pos = int(match.group(1))
+        details["character_position"] = pos
+        if pos < len(command):
+            details["problematic_character"] = repr(command[pos])
+            start = max(0, pos - 10)
+            end = min(len(command), pos + 10)
+            details["context"] = command[start:pos] + "<ERROR>" + command[pos + 1 : end]
+    return details
+
+
+def _extract_git_subcommand(tokens: list[str]) -> tuple[int, str, list[str]]:
+    """Extract git subcommand and return (start_index, subcommand, rest_tokens)."""
+    lower_tokens = [t.lower() for t in tokens]
+    sub_start = 1
+    while sub_start < len(lower_tokens):
+        t = lower_tokens[sub_start]
+        if t in {"-c", "-C"} and sub_start + 1 < len(lower_tokens):
+            sub_start += 2
+            continue
+        if t.startswith("-"):
+            sub_start += 1
+            continue
+        break
+    sub = lower_tokens[sub_start] if sub_start < len(lower_tokens) else ""
+    return sub_start, sub, lower_tokens[sub_start + 1 :]
+
+
+def _analyze_compound_command(tokens: list[str], head: str) -> tuple[bool, list[str]]:
+    """Analyze compound commands for chained risky operations."""
+    if not tokens:
+        return False, []
+    risk_reasons: list[str] = []
+    for i, token in enumerate(tokens):
+        if token in _COMPOUND_CONTROL_COMMANDS:
+            if i > 0 and i < len(tokens) - 1:
+                prev = tokens[i - 1].lower()
+                nxt = tokens[i + 1].lower()
+                if prev in {"rm", "git"} or nxt in {"rm", "git", "chmod", "chown"}:
+                    risk_reasons.append(f"compound command with {token} around risky operation")
+    return bool(risk_reasons), risk_reasons
+
+
+def _analyze_dangerous_glob(command: str, tokens: list[str], head: str) -> tuple[bool, list[str]]:
+    """Detect dangerous glob patterns in risky commands."""
+    if head not in _DANGEROUS_GLOB_COMMANDS:
+        return False, []
+    risk_reasons: list[str] = []
+    for token in tokens[1:]:
+        if any(c in token for c in _UNQUOTED_GLOB_CHARS) and not token.startswith("-"):
+            if _COMPOUND_OPERATOR_REGEX.search(token):
+                continue
+            risk_reasons.append(f"dangerous glob pattern in {head}: {token}")
+            break
+    return bool(risk_reasons), risk_reasons
+
+
 def analyze_shell_command(command: str) -> dict[str, Any]:
     stripped = command.strip()
     if not stripped:
@@ -148,6 +215,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     try:
         tokens = shlex.split(stripped)
     except ValueError as exc:
+        parse_details = _parse_error_details(stripped, exc)
         parse_error_decision = make_policy_decision(
             DecisionAction.DENY,
             DecisionSource.BUILTIN_GUARD,
@@ -162,6 +230,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
             "message": f"Failed to parse shell command: {exc}",
             "details": {
                 "command": command,
+                "parse_error": parse_details,
                 "policy_decision": parse_error_decision.to_dict(),
             },
         }
@@ -233,17 +302,10 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     command_tokens = _tokens_after_env(tokens)
     head = _interactive_target(tokens) or tokens[0].lower()
     lower_tokens = [token.lower() for token in tokens]
-    _git_sub_start = 1
-    while _git_sub_start < len(lower_tokens):
-        _t = lower_tokens[_git_sub_start]
-        if _t in {"-c", "-C"} and _git_sub_start + 1 < len(lower_tokens):
-            _git_sub_start += 2
-            continue
-        if _t.startswith("-"):
-            _git_sub_start += 1
-            continue
-        break
-    _git_sub = lower_tokens[_git_sub_start] if _git_sub_start < len(lower_tokens) else ""
+    git_idx, git_sub, git_rest = _extract_git_subcommand(lower_tokens)
+
+    has_compound, compound_reasons = _analyze_compound_command(lower_tokens, head)
+    has_glob, glob_reasons = _analyze_dangerous_glob(stripped, lower_tokens, head)
 
     if (
         head in {"pytest", "ls", "cat", "echo", "pwd"}
@@ -255,7 +317,7 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     ):
         risk_level = "low"
         risk_reasons = ["read-only or standard validation command"]
-    elif head == "git" and _git_sub in (_DESTRUCTIVE_GIT_SUBCOMMANDS | {"push"}):
+    elif head == "git" and git_sub in (_DESTRUCTIVE_GIT_SUBCOMMANDS | {"push"}):
         risk_level = "high"
         risk_reasons = ["destructive git operation risk"]
     elif head in {"python", "python3", "pip", "pip3", "npm", "pnpm", "yarn", "git"}:
@@ -267,6 +329,13 @@ def analyze_shell_command(command: str) -> dict[str, Any]:
     else:
         risk_level = "medium"
         risk_reasons = ["unclassified command; treat cautiously"]
+
+    if has_compound:
+        risk_level = "high"
+        risk_reasons.extend(compound_reasons)
+    if has_glob:
+        risk_level = "medium" if risk_level == "low" else risk_level
+        risk_reasons.extend(glob_reasons)
 
     risk_score = compute_risk_score(risk_level, risk_reasons)
     risk_category, risk_emoji = risk_score_category(risk_score)
