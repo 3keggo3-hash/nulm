@@ -18,6 +18,9 @@ class TestIntentType:
         assert IntentType.SECURITY_CONCERN.value == "SECURITY_CONCERN"
         assert IntentType.MISSING_FEATURE.value == "MISSING_FEATURE"
         assert IntentType.VAGUE.value == "VAGUE"
+        assert IntentType.REFACTORING_CONCERN.value == "REFACTORING_CONCERN"
+        assert IntentType.TEST_CREATION.value == "TEST_CREATION"
+        assert IntentType.DOCUMENTATION_REQUEST.value == "DOCUMENTATION_REQUEST"
 
 
 class TestDetectUndecided:
@@ -54,6 +57,26 @@ class TestDetectUndecided:
         is_vague, intent = detect_undecided("bir özellik eksik gibi")
         assert intent.intent_type == IntentType.MISSING_FEATURE
         assert intent.confidence >= 0.7
+
+    def test_detect_refactoring_concern(self):
+        is_vague, intent = detect_undecided("bu kodu refactor etmem gerekiyor")
+        assert intent.intent_type == IntentType.REFACTORING_CONCERN
+        assert intent.confidence >= 0.7
+
+    def test_detect_test_creation(self):
+        is_vague, intent = detect_undecided("bu fonksiyon için pytest testi yaz")
+        assert intent.intent_type == IntentType.TEST_CREATION
+        assert intent.confidence >= 0.7
+
+    def test_detect_documentation_request(self):
+        is_vague, intent = detect_undecided("bu kodun dokümantasyonunu yap")
+        assert intent.intent_type == IntentType.DOCUMENTATION_REQUEST
+        assert intent.confidence >= 0.7
+
+    def test_graceful_degradation_unknown_intent(self):
+        is_vague, intent = detect_undecided("simple query")
+        if not is_vague:
+            assert intent.confidence < 0.7 or intent.suggested_actions == []
 
     def test_clear_input_not_vague(self):
         is_vague, intent = detect_undecided(

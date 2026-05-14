@@ -7,14 +7,19 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
-class IntentType(Enum):
-    ERROR_COMPLAINT = "ERROR_COMPLAINT"
-    PERFORMANCE_CONCERN = "PERFORMANCE_CONCERN"
-    SECURITY_CONCERN = "SECURITY_CONCERN"
-    MISSING_FEATURE = "MISSING_FEATURE"
-    VAGUE = "VAGUE"
-
+IntentType = Enum(
+    "IntentType",
+    [
+        ("ERROR_COMPLAINT", "ERROR_COMPLAINT"),
+        ("PERFORMANCE_CONCERN", "PERFORMANCE_CONCERN"),
+        ("SECURITY_CONCERN", "SECURITY_CONCERN"),
+        ("MISSING_FEATURE", "MISSING_FEATURE"),
+        ("REFACTORING_CONCERN", "REFACTORING_CONCERN"),
+        ("TEST_CREATION", "TEST_CREATION"),
+        ("DOCUMENTATION_REQUEST", "DOCUMENTATION_REQUEST"),
+        ("VAGUE", "VAGUE"),
+    ],
+)
 
 INTENT_PATTERNS: dict[str, list[str]] = {
     "error_complaint": [
@@ -28,6 +33,13 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "error",
         "exception",
         "traceback",
+        "segfault",
+        "panik",
+        "kilitlen",
+        "çökme",
+        "not responding",
+        "ölü",
+        "deprecated",
     ],
     "performance_concern": [
         "yavaş",
@@ -38,6 +50,13 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "gecikmeli",
         "timeout",
         "ağır",
+        "gecikm",
+        "fps",
+        "memory leak",
+        "ram",
+        "cpu",
+        "latency",
+        "yavaşlat",
     ],
     "security_concern": [
         "güvenli mi",
@@ -49,6 +68,15 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "salary",
         "password",
         "secret",
+        "api_key",
+        "token",
+        "credential",
+        "exploit",
+        "vulnerability",
+        "cve",
+        "xss",
+        "sql injection",
+        "injection",
     ],
     "missing_feature": [
         "eksik",
@@ -57,6 +85,60 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "bulamadım",
         "找不到",
         "mevcut değil",
+        "destination",
+        "namoed",
+        "bulunamadı",
+        "gerçekleştirilemiyor",
+    ],
+    "refactoring_concern": [
+        "refactor",
+        "yeniden yapılandır",
+        "temizle",
+        "cleanup",
+        "düzenle",
+        "restructure",
+        "code smell",
+        "tech debt",
+        "technical debt",
+        "karışık",
+        "bağımlılık",
+        "coupling",
+        "modular",
+        "extract",
+        "inheritance",
+    ],
+    "test_creation": [
+        "test",
+        "pytest",
+        "unit test",
+        "integration test",
+        "e2e",
+        "coverage",
+        "test coverage",
+        "birim test",
+        "senaryo",
+        "assertion",
+        "mock",
+        "fixture",
+        "spec",
+        "tap",
+    ],
+    "documentation_request": [
+        "dokümantasyon",
+        "docs",
+        "documentation",
+        "readme",
+        "comment",
+        "yorum",
+        "açıklama",
+        "explain",
+        "wiki",
+        "changelog",
+        "version",
+        "nasıl",
+        "how to",
+        "tutorial",
+        "guide",
     ],
     "vague_indicators": [
         "biraz karışık",
@@ -69,6 +151,9 @@ INTENT_PATTERNS: dict[str, list[str]] = {
         "belki",
         "fikrim yok",
         "tahminden",
+        "acaba",
+        "orada bir",
+        "birisine",
     ],
 }
 
@@ -101,38 +186,51 @@ def detect_undecided(user_input: str) -> tuple[bool, VagueIntent]:
                 if pattern not in matched:
                     matched.append(pattern)
 
-    if any(p in normalized for p in INTENT_PATTERNS.get("error_complaint", [])):
-        intent_type = IntentType.ERROR_COMPLAINT
-        confidence = max(confidence, 0.8)
-        suggested_actions = [
-            "Run diagnostics",
-            "Check recent changes",
-            "Analyze error patterns",
-        ]
-    elif any(p in normalized for p in INTENT_PATTERNS.get("performance_concern", [])):
-        intent_type = IntentType.PERFORMANCE_CONCERN
-        confidence = max(confidence, 0.75)
-        suggested_actions = [
-            "Profile performance hotspots",
-            "Analyze resource usage",
-            "Check database queries",
-        ]
-    elif any(p in normalized for p in INTENT_PATTERNS.get("security_concern", [])):
-        intent_type = IntentType.SECURITY_CONCERN
-        confidence = max(confidence, 0.8)
-        suggested_actions = [
-            "Run security audit",
-            "Check dependencies",
-            "Verify permissions",
-        ]
-    elif any(p in normalized for p in INTENT_PATTERNS.get("missing_feature", [])):
-        intent_type = IntentType.MISSING_FEATURE
-        confidence = max(confidence, 0.7)
-        suggested_actions = [
-            "Verify dependencies",
-            "Check configuration",
-            "Search for alternatives",
-        ]
+    intent_weights: dict[str, tuple[IntentType, float, list[str]]] = {
+        "error_complaint": (
+            IntentType.ERROR_COMPLAINT,
+            0.85,
+            ["Run diagnostics", "Check recent changes", "Analyze error patterns"],
+        ),
+        "performance_concern": (
+            IntentType.PERFORMANCE_CONCERN,
+            0.8,
+            ["Profile performance hotspots", "Analyze resource usage", "Check database queries"],
+        ),
+        "security_concern": (
+            IntentType.SECURITY_CONCERN,
+            0.9,
+            ["Run security audit", "Check dependencies", "Verify permissions"],
+        ),
+        "missing_feature": (
+            IntentType.MISSING_FEATURE,
+            0.75,
+            ["Verify dependencies", "Check configuration", "Search for alternatives"],
+        ),
+        "refactoring_concern": (
+            IntentType.REFACTORING_CONCERN,
+            0.7,
+            ["Analyze code structure", "Identify refactoring targets", "Plan extraction strategy"],
+        ),
+        "test_creation": (
+            IntentType.TEST_CREATION,
+            0.8,
+            ["Identify test targets", "Write unit tests", "Verify coverage"],
+        ),
+        "documentation_request": (
+            IntentType.DOCUMENTATION_REQUEST,
+            0.7,
+            ["Review existing docs", "Identify gaps", "Draft documentation"],
+        ),
+    }
+
+    for pattern_key, (intent, conf, actions) in intent_weights.items():
+        patterns = INTENT_PATTERNS.get(pattern_key, [])
+        if any(p in normalized for p in patterns):
+            if conf > confidence:
+                intent_type = intent
+                confidence = conf
+                suggested_actions = actions
 
     is_vague = confidence >= 0.7 and (
         len(matched) >= 2
@@ -146,6 +244,10 @@ def detect_undecided(user_input: str) -> tuple[bool, VagueIntent]:
             "Identify potential approaches",
             "Present ranked options",
         ]
+
+    if confidence < 0.7 and intent_type == IntentType.VAGUE:
+        confidence = 0.0
+        suggested_actions = []
 
     vague_intent = VagueIntent(
         intent_type=intent_type,
