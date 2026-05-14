@@ -60,7 +60,11 @@ def apply_dashboard_action(
             record_id,
             "cancelled",
             summary=reason or None,
-            metadata={"dashboard_reason": reason} if reason else None,
+            metadata=(
+                {"dashboard_reason": reason, "cancelled_by": "dashboard"}
+                if reason
+                else {"cancelled_by": "dashboard"}
+            ),
         )
         if task is None:
             raise ControlPlaneDashboardError(f"Task '{record_id}' not found")
@@ -70,7 +74,11 @@ def apply_dashboard_action(
             record_id,
             "approved",
             reason=reason,
-            metadata={"dashboard_reason": reason} if reason else None,
+            metadata=(
+                {"dashboard_reason": reason, "decided_by": "dashboard"}
+                if reason
+                else {"decided_by": "dashboard"}
+            ),
         )
         if approval is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
@@ -80,7 +88,11 @@ def apply_dashboard_action(
             record_id,
             "denied",
             reason=reason,
-            metadata={"dashboard_reason": reason} if reason else None,
+            metadata=(
+                {"dashboard_reason": reason, "decided_by": "dashboard"}
+                if reason
+                else {"decided_by": "dashboard"}
+            ),
         )
         if approval is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")

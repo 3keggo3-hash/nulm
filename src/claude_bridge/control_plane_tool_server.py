@@ -79,6 +79,67 @@ def register_control_plane_tools(
             "task_status", "Show one local control-plane task.", task_status, read_only=True
         )
 
+    if ctx.should_register("cancel_tasks"):
+
+        async def cancel_tasks(task_ids: list[str], reason: str = "") -> str:
+            from claude_bridge.control_plane import cancel_tasks
+
+            started_at = ctx.now_ms()
+            cancelled = cancel_tasks(task_ids, reason=reason)
+            result = json_response(
+                True,
+                f"Cancelled {len(cancelled)} task(s)",
+                details={
+                    "schema_version": "control_plane.cancel.v1",
+                    "cancelled": [t["id"] for t in cancelled],
+                    "count": len(cancelled),
+                },
+            )
+            return audit_tool_call(
+                "cancel_tasks",
+                {"task_ids": task_ids, "reason": reason},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "cancel_tasks",
+            "Cancel multiple tasks by ID.",
+            cancel_tasks,
+            destructive=True,
+        )
+
+    if ctx.should_register("search_tasks"):
+
+        async def search_tasks(query: str, limit: int = 20) -> str:
+            from claude_bridge.control_plane import control_plane_dir, search_tasks as search_impl
+
+            started_at = ctx.now_ms()
+            tasks = search_impl(query, limit=limit)
+            result = json_response(
+                True,
+                f"Found {len(tasks)} task(s)",
+                details={
+                    "schema_version": "control_plane.search.v1",
+                    "state_dir": str(control_plane_dir()),
+                    "tasks": tasks,
+                    "query": query,
+                },
+            )
+            return audit_tool_call(
+                "search_tasks",
+                {"query": query, "limit": limit},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "search_tasks",
+            "Search tasks by title substring.",
+            search_tasks,
+            read_only=True,
+        )
+
     if ctx.should_register("task_summary"):
 
         async def task_summary() -> str:
@@ -131,6 +192,40 @@ def register_control_plane_tools(
             "list_pending_approvals",
             "List pending local control-plane approval requests.",
             list_pending_approvals,
+            read_only=True,
+        )
+
+    if ctx.should_register("list_approvals_by_task"):
+
+        async def list_approvals_by_task(task_id: str, status: str | None = None) -> str:
+            from claude_bridge.control_plane import (
+                control_plane_dir,
+                list_approvals_by_task as list_impl,
+            )
+
+            started_at = ctx.now_ms()
+            approvals = list_impl(task_id, status=status)
+            result = json_response(
+                True,
+                f"Approvals for task '{task_id}': {len(approvals)}",
+                details={
+                    "schema_version": "control_plane.approvals_by_task.v1",
+                    "state_dir": str(control_plane_dir()),
+                    "task_id": task_id,
+                    "approvals": approvals,
+                },
+            )
+            return audit_tool_call(
+                "list_approvals_by_task",
+                {"task_id": task_id, "status": status},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "list_approvals_by_task",
+            "List approval requests for a specific task.",
+            list_approvals_by_task,
             read_only=True,
         )
 

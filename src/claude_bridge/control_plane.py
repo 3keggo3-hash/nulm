@@ -144,11 +144,18 @@ def create_approval(
     return record
 
 
-def list_tasks(*, status: str | None = None, limit: int | None = None) -> list[ControlPlaneTask]:
+def list_tasks(
+    *,
+    status: str | None = None,
+    statuses: list[str] | None = None,
+    limit: int | None = None,
+) -> list[ControlPlaneTask]:
     records = [_coerce_task(record) for record in _read_jsonl(_tasks_file())]
     filtered = _latest_records_by_id([record for record in records if record is not None])
     if status is not None:
         filtered = [record for record in filtered if record.get("status") == status]
+    if statuses is not None:
+        filtered = [record for record in filtered if record.get("status") in statuses]
     return _apply_limit(filtered, limit)
 
 
@@ -196,6 +203,39 @@ def summarize_tasks() -> ControlPlaneSummary:
     return {"schema_version": SCHEMA_VERSION, "total": len(tasks), "by_status": by_status}
 
 
+def cancel_tasks(
+    task_ids: list[str],
+    *,
+    reason: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> list[ControlPlaneTask]:
+    """Cancel multiple tasks and return the updated tasks."""
+    updated = []
+    for task_id in task_ids:
+        task = update_task_status(
+            task_id,
+            "cancelled",
+            summary=reason or None,
+            metadata=metadata,
+        )
+        if task is not None:
+            updated.append(task)
+    return updated
+
+
+def search_tasks(query: str, *, limit: int | None = None) -> list[ControlPlaneTask]:
+    """Search tasks by title substring (case-insensitive)."""
+    records = list_tasks()
+    query_lower = query.lower()
+    filtered = [record for record in records if query_lower in record.get("title", "").lower()]
+    return _apply_limit(filtered, limit)
+
+
+def get_tasks_by_status(statuses: list[str], *, limit: int | None = None) -> list[ControlPlaneTask]:
+    """Get tasks matching any of the provided statuses."""
+    return list_tasks(statuses=statuses, limit=limit)
+
+
 def list_approvals(
     *, status: str | None = None, limit: int | None = None
 ) -> list[ControlPlaneApproval]:
@@ -204,6 +244,17 @@ def list_approvals(
     if status is not None:
         filtered = [record for record in filtered if record.get("status") == status]
     return _apply_limit(filtered, limit)
+
+
+def list_approvals_by_task(
+    task_id: str,
+    *,
+    status: str | None = None,
+    limit: int | None = None,
+) -> list[ControlPlaneApproval]:
+    """List approvals associated with a specific task."""
+    records = list_approvals(status=status, limit=limit)
+    return [rec for rec in records if rec.get("metadata", {}).get("task_id") == task_id]
 
 
 def get_approval(approval_id: str) -> ControlPlaneApproval | None:
