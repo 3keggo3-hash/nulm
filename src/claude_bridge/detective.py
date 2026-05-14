@@ -66,6 +66,7 @@ class DetectiveReport:
     suggested_fix: str = ""
     likelihood: str = "unknown"
     checkpoint_created: bool = False
+    confidence: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +82,7 @@ class DetectiveReport:
             "suggested_fix": self.suggested_fix,
             "likelihood": self.likelihood,
             "checkpoint_created": self.checkpoint_created,
+            "confidence": self.confidence,
         }
 
 
