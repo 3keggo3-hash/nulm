@@ -27,6 +27,7 @@ def load_benchmark_profile(profile_path: Path) -> dict[str, Any]:
 def _get_memory_mb() -> float:
     try:
         import resource
+
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     except Exception:
         return 0.0
@@ -56,6 +57,7 @@ def run_index_and_relevance_benchmark(
 
     if clear_cache:
         from claude_bridge.indexing import _INDEX_CACHE, _INDEX_CACHE_LOCK
+
         with _INDEX_CACHE_LOCK:
             _INDEX_CACHE.clear()
         gc.collect()
@@ -168,14 +170,16 @@ def run_multi_query_benchmark(
 
         avg = sum(durations_ms) / len(durations_ms)
         stdev = statistics.stdev(durations_ms) if len(durations_ms) > 1 else 0.0
-        results.append({
-            "query": query,
-            "query_avg_duration_ms": round(avg, 3),
-            "query_stddev_ms": round(stdev, 3),
-            "query_best_duration_ms": round(min(durations_ms), 3),
-            "query_worst_duration_ms": round(max(durations_ms), 3),
-            "top_results": ranked["results"] if ranked else [],
-        })
+        results.append(
+            {
+                "query": query,
+                "query_avg_duration_ms": round(avg, 3),
+                "query_stddev_ms": round(stdev, 3),
+                "query_best_duration_ms": round(min(durations_ms), 3),
+                "query_worst_duration_ms": round(max(durations_ms), 3),
+                "top_results": ranked["results"] if ranked else [],
+            }
+        )
 
     total_query_ms = sum(r["query_avg_duration_ms"] for r in results) * repeats_per_query
     return {
@@ -243,10 +247,7 @@ def compare_benchmark_to_baseline(
             "query_avg_duration_ms "
             f"{current['query_avg_duration_ms']} > baseline {max_query_avg_duration_ms}"
         )
-    if (
-        max_query_stddev_ms is not None
-        and current.get("query_stddev_ms", 0) > max_query_stddev_ms
-    ):
+    if max_query_stddev_ms is not None and current.get("query_stddev_ms", 0) > max_query_stddev_ms:
         failures.append(
             f"query_stddev_ms {current.get('query_stddev_ms', 0)} > baseline {max_query_stddev_ms}"
         )
