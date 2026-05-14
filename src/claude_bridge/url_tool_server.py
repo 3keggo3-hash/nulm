@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from claude_bridge.tool_utils import json_response
 from claude_bridge.tool_registration import ToolRegistrationContext
 
 
@@ -42,6 +43,60 @@ def register_url_tools(
             "audit logs (the URL itself is never logged). Max 1MB response, 10s timeout, "
             "5 redirects.",
             read_url,
+            read_only=True,
+        )
+
+    if ctx.should_register("validate_url"):
+
+        def validate_url(url: str) -> str:
+            from claude_bridge.url_tools import validate_url as _validate_url
+
+            return _validate_url(url)
+
+        ctx.register(
+            "validate_url",
+            "Validate a URL without fetching it. Checks scheme, hostname syntax, "
+            "SSRF protections, path traversal, and internationalized domain names. "
+            "Returns validation result with details.",
+            validate_url,
+            read_only=True,
+        )
+
+    if ctx.should_register("extract_url_parts"):
+
+        def extract_url_parts(url: str) -> str:
+            from claude_bridge.url_tools import extract_url_parts as _extract_url_parts
+
+            return json_response(
+                True,
+                "URL parts extracted",
+                details=_extract_url_parts(url),
+            )
+
+        ctx.register(
+            "extract_url_parts",
+            "Extract components from a URL (scheme, host, port, path, query, fragment). "
+            "Returns structured URL part information.",
+            extract_url_parts,
+            read_only=True,
+        )
+
+    if ctx.should_register("normalize_url"):
+
+        def normalize_url(url: str) -> str:
+            from claude_bridge.url_tools import normalize_url as _normalize_url
+
+            return json_response(
+                True,
+                "URL normalized",
+                details={"normalized_url": _normalize_url(url)},
+            )
+
+        ctx.register(
+            "normalize_url",
+            "Normalize a URL by removing fragments, stripping trailing slashes, "
+            "and standardizing port representation. Returns the normalized URL.",
+            normalize_url,
             read_only=True,
         )
 

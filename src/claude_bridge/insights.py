@@ -708,3 +708,22 @@ def _human_size(size: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} TB"
+
+
+def adapt_based_on_feedback(
+    base_approach: dict[str, Any],
+    recent_satisfaction: float,
+) -> dict[str, Any]:
+    """Adapt approach recommendations based on feedback signals."""
+    if recent_satisfaction >= 4.0:
+        return {**base_approach, "confidence": "high", "suggestion": "continue current pattern"}
+    if recent_satisfaction >= 3.0:
+        return {**base_approach, "confidence": "medium", "suggestion": "minor refinements"}
+    if recent_satisfaction >= 2.0:
+        return {**base_approach, "confidence": "low", "suggestion": "consider alternative approach"}
+    return {
+        **base_approach,
+        "confidence": "very_low",
+        "suggestion": "fundamental change recommended",
+        "escalate": True,
+    }

@@ -261,6 +261,18 @@ def _smart_context_fit_check(
     return context_fit_check(text, model=model, context_limit=context_limit)
 
 
+def _smart_get_tool_recommendation(query: str, available_tools: list[str], context_budget: int) -> dict[str, Any]:
+    from claude_bridge.smart import get_tool_recommendation
+
+    return get_tool_recommendation(query, available_tools, context_budget)
+
+
+def _smart_estimate_context_savings(original_tokens: int, compact_tokens: int, overhead_tokens: int) -> dict[str, Any]:
+    from claude_bridge.smart import estimate_context_savings
+
+    return estimate_context_savings(original_tokens, compact_tokens, overhead_tokens)
+
+
 def _tool_options(
     description: str,
     *,
@@ -783,6 +795,8 @@ if any(
         count_tokens_for_path=_smart_count_tokens_for_path,
         context_fit_check=_smart_context_fit_check,
         smart_available=_smart_available,
+        get_tool_recommendation=_smart_get_tool_recommendation,
+        estimate_context_savings=_smart_estimate_context_savings,
         enabled_names=_ENABLED_TOOL_NAMES,
     )
 else:

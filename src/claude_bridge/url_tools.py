@@ -19,6 +19,9 @@ _MAX_REDIRECTS = 5
 _TIMEOUT_SECONDS = 10
 _RESPONSE_TRUNCATION = 100 * 1024  # 100 KB
 _IP_LIKE_RE = re.compile(r"^[0-9a-fA-FxX.:]+$")
+_INVALID_HOSTNAME_CHARS_RE = re.compile(r"[\s\x00-\x1f\x7f<>\"\'\\|]")
+_PATH_TRAVERSAL_RE = re.compile(r"(^|/)\.\.(/|$)")
+_IDN_RE = re.compile(r"xn--[a-z0-9]+", re.IGNORECASE)
 
 
 def _is_private_host(host: str) -> bool:
@@ -48,6 +51,84 @@ def _is_private_host(host: str) -> bool:
     if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified:
         return True
     return False
+
+
+def _is_internationalized_domain(hostname: str) -> bool:
+    if not hostname:
+        return False
+    return bool(_IDN_RE.search(hostname)) or any(ord(c) > 127 for c in hostname)
+
+
+def _has_path_traversal(path: str) -> bool:
+    if not path:
+        return False
+    return bool(_PATH_TRAVERSAL_RE.search(path))
+
+
+def _validate_url_syntax(url: str) -> tuple[bool, str]:
+    if not url or not url.strip():
+        return False, "URL cannot be empty"
+    parsed = urlparse(url)
+    scheme = parsed.scheme
+    if scheme not in ("http", "https"):
+        return False, f"Unsupported scheme: {scheme or '(none)'}"
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Missing hostname"
+    if _INVALID_HOSTNAME_CHARS_RE.search(hostname):
+        return False, f"Invalid characters in hostname: {hostname}"
+    path = parsed.path
+    if _has_path_traversal(path):
+        return False, "Path traversal detected"
+    if _is_internationalized_domain(hostname):
+        return False, "Internationalized domain names not allowed"
+    return True, ""
+
+
+def extract_url_parts(url: str) -> dict[str, str | None]:
+    parsed = urlparse(url)
+    return {
+        "scheme": parsed.scheme,
+        "host": parsed.hostname,
+        "port": str(parsed.port) if parsed.port else None,
+        "path": parsed.path,
+        "query": parsed.query,
+        "fragment": parsed.fragment,
+    }
+
+
+def normalize_url(url: str) -> str:
+    parsed = urlparse(url)
+    scheme = parsed.scheme
+    host = parsed.hostname or ""
+    port = parsed.port
+    path = parsed.path or "/"
+    while path.endswith("/") and len(path) > 1:
+        path = path[:-1]
+    netloc = host
+    if port:
+        netloc = f"{host}:{port}"
+    query = parsed.query
+    normalized = f"{scheme}://{netloc}{path}"
+    if query:
+        normalized = f"{normalized}?{query}"
+    return normalized
+
+
+def validate_url(url: str) -> dict[str, Any]:
+    valid, reason = _validate_url_syntax(url)
+    if not valid:
+        return json_response(False, reason, code="validation_failed", details={"url": url})
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if hostname and _is_private_host(hostname):
+        return json_response(
+            False,
+            f"Blocked: internal/private host: {hostname}",
+            code="ssrf_blocked",
+            details={"url_hash": _url_hash(url), "host": hostname},
+        )
+    return json_response(True, "URL is valid", details={"url": url})
 
 
 def _resolve_and_check_host(hostname: str) -> str | None:

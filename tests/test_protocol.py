@@ -2706,7 +2706,7 @@ class TestAnomalyTools:
         assert "policy_decisions" in details
         assert "mvp_limits" in details
         assert details["mvp_limits"]["scope"] == "rule-based, no ML model"
-        assert len(details["mvp_limits"]["rules"]) == 10
+        assert len(details["mvp_limits"]["rules"]) == 16
         assert "recommended_action" in details
         assert "baseline" in details
 

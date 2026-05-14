@@ -45,7 +45,7 @@ class TestPermissionAction:
             PermissionAction("bogus")
 
     def test_three_members(self) -> None:
-        assert len(list(PermissionAction)) == 3
+        assert len(list(PermissionAction)) == 4
 
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,11 @@ def _compile_regex(pattern: str) -> re.Pattern:
     return re.compile(pattern)
 
 
+@functools.lru_cache(maxsize=256)
+def _compile_glob(pattern: str) -> tuple[str, bool]:
+    return pattern, "*" in pattern
+
+
 # ---------------------------------------------------------------------------
 # RuleAction → DecisionAction mapping
 # ---------------------------------------------------------------------------
@@ -166,7 +171,10 @@ def _match_glob(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
     actual = ctx.params.get(condition.field)
     if not isinstance(actual, str):
         return False
-    return fnmatch.fnmatch(actual, condition.value)
+    _, is_wildcard = _compile_glob(condition.value)
+    if is_wildcard:
+        return fnmatch.fnmatch(actual, condition.value)
+    return actual == condition.value
 
 
 def _match_extension(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
@@ -351,11 +359,74 @@ def _match_user_equals(ctx: ToolRequestContext, condition: RuleCondition) -> boo
     return ctx.user.lower() == condition.value.lower()
 
 
+def _match_field_starts_with(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a param field starts with the given prefix."""
+    if not condition.field:
+        return False
+    actual = ctx.params.get(condition.field)
+    if not isinstance(actual, str) or not isinstance(condition.value, str):
+        return False
+    return actual.startswith(condition.value)
+
+
+def _match_field_ends_with(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a param field ends with the given suffix."""
+    if not condition.field:
+        return False
+    actual = ctx.params.get(condition.field)
+    if not isinstance(actual, str) or not isinstance(condition.value, str):
+        return False
+    return actual.endswith(condition.value)
+
+
+def _match_field_in_list(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a param field value is in a list of allowed values."""
+    if not condition.field:
+        return False
+    actual = ctx.params.get(condition.field)
+    if condition.value is None:
+        return False
+    if isinstance(condition.value, (list, tuple)):
+        return actual in condition.value
+    if isinstance(condition.value, str):
+        return actual == condition.value
+    return False
+
+
+def _match_field_greater_than(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a numeric param field is greater than the threshold."""
+    if not condition.field:
+        return False
+    actual = ctx.params.get(condition.field)
+    if not isinstance(actual, (int, float)):
+        return False
+    if not isinstance(condition.value, (int, float)):
+        return False
+    return actual > condition.value
+
+
+def _match_field_less_than(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a numeric param field is less than the threshold."""
+    if not condition.field:
+        return False
+    actual = ctx.params.get(condition.field)
+    if not isinstance(actual, (int, float)):
+        return False
+    if not isinstance(condition.value, (int, float)):
+        return False
+    return actual < condition.value
+
+
 # Registry mapping ConditionType → matcher function
 _CONDITION_MATCHERS: dict[ConditionType, Any] = {
     ConditionType.TOOL: _match_tool,
     ConditionType.FIELD_EQUALS: _match_field_equals,
     ConditionType.FIELD_CONTAINS: _match_field_contains,
+    ConditionType.FIELD_STARTS_WITH: _match_field_starts_with,
+    ConditionType.FIELD_ENDS_WITH: _match_field_ends_with,
+    ConditionType.FIELD_IN_LIST: _match_field_in_list,
+    ConditionType.FIELD_GREATER_THAN: _match_field_greater_than,
+    ConditionType.FIELD_LESS_THAN: _match_field_less_than,
     ConditionType.REGEX: _match_regex,
     ConditionType.GLOB: _match_glob,
     ConditionType.EXTENSION: _match_extension,
@@ -410,6 +481,11 @@ def evaluate_rule(ctx: ToolRequestContext, rule: GuardRule) -> bool:
         return False
     if not rule.conditions:
         return False
+    has_only_tool_condition = (
+        len(rule.conditions) == 1 and rule.conditions[0].type == ConditionType.TOOL
+    )
+    if has_only_tool_condition:
+        return _match_tool(ctx, rule.conditions[0])
     return all(evaluate_condition(ctx, cond) for cond in rule.conditions)
 
 

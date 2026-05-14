@@ -27,7 +27,7 @@ def register_multi_format_tools(
             from claude_bridge.multi_format import read_image as _read_image
 
             started_at = ctx.now_ms()
-            result = await _read_image(path)
+            result = _read_image(path)
             return audit_tool_call("read_image", {"path": path}, result, started_at=started_at)
 
         ctx.register(

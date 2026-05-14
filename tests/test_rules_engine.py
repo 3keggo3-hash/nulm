@@ -180,6 +180,11 @@ class TestConditionGlob:
         cond = make_condition(ConditionType.GLOB, field="path", value="src/*.py")
         assert evaluate_condition(ctx, cond) is True
 
+    def test_glob_exact_match(self) -> None:
+        ctx = make_ctx(params={"path": "src/main.py"})
+        cond = make_condition(ConditionType.GLOB, field="path", value="src/main.py")
+        assert evaluate_condition(ctx, cond) is True
+
     def test_glob_no_match(self) -> None:
         ctx = make_ctx(params={"path": "src/main.rs"})
         cond = make_condition(ConditionType.GLOB, field="path", value="src/*.py")

@@ -33,6 +33,16 @@ class PermissionAction(str, Enum):
     ALLOW = "allow"
     DENY = "deny"
     ASK = "ask"
+    AUDIT = "audit"
+
+
+class PermissionScope(str, Enum):
+    """Granular scope categories for permission types."""
+
+    READ = "read"
+    WRITE = "write"
+    EXECUTE = "execute"
+    ADMIN = "admin"
 
 
 @dataclass
@@ -47,6 +57,7 @@ class RolePermission:
     action: PermissionAction = PermissionAction.ALLOW
     scope: dict[str, Any] = dc_field(default_factory=dict)
     description: str = ""
+    category: PermissionScope | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -57,6 +68,8 @@ class RolePermission:
             result["scope"] = dict(self.scope)
         if self.description:
             result["description"] = self.description
+        if self.category is not None:
+            result["category"] = self.category.value
         return result
 
     @classmethod
@@ -68,11 +81,19 @@ class RolePermission:
             action = PermissionAction(action_raw)
         except ValueError:
             action = PermissionAction.ALLOW
+        category_raw = data.get("category")
+        category: PermissionScope | None = None
+        if category_raw is not None:
+            try:
+                category = PermissionScope(category_raw)
+            except ValueError:
+                pass
         return cls(
             tool=str(data.get("tool", "")),
             action=action,
             scope=dict(data.get("scope", {})),
             description=str(data.get("description", "")),
+            category=category,
         )
 
 
@@ -413,6 +434,19 @@ BUILTIN_ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         ],
         "restrictions": ["destructive_shell", "sensitive_paths"],
         "metadata": {"risk_level": "low"},
+        "enabled": True,
+    },
+    "lead": {
+        "name": "lead",
+        "description": "Tech lead with elevated permissions and infrastructure access",
+        "extends": "senior",
+        "permissions": [
+            {"tool": "run_shell", "action": "allow", "category": "execute"},
+            {"tool": "infrastructure_management", "action": "allow", "category": "admin"},
+            {"tool": "security_audit", "action": "audit", "category": "admin"},
+        ],
+        "restrictions": [],
+        "metadata": {"risk_level": "medium"},
         "enabled": True,
     },
     "ci": {

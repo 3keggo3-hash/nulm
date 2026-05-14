@@ -564,6 +564,32 @@
         "Cross-platform network diagnostics without ping dependency"
       ]
     },
+    "agent-43-feedback": {
+      "task": "feedback collection improvements and feedback-driven adaptation",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/feedback.py",
+        "src/claude_bridge/insights.py"
+      ],
+      "changes": [
+        "Added _FEEDBACK_CACHE and _LAST_COLLECTION_TIME for in-memory caching",
+        "Added _COLLECTION_INTERVAL_SECONDS (300s) to prevent feedback fatigue",
+        "Added _cache_feedback_record() to track recent feedback",
+        "Added should_collect_feedback() to check collection timing",
+        "Added get_feedback_summary() for aggregated feedback over time period",
+        "Added get_recent_ratings() to retrieve cached ratings",
+        "Added is_low_satisfaction() to detect low satisfaction patterns",
+        "Added adapt_based_on_feedback() in insights.py for feedback-driven adaptation"
+      ],
+      "feedback_improvements": [
+        "In-memory caching of recent feedback reduces disk I/O",
+        "Collection interval prevents user feedback fatigue",
+        "Feedback summary provides per-day rating aggregation",
+        "Low satisfaction detection triggers adaptation",
+        "adapt_based_on_feedback() modifies approach confidence based on satisfaction"
+      ]
+    }
+  },
     "agent-41-relevance": {
       "task": "relevance ranking algorithm improvements",
       "branch": "feature/agent-crew",
