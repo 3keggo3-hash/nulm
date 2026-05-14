@@ -156,6 +156,7 @@ class MetricsCollector:
         self._gauges: dict[str, float] = {}
         self._labels: dict[str, dict[str, str]] = {}
         self._lock_metrics = threading.Lock()
+        self._last_update: float = time.time()
         self._initialized: bool = True
 
     def increment(
@@ -164,11 +165,21 @@ class MetricsCollector:
         key = self._make_key(name, labels)
         with self._lock_metrics:
             self._counters[key] = self._counters.get(key, 0.0) + value
+            self._last_update = time.time()
 
     def get(self, name: str, labels: dict[str, str] | None = None) -> float:
         key = self._make_key(name, labels)
         with self._lock_metrics:
             return self._counters.get(key, 0.0)
+
+    def get_rate(self, name: str, labels: dict[str, str] | None = None) -> float:
+        key = self._make_key(name, labels)
+        with self._lock_metrics:
+            count = self._counters.get(key, 0.0)
+            elapsed = time.time() - self._last_update
+            if elapsed <= 0:
+                return 0.0
+            return count / elapsed
 
     def observe(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
         key = self._make_key(name, labels)
@@ -176,6 +187,7 @@ class MetricsCollector:
             if key not in self._histograms:
                 self._histograms[key] = []
             self._histograms[key].append(value)
+            self._last_update = time.time()
 
     def get_histogram(self, name: str, labels: dict[str, str] | None = None) -> float:
         key = self._make_key(name, labels)
@@ -183,10 +195,50 @@ class MetricsCollector:
             values = self._histograms.get(key, [])
             return sum(values) / len(values) if values else 0.0
 
+    def get_percentile(
+        self, name: str, percentile: float, labels: dict[str, str] | None = None
+    ) -> float:
+        key = self._make_key(name, labels)
+        with self._lock_metrics:
+            values = self._histograms.get(key, [])
+            if not values:
+                return 0.0
+            sorted_values = sorted(values)
+            idx = int(len(sorted_values) * percentile / 100.0)
+            idx = min(idx, len(sorted_values) - 1)
+            return sorted_values[idx]
+
+    def get_histogram_stats(
+        self, name: str, labels: dict[str, str] | None = None
+    ) -> dict[str, float]:
+        key = self._make_key(name, labels)
+        with self._lock_metrics:
+            values = self._histograms.get(key, [])
+            if not values:
+                return {"count": 0, "sum": 0, "avg": 0, "min": 0, "max": 0}
+            return {
+                "count": len(values),
+                "sum": sum(values),
+                "avg": sum(values) / len(values),
+                "min": min(values),
+                "max": max(values),
+                "p50": self._percentile(sorted(values), 50),
+                "p95": self._percentile(sorted(values), 95),
+                "p99": self._percentile(sorted(values), 99),
+            }
+
+    def _percentile(self, sorted_values: list[float], p: float) -> float:
+        if not sorted_values:
+            return 0.0
+        idx = int(len(sorted_values) * p / 100.0)
+        idx = min(idx, len(sorted_values) - 1)
+        return sorted_values[idx]
+
     def set_gauge(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
         key = self._make_key(name, labels)
         with self._lock_metrics:
             self._gauges[key] = value
+            self._last_update = time.time()
 
     def get_gauge(self, name: str, labels: dict[str, str] | None = None) -> float:
         key = self._make_key(name, labels)
@@ -198,6 +250,7 @@ class MetricsCollector:
             self._counters.clear()
             self._histograms.clear()
             self._gauges.clear()
+            self._last_update = time.time()
 
     def _make_key(self, name: str, labels: dict[str, str] | None) -> str:
         if not labels:
@@ -217,11 +270,23 @@ class MetricsCollector:
             for key, values in self._histograms.items():
                 if values:
                     avg = sum(values) / len(values)
+                    sorted_vals = sorted(values)
+                    p50 = self._percentile(sorted_vals, 50)
+                    p95 = self._percentile(sorted_vals, 95)
+                    p99 = self._percentile(sorted_vals, 99)
                     if "{" in key:
                         name = key.split("{")[0]
                         lines.append(f'{name}_sum{{instance="claude-bridge"}} {avg}')
+                        lines.append(f'{name}_count{{instance="claude-bridge"}} {len(values)}')
+                        lines.append(f'{name}_p50{{instance="claude-bridge"}} {p50}')
+                        lines.append(f'{name}_p95{{instance="claude-bridge"}} {p95}')
+                        lines.append(f'{name}_p99{{instance="claude-bridge"}} {p99}')
                     else:
                         lines.append(f"{key}_sum {avg}")
+                        lines.append(f"{key}_count {len(values)}")
+                        lines.append(f"{key}_p50 {p50}")
+                        lines.append(f"{key}_p95 {p95}")
+                        lines.append(f"{key}_p99 {p99}")
             for key, value in self._gauges.items():
                 if "{" in key:
                     name = key.split("{")[0]

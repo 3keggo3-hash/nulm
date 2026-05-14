@@ -43,6 +43,9 @@ class SpanAttributes:
     project_path: str | None = None
     user_goal: str | None = None
     workflow_steps: int | None = None
+    agent_id: str | None = None
+    operation_type: str | None = None
+    cache_hit: bool | None = None
     custom: dict[str, Any] = field(default_factory=dict)
 
 
@@ -66,7 +69,51 @@ class TracingManager:
         )
         self._level = TraceLevel.NONE
         self._initialized: bool = True
+        self._span_storage: list[dict[str, Any]] = []
+        self._span_storage_lock = threading.Lock()
+        self._max_storage_size = 1000
         self._configure_from_env()
+
+    def set_level(self, level: TraceLevel) -> None:
+        self._level = level
+        if level != TraceLevel.NONE and trace is not None and self._tracer is None:
+            self._setup_tracer()
+
+    def get_recent_spans(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._span_storage_lock:
+            return sorted(self._span_storage, key=lambda x: x.get("timestamp", 0), reverse=True)[
+                :limit
+            ]
+
+    def get_span_stats(self) -> dict[str, Any]:
+        with self._span_storage_lock:
+            if not self._span_storage:
+                return {
+                    "total_spans": 0,
+                    "error_count": 0,
+                    "avg_duration_ms": 0,
+                    "p50_duration_ms": 0,
+                    "p95_duration_ms": 0,
+                    "p99_duration_ms": 0,
+                }
+            durations = [s.get("duration_ms", 0) for s in self._span_storage]
+            durations.sort()
+            error_count = sum(1 for s in self._span_storage if s.get("error_type"))
+            return {
+                "total_spans": len(self._span_storage),
+                "error_count": error_count,
+                "avg_duration_ms": sum(durations) / len(durations) if durations else 0,
+                "p50_duration_ms": self._percentile(durations, 50),
+                "p95_duration_ms": self._percentile(durations, 95),
+                "p99_duration_ms": self._percentile(durations, 99),
+            }
+
+    def _percentile(self, sorted_values: list[float], p: float) -> float:
+        if not sorted_values:
+            return 0.0
+        idx = int(len(sorted_values) * p / 100.0)
+        idx = min(idx, len(sorted_values) - 1)
+        return sorted_values[idx]
 
     def _configure_from_env(self) -> None:
         level_str = os.environ.get("CLAUDE_BRIDGE_TRACING", "none").lower()
@@ -101,6 +148,7 @@ class TracingManager:
         if self._tracer is None or self._level == TraceLevel.NONE:
             yield None
             return
+        start_time = time.perf_counter()
         with self._tracer.start_as_current_span(name) as span:
             if attributes:
                 if attributes.tool_name:
@@ -117,9 +165,30 @@ class TracingManager:
                     span.set_attribute("user.goal", attributes.user_goal)
                 if attributes.workflow_steps is not None:
                     span.set_attribute("workflow.steps", attributes.workflow_steps)
+                if attributes.agent_id:
+                    span.set_attribute("agent.id", attributes.agent_id)
+                if attributes.operation_type:
+                    span.set_attribute("operation.type", attributes.operation_type)
+                if attributes.cache_hit is not None:
+                    span.set_attribute("cache.hit", attributes.cache_hit)
                 for k, v in attributes.custom.items():
                     span.set_attribute(k, v)
             yield span
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            with self._span_storage_lock:
+                span_record = {
+                    "name": name,
+                    "timestamp": start_time,
+                    "duration_ms": duration_ms,
+                    "trace_level": self._level.value,
+                }
+                if attributes:
+                    span_record["tool_name"] = attributes.tool_name
+                    span_record["error_type"] = attributes.error_type
+                    span_record["user_goal"] = attributes.user_goal
+                self._span_storage.append(span_record)
+                if len(self._span_storage) > self._max_storage_size:
+                    self._span_storage = self._span_storage[-self._max_storage_size :]
 
     def record_exception(self, span: Span | None, exception: Exception) -> None:
         if span is None or Status is None:
