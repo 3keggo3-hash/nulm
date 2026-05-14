@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from claude_bridge.skill_schema import SkillMeta, load_skill_json, validate_skill_json, versions_compatible
+from claude_bridge.skill_schema import SkillMeta, load_skill_json, validate_skill_json
 
 SKILLS_DIR = Path(".claude-bridge/skills")
 INDEX_FILE = SKILLS_DIR / "index.json"
@@ -66,6 +66,8 @@ class SkillMatch:
     score: int
     reasons: list[str]
     meta: SkillMeta
+    dependencies_met: list[str] = field(default_factory=list)
+    missing_dependencies: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -75,6 +77,8 @@ class SkillMatch:
             "meta": self.meta.to_dict(),
             "permissions": list(self.meta.permissions),
             "risk_level": self.meta.risk_level,
+            "dependencies_met": list(self.dependencies_met),
+            "missing_dependencies": list(self.missing_dependencies),
         }
 
 
@@ -307,10 +311,38 @@ class SkillRegistry:
                 reasons.extend(boost_reasons)
 
             if score > 0:
-                matches.append(SkillMatch(name=name, score=score, reasons=reasons, meta=meta))
+                deps_met, deps_missing = self._check_dependencies(meta)
+                if deps_missing:
+                    score = max(1, score - len(deps_missing))
+                    reasons.append(f"missing dependencies: {', '.join(deps_missing)}")
+                matches.append(
+                    SkillMatch(
+                        name=name,
+                        score=score,
+                        reasons=reasons,
+                        meta=meta,
+                        dependencies_met=deps_met,
+                        missing_dependencies=deps_missing,
+                    )
+                )
 
         matches.sort(key=lambda item: (-item.score, item.name))
         return matches[:normalized_limit]
+
+    def _check_dependencies(self, meta: SkillMeta) -> tuple[list[str], list[str]]:
+        """Check which dependencies are satisfied.
+
+        Returns (met, missing).
+        """
+        deps_met: list[str] = []
+        deps_missing: list[str] = []
+        for dep in meta.dependencies:
+            dep_meta = self._skills_index.get(dep)
+            if dep_meta is not None:
+                deps_met.append(dep)
+            else:
+                deps_missing.append(dep)
+        return deps_met, deps_missing
 
     def get_loaded(self) -> dict[str, LoadedSkill]:
         """Return all loaded skills with their metadata and code."""

@@ -179,7 +179,9 @@ def validate_skill_json(data: dict[str, Any]) -> tuple[bool, list[str]]:
     if "auto_load" in data and not isinstance(data["auto_load"], bool):
         errors.append("Validation error: auto_load must be a boolean")
     dependencies = data.get("dependencies", [])
-    if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
+    if not isinstance(dependencies, list) or not all(
+        isinstance(item, str) for item in dependencies
+    ):
         errors.append("Validation error: dependencies must be a string array")
     for key in ("description", "source", "homepage"):
         if key in data and not isinstance(data[key], str):
