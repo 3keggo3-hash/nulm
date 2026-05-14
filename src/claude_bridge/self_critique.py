@@ -70,6 +70,9 @@ VALID_CRITERIA = frozenset(
         "naming",
         "duplication",
         "test_coverage",
+        "error_handling",
+        "imports",
+        "type_coverage",
     }
 )
 DEFAULT_CRITERIA = ["complexity", "style"]
@@ -505,6 +508,124 @@ def _check_test_coverage(files: list[Path]) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+
+_BARE_EXCEPT_RE = re.compile(r"\bexcept\s*:")
+_EMPTY_EXCEPT_RE = re.compile(r"\bexcept\s*\([^)]*\)\s*:\s*(?:pass|...)")
+_SWALLOW_EXCEPTION_RE = re.compile(r"except\s*.*:\s*pass")
+
+
+def _check_error_handling(path: Path, content: str) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for match in _BARE_EXCEPT_RE.finditer(content):
+        line_no = content[: match.start()].count("\n") + 1
+        issues.append(
+            {
+                "file": str(path),
+                "line": line_no,
+                "severity": "warning",
+                "category": "error_handling",
+                "description": "Bare except clause (caught Exception preferred)",
+            }
+        )
+    for match in _EMPTY_EXCEPT_RE.finditer(content):
+        line_no = content[: match.start()].count("\n") + 1
+        issues.append(
+            {
+                "file": str(path),
+                "line": line_no,
+                "severity": "warning",
+                "category": "error_handling",
+                "description": "Empty except clause (pass or ...)",
+            }
+        )
+    for match in _SWALLOW_EXCEPTION_RE.finditer(content):
+        line_no = content[: match.start()].count("\n") + 1
+        issues.append(
+            {
+                "file": str(path),
+                "line": line_no,
+                "severity": "info",
+                "category": "error_handling",
+                "description": "Exception silently swallowed (no logging or re-raise)",
+            }
+        )
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Imports
+# ---------------------------------------------------------------------------
+
+_WILDCARD_IMPORT_RE = re.compile(r"\bfrom\s+\w+\s+import\s+\*")
+_SIDEEFFECT_IMPORT_RE = re.compile(r"\bimport\s+\w+\s*,\s*\w+")
+
+
+def _check_imports(path: Path, content: str, lines: list[str]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    seen_imports: dict[str, int] = {}
+    for i, line in enumerate(lines, start=1):
+        if _WILDCARD_IMPORT_RE.search(line):
+            issues.append(
+                {
+                    "file": str(path),
+                    "line": i,
+                    "severity": "info",
+                    "category": "imports",
+                    "description": "Wildcard import (use explicit imports)",
+                }
+            )
+        import_match = re.match(r"^\s*(?:from\s+(\S+)\s+)?import\s+(.+)$", line)
+        if import_match:
+            module = import_match.group(1) or import_match.group(2).split(",")[0].strip()
+            if module in seen_imports:
+                issues.append(
+                    {
+                        "file": str(path),
+                        "line": i,
+                        "severity": "info",
+                        "category": "imports",
+                        "description": f"Duplicate import of '{module}' (also on line {seen_imports[module]})",
+                    }
+                )
+            else:
+                seen_imports[module] = i
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Type coverage
+# ---------------------------------------------------------------------------
+
+
+def _check_type_coverage_python(path: Path, content: str) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return issues
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.returns is None and node.args.args:
+            has_typed_arg = any(arg.annotation is not None for arg in node.args.args)
+            if has_typed_arg:
+                issues.append(
+                    {
+                        "file": str(path),
+                        "line": node.lineno,
+                        "severity": "info",
+                        "category": "type_coverage",
+                        "description": f"Function '{node.name}' has typed args but no return type",
+                    }
+                )
+                break
+    return issues
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -575,6 +696,12 @@ def self_critique(scope: str, criteria: list[str] | None = None) -> dict[str, An
                 all_issues.extend(_check_naming(path, content, lines))
             elif criterion == "performance":
                 all_issues.extend(_check_performance(path, content))
+            elif criterion == "error_handling":
+                all_issues.extend(_check_error_handling(path, content))
+            elif criterion == "imports":
+                all_issues.extend(_check_imports(path, content, lines))
+            elif criterion == "type_coverage":
+                all_issues.extend(_check_type_coverage_python(path, content))
 
     if "duplication" in selected:
         all_issues.extend(_check_duplication(file_data))
