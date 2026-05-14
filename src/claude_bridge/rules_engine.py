@@ -16,6 +16,10 @@ Supported condition types (via ConditionType enum):
   - file_size
   - sensitive_path
   - content_contains
+  - command_blocked
+  - path_not_in_allowed_roots
+  - agent_role
+  - user_equals
 """
 
 from __future__ import annotations
@@ -292,6 +296,61 @@ def _match_content_contains(ctx: ToolRequestContext, condition: RuleCondition) -
     return condition.value.lower() in actual.lower()
 
 
+def _match_command_blocked(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a shell command matches blocked shell patterns.
+
+    The condition value should be a blocked shell pattern (glob-style).
+    """
+    if not isinstance(condition.value, str):
+        return False
+    command_field = condition.field if condition.field else "command"
+    actual = ctx.params.get(command_field)
+    if not isinstance(actual, str):
+        return False
+    normalized = " ".join(actual.strip().split()).lower()
+    pattern = condition.value.lower()
+    return fnmatch.fnmatchcase(normalized, pattern)
+
+
+def _match_path_not_in_allowed_roots(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when a path is NOT within any allowed workspace root (fail-closed).
+
+    Returns True if the path is outside all allowed roots.
+    """
+    field = condition.field
+    if not field:
+        return False
+    actual = ctx.params.get(field)
+    if not isinstance(actual, str):
+        return False
+    try:
+        target = Path(actual)
+        if not target.is_absolute() and ctx.project_dir:
+            target = Path(ctx.project_dir) / target
+        target = target.resolve()
+        return not _is_path_within_allowed_roots(target, ctx)
+    except (OSError, ValueError):
+        return True
+
+
+def _match_agent_role(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when the agent role equals the given value (case-insensitive)."""
+    if not isinstance(condition.value, str):
+        return False
+    if ctx.role is None:
+        return False
+    return ctx.role.lower() == condition.value.lower()
+
+
+def _match_user_equals(ctx: ToolRequestContext, condition: RuleCondition) -> bool:
+    """Match when the user equals the given value (case-insensitive)."""
+    if not isinstance(condition.value, str):
+        return False
+    if ctx.user is None:
+        return False
+    return ctx.user.lower() == condition.value.lower()
+
+
 # Registry mapping ConditionType → matcher function
 _CONDITION_MATCHERS: dict[ConditionType, Any] = {
     ConditionType.TOOL: _match_tool,
@@ -304,6 +363,10 @@ _CONDITION_MATCHERS: dict[ConditionType, Any] = {
     ConditionType.FILE_SIZE: _match_file_size,
     ConditionType.SENSITIVE_PATH: _match_sensitive_path,
     ConditionType.CONTENT_CONTAINS: _match_content_contains,
+    ConditionType.COMMAND_BLOCKED: _match_command_blocked,
+    ConditionType.PATH_NOT_IN_ALLOWED_ROOTS: _match_path_not_in_allowed_roots,
+    ConditionType.AGENT_ROLE: _match_agent_role,
+    ConditionType.USER_EQUALS: _match_user_equals,
 }
 
 # ---------------------------------------------------------------------------
