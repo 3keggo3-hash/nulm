@@ -3,6 +3,30 @@
   "description": "Agent coordination manifest - claims prevent conflicts",
   "created_at": null,
   "agents": {
+    "agent-38-benchmarking": {
+      "task": "benchmarking methodology improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/benchmarking.py",
+        "tests/test_benchmarking.py"
+      ],
+      "changes": [
+        "Add warmup_repeats parameter to run_index_and_relevance_benchmark for more accurate timing",
+        "Add clear_cache parameter to run_index_and_relevance_benchmark to test cold-start performance",
+        "Add memory delta tracking (index_memory_delta_mb, query_memory_delta_mb)",
+        "Add query_stddev_ms for measuring timing consistency",
+        "Add run_multi_query_benchmark for batch query benchmarking",
+        "Extend compare_benchmark_to_baseline to check max_query_stddev_ms"
+      ],
+      "benchmarking_improvements": [
+        "Warmup runs eliminate JIT/cache effects for more accurate measurements",
+        "Cache clearing enables cold-start benchmarking",
+        "Memory delta tracking reveals index/query memory footprint",
+        "Standard deviation detects timing instability",
+        "Multi-query benchmark enables batch testing across multiple search scenarios"
+      ],
+      "tests_added": 9
+    },
     "agent-08": {
       "claimed_tasks": [
         "test_workflow_cache_coverage",
