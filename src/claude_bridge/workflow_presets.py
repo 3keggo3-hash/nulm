@@ -19,6 +19,9 @@ SUPPORTED_WORKFLOW_MODES = {
     "debug",
     "document",
     "security",
+    "compact",
+    "benchmark",
+    "platform",
 }
 
 PROMPT_SHORTCUTS = [
