@@ -15,6 +15,10 @@ except ImportError:
 
 
 class DistributedCache:
+    _hits: int = 0
+    _misses: int = 0
+    _evictions: int = 0
+
     def __init__(
         self,
         enabled: bool = False,
@@ -49,6 +53,20 @@ class DistributedCache:
         except Exception:
             return False
 
+    @property
+    def stats(self) -> dict[str, int]:
+        return {
+            "hits": DistributedCache._hits,
+            "misses": DistributedCache._misses,
+            "evictions": DistributedCache._evictions,
+        }
+
+    @classmethod
+    def reset_stats(cls) -> None:
+        cls._hits = 0
+        cls._misses = 0
+        cls._evictions = 0
+
     def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         if ttl is None:
             ttl = self._default_ttl
@@ -69,17 +87,23 @@ class DistributedCache:
             if key in self._local_cache:
                 value, expiry = self._local_cache[key]
                 if time.time() < expiry:
+                    DistributedCache._hits += 1
                     return value
                 del self._local_cache[key]
+                DistributedCache._evictions += 1
         if self._client is not None:
             try:
                 full_key = f"{self._prefix}{key}"
                 data = self._client.get(full_key)
                 if data is None:
+                    DistributedCache._misses += 1
                     return None
+                DistributedCache._hits += 1
                 return json.loads(data)
             except Exception:
+                DistributedCache._misses += 1
                 return None
+        DistributedCache._misses += 1
         return None
 
     def delete(self, key: str) -> bool:
@@ -159,6 +183,74 @@ class DistributedCache:
     def set_many(self, mapping: dict[str, Any], ttl: int | None = None) -> bool:
         for key, value in mapping.items():
             self.set(key, value, ttl)
+        return True
+
+    def delete_many(self, keys: list[str]) -> bool:
+        with self._local_lock:
+            for key in keys:
+                self._local_cache.pop(key, None)
+        if self._client is not None:
+            try:
+                full_keys = [f"{self._prefix}{key}" for key in keys]
+                self._client.delete(*full_keys)
+                return True
+            except Exception:
+                return False
+        return True
+
+    def get_many_bulk(self, keys: list[str]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        local_hits: dict[str, Any] = {}
+        keys_to_fetch: list[str] = []
+        with self._local_lock:
+            for key in keys:
+                if key in self._local_cache:
+                    value, expiry = self._local_cache[key]
+                    if time.time() < expiry:
+                        local_hits[key] = value
+                    else:
+                        del self._local_cache[key]
+                        keys_to_fetch.append(key)
+                else:
+                    keys_to_fetch.append(key)
+        result.update(local_hits)
+        if keys_to_fetch and self._client is not None:
+            try:
+                full_keys = [f"{self._prefix}{key}" for key in keys_to_fetch]
+                redis_result = self._client.mget(full_keys)
+                for key, data in zip(keys_to_fetch, redis_result):
+                    if data is not None:
+                        try:
+                            value = json.loads(data)
+                            result[key] = value
+                            with self._local_lock:
+                                ttl = self._default_ttl
+                                self._local_cache[key] = (value, time.time() + ttl)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+            except Exception:
+                pass
+        return result
+
+    def set_many_pipeline(self, mapping: dict[str, Any], ttl: int | None = None) -> bool:
+        if ttl is None:
+            ttl = self._default_ttl
+        local_entries = {}
+        for key, value in mapping.items():
+            local_entries[key] = (value, time.time() + ttl)
+        with self._local_lock:
+            self._local_cache.update(local_entries)
+        if self._client is not None:
+            try:
+                pipe = self._client.pipeline()
+                for key, value in mapping.items():
+                    full_key = f"{self._prefix}{key}"
+                    serialized = json.dumps(value)
+                    pipe.setex(full_key, ttl, serialized)
+                pipe.execute()
+                return True
+            except Exception:
+                return False
         return True
 
     def close(self) -> None:

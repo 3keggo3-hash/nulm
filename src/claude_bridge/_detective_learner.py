@@ -62,7 +62,10 @@ def add_lesson(pattern: str, solution: str, error_type: str, file_path: str = ""
 
 
 def find_similar_lesson(error_output: str) -> dict[str, Any] | None:
-    """Find a lesson matching the error output pattern."""
+    """Find a lesson matching the error output pattern.
+
+    Uses word-boundary matching to reduce false positives.
+    """
     lessons = load_lessons()
     error_lower = error_output.lower()
 
@@ -71,8 +74,20 @@ def find_similar_lesson(error_output: str) -> dict[str, Any] | None:
 
     for lesson in lessons:
         pattern = lesson.get("pattern", "")
-        if pattern.lower() in error_lower:
+        if not pattern:
+            continue
+        pattern_lower = pattern.lower()
+
+        if pattern_lower in error_lower:
             score = lesson.get("hits", 1)
+
+            word_boundary_bonus = 0
+            for word in pattern_lower.split():
+                if len(word) >= 4:
+                    if re.search(rf"\b{re.escape(word)}\b", error_lower):
+                        word_boundary_bonus += 2
+            score += word_boundary_bonus
+
             if score > best_score:
                 best_score = score
                 best = lesson

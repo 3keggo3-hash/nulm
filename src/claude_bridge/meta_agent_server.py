@@ -11,6 +11,39 @@ from claude_bridge.guard_policy import DecisionAction, ToolRequestContext
 from claude_bridge.rules_engine import evaluate_runtime_policy_chain
 from claude_bridge.tool_utils import require_approval
 
+_MAX_REFLECT_RECURSION_DEPTH = 3
+_MAX_META_REVIEW_ITEMS = 20
+
+
+def _build_reflection_summary(
+    records: list[dict[str, Any]], depth: int
+) -> dict[str, Any]:
+    if depth >= _MAX_REFLECT_RECURSION_DEPTH:
+        return {
+            "truncated": True,
+            "reason": "max_recursion_depth",
+            "depth": depth,
+        }
+    tool_counts: dict[str, int] = {}
+    error_count = 0
+    total_latency = 0.0
+    for rec in records:
+        tn = rec.get("tool_name", "unknown")
+        tool_counts[tn] = tool_counts.get(tn, 0) + 1
+        if not rec.get("ok", True):
+            error_count += 1
+        total_latency += rec.get("duration_ms", 0.0)
+    return {
+        "truncated": False,
+        "depth": depth,
+        "tool_counts": tool_counts,
+        "unique_tools": len(tool_counts),
+        "error_count": error_count,
+        "error_rate": round(error_count / max(len(records), 1), 3),
+        "total_latency_ms": round(total_latency, 2),
+        "avg_latency_ms": round(total_latency / max(len(records), 1), 2),
+    }
+
 
 def register_meta_agent_tools(
     *,
@@ -332,5 +365,100 @@ def register_meta_agent_tools(
             return audit_tool_call("list_checkpoints", {}, result, started_at=started_at)
 
         results["list_checkpoints"] = list_checkpoints
+
+    if _enabled is None or "reflect_on_recent_work" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Reflect on recent tool calls to identify patterns and suggest improvements.",
+                read_only=True,
+            )
+        )
+        async def reflect_on_recent_work(
+            limit: int = 20,
+            depth: int = 1,
+        ) -> str:
+            started_at = time.perf_counter()
+            safe_limit = max(1, min(limit, 100))
+            safe_depth = max(0, min(depth, _MAX_REFLECT_RECURSION_DEPTH))
+            records = get_recent_tool_calls_impl(limit=safe_limit) if get_recent_tool_calls_impl else {"records": []}
+            raw_records = records.get("records", [])
+            summary = _build_reflection_summary(raw_records, safe_depth)
+            suggestions: list[str] = []
+            if summary.get("error_rate", 0) > 0.2:
+                suggestions.append("High error rate detected; review failed tool calls for pattern")
+            if summary.get("unique_tools", 0) < 3:
+                suggestions.append("Limited tool diversity; consider exploring more capabilities")
+            top_tool = max(summary.get("tool_counts", {}).items(), key=lambda x: x[1], default=(None, 0))
+            if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.5:
+                suggestions.append(f"Heavy reliance on {top_tool[0]}; investigate alternatives")
+            result = json_response(
+                True,
+                "Reflection complete",
+                details={
+                    "summary": summary,
+                    "suggestions": suggestions,
+                    "records_count": len(raw_records),
+                    "max_depth_reached": safe_depth >= _MAX_REFLECT_RECURSION_DEPTH,
+                },
+            )
+            return audit_tool_call(
+                "reflect_on_recent_work",
+                {"limit": safe_limit, "depth": safe_depth},
+                result,
+                started_at=started_at,
+            )
+
+        results["reflect_on_recent_work"] = reflect_on_recent_work
+
+    if _enabled is None or "meta_review" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Review multiple tool results holistically for consistency and gaps.",
+                read_only=True,
+            )
+        )
+        async def meta_review(results_json: str) -> str:
+            started_at = time.perf_counter()
+            try:
+                tool_results = json.loads(results_json)
+            except json.JSONDecodeError as exc:
+                result = json_response(
+                    False,
+                    "Invalid JSON for results",
+                    details={"error": str(exc)},
+                )
+                return audit_tool_call("meta_review", {"results_json": "<invalid>"}, result, started_at=started_at)
+            if not isinstance(tool_results, list):
+                result = json_response(False, "results_json must be a JSON array", details={})
+                return audit_tool_call("meta_review", {"results_json": "<invalid>"}, result, started_at=started_at)
+            limited = tool_results[:_MAX_META_REVIEW_ITEMS]
+            if len(tool_results) > _MAX_META_REVIEW_ITEMS:
+                limited = tool_results[:_MAX_META_REVIEW_ITEMS]
+            ok_count = sum(1 for r in limited if isinstance(r, dict) and r.get("ok", False))
+            error_count = len(limited) - ok_count
+            inconsistencies: list[str] = []
+            for i, item in enumerate(limited):
+                if not isinstance(item, dict):
+                    inconsistencies.append(f"Item {i} is not a dict")
+                    continue
+                if "error" in item and item.get("ok", True):
+                    inconsistencies.append(f"Item {i} has error field but ok=True")
+            result = json_response(
+                True,
+                "Meta-review complete",
+                details={
+                    "reviewed_count": len(limited),
+                    "total_submitted": len(tool_results),
+                    "ok_count": ok_count,
+                    "error_count": error_count,
+                    "inconsistencies": inconsistencies,
+                    "truncated": len(tool_results) > _MAX_META_REVIEW_ITEMS,
+                },
+            )
+            return audit_tool_call("meta_review", {"results_count": len(tool_results)}, result, started_at=started_at)
+
+        results["meta_review"] = meta_review
 
     return results

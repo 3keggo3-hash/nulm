@@ -10,11 +10,13 @@ Storage: .claude-bridge/snapshots/ (tar/gz format)
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import tarfile
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -42,6 +44,8 @@ class Snapshot:
     files: list[str]
     size_bytes: int
     path: Path
+    content_hash: str | None = None
+    reference_snapshot: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +55,8 @@ class Snapshot:
             "files": self.files,
             "size_bytes": self.size_bytes,
             "path": str(self.path),
+            "content_hash": self.content_hash,
+            "reference_snapshot": self.reference_snapshot,
         }
 
 
@@ -102,6 +108,84 @@ def _relativize_path(path: Path) -> Path:
         return path
 
 
+_INDEX_CACHE: OrderedDict[str, dict[str, Any]] | None = None
+
+
+def _load_index() -> dict[str, Any]:
+    """Load the snapshot index from disk with caching."""
+    global _INDEX_CACHE
+    idx_path = _snapshot_index_path()
+    cache_key = str(idx_path)
+    if _INDEX_CACHE is not None and cache_key in _INDEX_CACHE:
+        return _INDEX_CACHE[cache_key]
+    if not idx_path.is_file():
+        return {"snapshots": []}
+    try:
+        payload = json.loads(idx_path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            if _INDEX_CACHE is None:
+                _INDEX_CACHE = OrderedDict()
+            _INDEX_CACHE[cache_key] = payload
+            if len(_INDEX_CACHE) > 10:
+                _INDEX_CACHE.popitem(last=False)
+            return payload
+        return {"snapshots": []}
+    except (json.JSONDecodeError, OSError):
+        return {"snapshots": []}
+
+
+def _save_index(index: dict[str, Any]) -> None:
+    """Save the snapshot index to disk and update cache."""
+    global _INDEX_CACHE
+    idx_path = _snapshot_index_path()
+    idx_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
+    cache_key = str(idx_path)
+    if _INDEX_CACHE is not None:
+        _INDEX_CACHE[cache_key] = index
+
+
+def _file_content_hash(file_path: Path) -> str:
+    """Compute SHA256 hash of file content."""
+    h = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
+
+
+def _compute_snapshot_hash(files: list[Path]) -> str:
+    """Compute aggregate hash of all files for change detection."""
+    h = hashlib.sha256()
+    for f in sorted(files):
+        h.update(f"{f}:{_file_content_hash(f)}".encode())
+    return h.hexdigest()
+
+
+def _get_file_hashes(files: list[Path]) -> dict[str, str]:
+    """Return mapping of relative path to content hash."""
+    return {str(_relativize_path(f)): _file_content_hash(f) for f in files if f.is_file()}
+
+
+def _find_unchanged_files(
+    files: list[Path], reference_hashes: dict[str, str]
+) -> tuple[list[Path], set[str]]:
+    """Split files into changed vs unchanged based on reference hashes."""
+    changed: list[Path] = []
+    unchanged: set[str] = set()
+    for f in files:
+        rel = str(_relativize_path(f))
+        if rel in reference_hashes:
+            current_hash = _file_content_hash(f)
+            if current_hash == reference_hashes[rel]:
+                unchanged.add(rel)
+                continue
+        changed.append(f)
+    return changed, unchanged
+
+
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -121,15 +205,14 @@ def _collect_files_for_snapshot(
 
     if snapshot_type == SnapshotType.PRE_SESSION:
         collected: list[Path] = []
+        exclude_prefixes = (".",)
+        exclude_dirs = {"__pycache__", "node_modules", "venv", ".venv"}
         for root, dirs, filenames in os.walk(pd):
             dirs[:] = [
-                d
-                for d in dirs
-                if not d.startswith(".")
-                and d not in {"__pycache__", "node_modules", ".git", "venv", ".venv"}
+                d for d in dirs if d not in exclude_dirs and not d.startswith(exclude_prefixes)
             ]
             for fname in filenames:
-                if not fname.startswith("."):
+                if not fname.startswith(exclude_prefixes):
                     collected.append(Path(root) / fname)
         return collected
 
@@ -186,8 +269,13 @@ class SnapshotManager:
         name: str,
         snapshot_type: SnapshotType,
         files: list[str] | None = None,
+        reference_snapshot: str | None = None,
     ) -> Snapshot:
-        """Create a tar/gz snapshot of specified files."""
+        """Create a tar/gz snapshot of specified files.
+
+        Uses incremental snapshotting when reference_snapshot is provided.
+        Only files that have changed since the reference are archived.
+        """
         sanitized = _safe_filename(name)
         files_to_archive = _collect_files_for_snapshot(files, snapshot_type)
 
@@ -195,11 +283,35 @@ class SnapshotManager:
         snap_dir = _snapshots_dir()
         archive_path = snap_dir / f"{sanitized}.tar.gz"
 
+        reference_hashes: dict[str, str] = {}
+        ref_snap_name: str | None = None
+        if reference_snapshot:
+            index = _load_index()
+            for item in index.get("snapshots", []):
+                if item.get("name") == reference_snapshot and item.get("content_hash"):
+                    ref_hashes_raw = item.get("file_hashes", {})
+                    reference_hashes = {k: v for k, v in ref_hashes_raw.items() if v}
+                    ref_snap_name = reference_snapshot
+                    break
+
         size_bytes = 0
+        unchanged_files: set[str] = set()
+        if files_to_archive and reference_hashes:
+            files_to_archive, unchanged_files = _find_unchanged_files(
+                files_to_archive, reference_hashes
+            )
+
         if files_to_archive:
             size_bytes = _create_tar_gz(archive_path, files_to_archive)
 
         relative_files = [str(_relativize_path(f)) for f in files_to_archive]
+        if unchanged_files:
+            all_relative = [str(_relativize_path(f)) for f in files_to_archive] + list(
+                unchanged_files
+            )
+            relative_files = sorted(set(all_relative))
+
+        content_hash = _compute_snapshot_hash(files_to_archive) if files_to_archive else ""
 
         snapshot = Snapshot(
             name=name,
@@ -208,11 +320,20 @@ class SnapshotManager:
             files=relative_files,
             size_bytes=size_bytes,
             path=archive_path,
+            content_hash=content_hash,
+            reference_snapshot=ref_snap_name,
         )
 
         index = _load_index()
         index["snapshots"] = [s for s in index.get("snapshots", []) if s.get("name") != name]
-        index["snapshots"].append(snapshot.to_dict())
+        snapshot_dict = snapshot.to_dict()
+        if reference_hashes:
+            snapshot_dict["file_hashes"] = {
+                str(_relativize_path(f)): _file_content_hash(f)
+                for f in _collect_files_for_snapshot(files, snapshot_type)
+                if f.is_file()
+            }
+        index["snapshots"].append(snapshot_dict)
         _save_index(index)
 
         return snapshot

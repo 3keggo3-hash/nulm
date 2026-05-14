@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from collections import OrderedDict
 from hashlib import sha256
 from pathlib import Path
@@ -15,8 +16,9 @@ _MAX_WORKFLOW_CACHE_ENTRIES = 128
 _WORKFLOW_CACHE_VERSION = 1
 _MAX_WORKFLOW_DISK_CACHE_FILES = 64
 _MAX_WORKFLOW_DISK_CACHE_BYTES = 50 * 1024 * 1024
-_CONTEXT_PACK_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
-_WORKFLOW_PLAN_CACHE: OrderedDict[tuple[str, ...], str] = OrderedDict()
+_WORKFLOW_CACHE_TTL_SECONDS = 3600
+_CONTEXT_PACK_CACHE: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
+_WORKFLOW_PLAN_CACHE: OrderedDict[tuple[str, ...], tuple[str, float]] = OrderedDict()
 
 
 def clear_workflow_caches() -> None:
@@ -27,20 +29,26 @@ def clear_workflow_caches() -> None:
 
 
 def _touch_cache_entry(
-    cache: OrderedDict[tuple[str, ...], str], key: tuple[str, ...]
+    cache: OrderedDict[tuple[str, ...], tuple[str, float]], key: tuple[str, ...]
 ) -> str | None:
-    value = cache.get(key)
-    if value is not None:
-        cache.move_to_end(key)
-    return value
+    entry = cache.get(key)
+    if entry is not None:
+        value, expiry = entry
+        if time.time() < expiry:
+            cache.move_to_end(key)
+            return value
+        del cache[key]
+    return None
 
 
 def _store_cache_entry(
-    cache: OrderedDict[tuple[str, ...], str],
+    cache: OrderedDict[tuple[str, ...], tuple[str, float]],
     key: tuple[str, ...],
     value: str,
+    ttl: int = _WORKFLOW_CACHE_TTL_SECONDS,
 ) -> None:
-    cache[key] = value
+    expiry = time.time() + ttl
+    cache[key] = (value, expiry)
     cache.move_to_end(key)
     while len(cache) > _MAX_WORKFLOW_CACHE_ENTRIES:
         cache.popitem(last=False)
@@ -115,6 +123,28 @@ def _prune_workflow_disk_cache_size(entries: list[Path]) -> None:
         total_size -= size
         if total_size <= _MAX_WORKFLOW_DISK_CACHE_BYTES:
             return
+
+
+def _expire_workflow_cache_entries(
+    cache: OrderedDict[tuple[str, ...], tuple[str, float]],
+) -> int:
+    now = time.time()
+    expired_keys = [key for key, (_, expiry) in cache.items() if now >= expiry]
+    for key in expired_keys:
+        del cache[key]
+    return len(expired_keys)
+
+
+def _invalidate_pattern_from_cache(
+    cache: OrderedDict[tuple[str, ...], tuple[str, float]],
+    prefix: str,
+) -> int:
+    removed = 0
+    keys_to_remove = [key for key in cache.keys() if key and key[0] == prefix]
+    for key in keys_to_remove:
+        del cache[key]
+        removed += 1
+    return removed
 
 
 def _write_disk_cached_response(prefix: str, key: tuple[str, ...], response: str) -> None:

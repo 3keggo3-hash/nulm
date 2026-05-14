@@ -1509,6 +1509,57 @@ def register_meta_tools(
 
         results["autocomplete"] = autocomplete
 
+    if _enabled is None or "agent_introspection" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Introspect on agent capabilities and available reflective tools.",
+                read_only=True,
+            )
+        )
+        async def agent_introspection(
+            include_reflective: bool = True,
+            include_meta: bool = True,
+        ) -> str:
+            started_at = time.perf_counter()
+            reflective_tools = [
+                "reflect_on_recent_work",
+                "meta_review",
+                "self_critique",
+                "review_result_quality",
+                "plan_quality_review",
+            ] if include_reflective else []
+            meta_tools = [
+                "advise_next_step",
+                "improve_request",
+                "suggest_bridge_config",
+                "bridge_status",
+                "tools_overview",
+            ] if include_meta else []
+            result = json_response(
+                True,
+                "Agent introspection complete",
+                details={
+                    "reflective_tools": reflective_tools,
+                    "meta_tools": meta_tools,
+                    "meta_agent_available": True,
+                    "agent_capabilities": {
+                        "planning": True,
+                        "self_critique": True,
+                        "reflection": include_reflective,
+                        "meta_reasoning": include_meta,
+                    },
+                },
+            )
+            return audit_tool_call(
+                "agent_introspection",
+                {"include_reflective": include_reflective, "include_meta": include_meta},
+                result,
+                started_at=started_at,
+            )
+
+        results["agent_introspection"] = agent_introspection
+
     return results
 
 
