@@ -22,6 +22,16 @@ _SENSITIVE_KEYS = {
     "password",
     "authorization",
     "cookie",
+    "private_key",
+    "access_token",
+    "auth_token",
+    "session_id",
+    "credentials",
+    "credential",
+    "refresh_token",
+    "client_secret",
+    "aws_access_key",
+    "aws_secret_key",
 }
 _CONTENT_SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("api_key_assignment", re.compile(r"(?i)\bapi[_-]?key\s*[:=]\s*['\"][^'\"]+['\"]")),
@@ -32,6 +42,18 @@ _CONTENT_SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("secret_unquoted", re.compile(r"(?i)\bsecret\s*[:=]\s*\S+")),
     ("token_unquoted", re.compile(r"(?i)\btoken\s*[:=]\s*\S+")),
     ("password_unquoted", re.compile(r"(?i)\bpassword\s*[:=]\s*\S+")),
+    ("bearer_token", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9_\-.]+")),
+    ("jwt_token", re.compile(r"(?i)\b(eyJ[A-Za-z0-9_\-]+)\.(eyJ[A-Za-z0-9_\-]+)\.[A-Za-z0-9_\-]+")),
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("aws_secret_key", re.compile(r"(?i)\baws[_-]?secret[_-]?key\s*[:=]\s*['\"][^'\"]+['\"]")),
+    ("private_key_header", re.compile(r"-----BEGIN\s+(RSA|EC|DSA|OPENSSH)?\s*PRIVATE\s+KEY-----")),
+    (
+        "uuid_token",
+        re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I),
+    ),
+    ("gh_token", re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}\b")),
+    ("gitlab_token", re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}\b")),
+    ("slack_token", re.compile(r"\bxox[baprs]-[0-9]{10,12}-[0-9]{10,12}-[A-Za-z0-9]{24,}\b")),
 ]
 
 
