@@ -3,21 +3,6 @@
   "description": "Agent coordination manifest - claims prevent conflicts",
   "created_at": null,
   "agents": {
-    "agent-12-guard-policy": {
-      "task": "guard policy and rules engine improvements",
-      "branch": "feature/agent-crew",
-      "files_modified": [
-        "src/claude_bridge/guard_policy.py",
-        "src/claude_bridge/rules_engine.py"
-      ],
-      "changes": [
-        "Fixed _is_repeated_nested_quantifier bug with {n} quantifier parsing",
-        "Added new condition types: COMMAND_BLOCKED, PATH_NOT_IN_ALLOWED_ROOTS, AGENT_ROLE, USER_EQUALS",
-        "Added validation for new condition types",
-        "Added matchers for new condition types in rules_engine",
-        "Updated docstring to list all supported condition types"
-      ]
-    },
     "agent-08": {
       "claimed_tasks": [
         "test_workflow_cache_coverage",
@@ -45,12 +30,40 @@
         "src/claude_bridge/skill_registry.py",
         "src/claude_bridge/anomaly.py",
         "README.md"
-      ]
+      ],
+      "changes_proposed": [
+        {
+          "file": "src/claude_bridge/workflow_engine.py",
+          "issue": "Turkish comment in docstring",
+          "action": "Fixed to English"
+        },
+        {
+          "file": "src/claude_bridge/workflow_engine.py",
+          "issue": "Missing docstrings",
+          "action": "Added comprehensive docstrings"
+        }
+      ],
+      "documentation_status": "accurate",
+      "gaps_identified": []
     },
     "agent-10-performance": {
       "task": "optimization analysis and caching improvements",
       "branch": "feature/agent-crew",
-      "files_modified": ["src/claude_bridge/_optimizations.py"]
+      "files_modified": [
+        "src/claude_bridge/_optimizations.py"
+      ],
+      "changes": [
+        "Move module-level imports out of hot functions",
+        "Pre-compile regex patterns at module load time",
+        "Remove redundant list() copies in cache returns",
+        "Optimize sensitive_path_reason_optimized with LRU-style caching"
+      ],
+      "performance_notes": [
+        "Import inside function adds ~4% overhead per call",
+        "re.compile() in loops is expensive",
+        "Cache returns use list(cached) unnecessarily",
+        "Path.resolve().parts called frequently"
+      ]
     },
     "agent-02-shell-security": {
       "task": "shell security analysis and hardening",
@@ -58,9 +71,22 @@
       "files_modified": [
         "src/claude_bridge/_shell_safety.py",
         "src/claude_bridge/shell_tools.py"
+      ],
+      "changes": [
+        "Added _find_fork_bomb_unescaped() for escaped fork bomb detection",
+        "Extended _DANGEROUS_ENV_VARS to include dyld_library_path",
+        "Enhanced _blocked_curl_wget() for silent fetch detection",
+        "Fixed dangerous env var detection for PATH= anywhere",
+        "Added _blocked_sudo_n() to block sudo -n and sudo -E"
+      ],
+      "security_notes": [
+        "Fork bomb bypass via escapes now detected",
+        "macOS persistence vector added",
+        "Curl silent fetch patterns detected",
+        "PATH= assignment hijacking detected"
       ]
     },
-"agent-03-audit-system": {
+    "agent-03-audit-system": {
       "task": "audit system analysis and improvement",
       "branch": "feature/agent-crew",
       "files_modified": [
@@ -69,56 +95,62 @@
         "src/claude_bridge/audit.py"
       ],
       "changes": [
-        "Added session_start/session_end event logging with log_session_start(), log_session_end()",
-        "Added agent_id parameter to log_tool_call() for tracking which agent made the call",
-        "Added policy_change audit event type via log_policy_change()",
-        "Added ensure_session_start_logged() to auto-capture session start on first tool call"
+        "Added session_start/session_end event logging",
+        "Added agent_id parameter to log_tool_call()",
+        "Added policy_change audit event type",
+        "Added ensure_session_start_logged()"
       ],
       "audit_improvements": [
-        "Session lifecycle now has explicit audit events (session_start, session_end)",
-        "Agent attribution now possible via optional agent_id parameter",
-        "Policy changes (created, updated, deleted, enabled, disabled) are now auditable"
+        "Session lifecycle now has explicit audit events",
+        "Agent attribution now possible",
+        "Policy changes are now auditable"
       ]
     },
-    "agent-14-replay": {
-      "task": "replay fidelity and efficiency improvements",
+    "agent-17-planning": {
+      "task": "planning algorithms improvement",
       "branch": "feature/agent-crew",
       "files_modified": [
-        "src/claude_bridge/replay.py",
-        "src/claude_bridge/_audit_redaction.py"
+        "src/claude_bridge/plan_engine.py",
+        "src/claude_bridge/approach_explorer.py"
       ],
       "changes": [
-        "Fixed replay_session to take most-recent-N instead of taking all then truncating (was inefficient for large sessions)",
-        "Added _hash_utf8() with lru_cache for repeated sha256 hashing in _result_summary (compression/efficiency)"
+        "Added success_criteria_json parameter to create_plan()",
+        "Added validate_plan() function for plan validation",
+        "Added critique_plan() function for plan scoring",
+        "Added TypedDict classes PlanValidationResult and PlanCritiqueResult",
+        "Added relevance scoring in explore_approaches()",
+        "Added _score_keyword_match() helper",
+        "Added include_low_relevance filter parameter"
       ],
-      "fidelity_notes": [
-        "replay_session now correctly slices from end before reversing, avoiding O(n) list slice when limit is set",
-        "Cached hash computation reduces CPU overhead for large replay batches with repeated result strings"
-      ]
-    }
-  },
-    "agent-20-lifecycle": {
-      "task": "lifecycle management improvements - startup/shutdown sequences and graceful degradation",
-      "branch": "feature/agent-crew",
-      "files_modified": [
-        "src/claude_bridge/lifecycle.py"
+      "planning_improvements": [
+        "Plans now support explicit success criteria",
+        "validate_plan() checks goal length, step descriptions, success criteria",
+        "critique_plan() provides 0-100 scoring with issues and suggestions",
+        "Approach exploration uses weighted scoring (70% relevance, 30% complexity)"
       ]
     },
     "agent-18-self-critique": {
-      "task": "improve self-critique quality and add new critique dimensions",
+      "task": "improve self-critique quality",
       "branch": "feature/agent-crew",
       "files_modified": [
         "src/claude_bridge/self_critique.py"
       ],
       "changes": [
-        "Add error_handling criterion: bare except, empty except, swallowed exceptions",
-        "Add imports criterion: wildcard imports, duplicate imports",
-        "Add type_coverage criterion: functions with typed args but no return annotation"
+        "Add error_handling criterion",
+        "Add imports criterion",
+        "Add type_coverage criterion"
       ],
       "new_criteria": [
         "error_handling",
         "imports",
         "type_coverage"
+      ]
+    },
+    "agent-20-lifecycle": {
+      "task": "lifecycle management improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/lifecycle.py"
       ]
     }
   },

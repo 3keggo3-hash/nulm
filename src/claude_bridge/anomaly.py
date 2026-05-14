@@ -369,6 +369,54 @@ _FILE_ACCESS_TOOLS: set[str] = {
     "grep",
 }
 
+_PRIVILEGED_TOOLS: set[str] = {
+    "set_config_value",
+    "run_shell",
+    "start_process",
+    "sudo",
+}
+
+_DANGEROUS_TOOLS: set[str] = {
+    "run_shell",
+    "start_process",
+    "patch_file",
+    "undo_last_patch",
+}
+
+_SUSPICIOUS_FILE_EXTENSIONS: tuple[str, ...] = (
+    ".pem",
+    ".p12",
+    ".pfx",
+    ".crt",
+    ".cer",
+    ".key",
+    ".jks",
+    ".keystore",
+    ".p12",
+    ".pkcs12",
+)
+
+_SUSPICIOUS_PROCESS_NAMES: tuple[str, ...] = (
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "cmd",
+    "powershell",
+    "python",
+    "python3",
+    "node",
+    "ruby",
+    "perl",
+)
+
+_WHITELISTED_HOST_PREFIXES: tuple[str, ...] = (
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+)
+
 # Path substrings that indicate sensitive files
 _SENSITIVE_PATH_SUBSTRINGS: list[str] = [
     ".ssh/",
@@ -385,6 +433,14 @@ _SENSITIVE_PATH_SUBSTRINGS: list[str] = [
     "/var/run/docker.sock",
     "authorized_keys",
     "known_hosts",
+    ".p12",
+    ".pfx",
+    ".pem",
+    ".crt",
+    ".cer",
+    ".key",
+    ".jks",
+    ".keystore",
 ]
 
 _SENSITIVE_CONTENT_MARKERS: tuple[str, ...] = (
@@ -415,10 +471,16 @@ _HIGH_VOLUME_THRESHOLD: int = 10
 _SENSITIVE_PATH_BURST_THRESHOLD: int = 3
 _HIGH_RISK_SPIKE_THRESHOLD: int = 3
 _EXFILTRATION_PATTERN_THRESHOLD: int = 3
+_RAPID_TOOL_SWITCH_THRESHOLD: int = 5
+_RAPID_TOOL_SWITCH_WINDOW_SECONDS: int = 30
+_SUSPICIOUS_FILE_TYPE_THRESHOLD: int = 2
+_NETWORK_ACTIVITY_THRESHOLD: int = 2
+_PROCESS_SPAWN_THRESHOLD: int = 2
 
 # Base scores for each anomaly type
 _BASE_SCORES: dict[str, int] = {
     "new_tool_use": 20,
+    "new_dangerous_tool_use": 45,
     "high_volume_file_access": 30,
     "sensitive_path_burst": 60,
     "unusual_hour": 15,
@@ -428,6 +490,11 @@ _BASE_SCORES: dict[str, int] = {
     "command_pattern_anomaly": 35,
     "path_anomaly": 35,
     "volume_anomaly": 35,
+    "rapid_tool_switch": 30,
+    "suspicious_file_type": 40,
+    "network_activity": 45,
+    "process_spawn": 50,
+    "env_var_manipulation": 35,
 }
 
 # Unusual hours range (start, end) — 1am to 5am
@@ -608,6 +675,118 @@ def _is_file_access_tool(tool_name: str) -> bool:
     return tool_name in _FILE_ACCESS_TOOLS
 
 
+def _is_privileged_tool(tool_name: str) -> bool:
+    """Check if a tool name is a privileged/dangerous tool."""
+    return tool_name in _PRIVILEGED_TOOLS
+
+
+def _is_dangerous_tool(tool_name: str) -> bool:
+    """Check if a tool name is considered dangerous."""
+    return tool_name in _DANGEROUS_TOOLS
+
+
+def _has_suspicious_file_extension(path: str) -> bool:
+    """Check if a path has a suspicious certificate/key file extension."""
+    lower_path = path.lower()
+    return lower_path.endswith(_SUSPICIOUS_FILE_EXTENSIONS)
+
+
+def _extract_command(record: dict[str, Any]) -> str:
+    """Extract command string from record params or result details."""
+    params = record.get("params", {})
+    if isinstance(params, dict) and not _is_masked_value(params):
+        cmd = params.get("command")
+        if isinstance(cmd, str) and cmd.strip():
+            return cmd.strip()
+    result = record.get("result", {})
+    if isinstance(result, dict):
+        details = result.get("details", {})
+        if isinstance(details, dict) and not _is_masked_value(details):
+            cmd = details.get("command")
+            if isinstance(cmd, str) and cmd.strip():
+                return cmd.strip()
+    return ""
+
+
+def _extract_url_from_command(command: str) -> str | None:
+    """Extract URL from a command string if present."""
+    import re
+
+    url_pattern = re.compile(r"https?://[^\s'\"]+", re.IGNORECASE)
+    match = url_pattern.search(command)
+    return match.group(0) if match else None
+
+
+def _is_external_network_activity(command: str) -> bool:
+    """Check if a command involves external network activity."""
+    url = _extract_url_from_command(command)
+    if not url:
+        return False
+    lower_url = url.lower()
+    for prefix in _WHITELISTED_HOST_PREFIXES:
+        if lower_url.startswith(f"http://{prefix}") or lower_url.startswith(f"https://{prefix}"):
+            return False
+    return True
+
+
+def _is_process_spawn(command: str) -> bool:
+    """Check if a command spawns a shell or suspicious process."""
+    if not command:
+        return False
+    lowered = command.lower()
+    for proc in _SUSPICIOUS_PROCESS_NAMES:
+        if lowered.startswith(f"{proc} ") or lowered.startswith(f"{proc} -"):
+            return True
+        if f"/bin/{proc}" in lowered or f"/usr/bin/{proc}" in lowered:
+            return True
+    return False
+
+
+def _is_env_var_manipulation(command: str) -> bool:
+    """Check if a command modifies environment variables."""
+    if not command:
+        return False
+    lowered = command.lower()
+    env_patterns = (
+        "export ",
+        "setenv ",
+        "env ",
+        "unset ",
+        "declare -x",
+        "local ",
+    )
+    return any(lowered.startswith(p) for p in env_patterns)
+
+
+def _count_distinct_tools_in_window(
+    records: list[dict[str, Any]],
+    center_index: int,
+    window_seconds: int,
+) -> int:
+    """Count distinct tools used within a time window around center_index."""
+    center_ts = _parse_record_timestamp(records[center_index])
+    if center_ts is None:
+        return 0
+    from datetime import timedelta
+
+    window = timedelta(seconds=window_seconds)
+    tools: set[str] = set()
+    for i, record in enumerate(records):
+        if i == center_index:
+            continue
+        ts = _parse_record_timestamp(record)
+        if ts is None:
+            continue
+        if abs(ts - center_ts) <= window:
+            tool = _extract_tool_name_raw(record)
+            if tool:
+                tools.add(tool)
+    tool_current = _extract_tool_name_raw(records[center_index])
+    if tool_current:
+        tools.add(tool_current)
+    return len(tools)
+
+
 def _extract_tool_name_raw(record: dict[str, Any]) -> str:
     """Extract tool name from raw record, returning empty string if missing."""
     name = record.get("tool_name")
@@ -733,6 +912,9 @@ def compute_anomaly_scores(
         if tool_name and tool_name not in seen_tools:
             anomaly_types.append("new_tool_use")
             explanations.append(f"First use of tool '{tool_name}' in session")
+            if _is_dangerous_tool(tool_name):
+                anomaly_types.append("new_dangerous_tool_use")
+                explanations.append(f"First use of dangerous tool '{tool_name}'")
             seen_tools.add(tool_name)
         if tool_name:
             seen_tools.add(tool_name)
@@ -830,6 +1012,51 @@ def compute_anomaly_scores(
                 f"Session volume {len(records)} records is >=10x baseline average "
                 f"{baseline_avg_records:g}"
             )
+
+        # ---- Rule 11: rapid_tool_switch ----
+        distinct_tools = _count_distinct_tools_in_window(
+            records, idx, _RAPID_TOOL_SWITCH_WINDOW_SECONDS
+        )
+        if distinct_tools >= _RAPID_TOOL_SWITCH_THRESHOLD:
+            anomaly_types.append("rapid_tool_switch")
+            explanations.append(
+                f"{distinct_tools} distinct tools used within "
+                f"{_RAPID_TOOL_SWITCH_WINDOW_SECONDS}s window"
+            )
+
+        # ---- Rule 12: suspicious_file_type ----
+        all_paths = _collect_record_paths(record)
+        suspicious_ext_count = sum(1 for p in all_paths if _has_suspicious_file_extension(p))
+        if suspicious_ext_count >= _SUSPICIOUS_FILE_TYPE_THRESHOLD:
+            anomaly_types.append("suspicious_file_type")
+            explanations.append(
+                f"Access to {suspicious_ext_count} certificate/key files "
+                f"(.pem, .p12, .crt, .key, etc.)"
+            )
+
+        # ---- Rule 13: network_activity ----
+        if tool_name in {"run_shell", "start_process"}:
+            command = _extract_command(record)
+            if command and _is_external_network_activity(command):
+                anomaly_types.append("network_activity")
+                explanations.append("Command attempts external network access")
+                url = _extract_url_from_command(command)
+                if url:
+                    explanations.append(f"URL: {url[:60]}...")
+
+        # ---- Rule 14: process_spawn ----
+        if tool_name in {"run_shell", "start_process"}:
+            command = _extract_command(record)
+            if command and _is_process_spawn(command):
+                anomaly_types.append("process_spawn")
+                explanations.append("Command spawns a shell or interpreter process")
+
+        # ---- Rule 15: env_var_manipulation ----
+        if tool_name in {"run_shell", "start_process"}:
+            command = _extract_command(record)
+            if command and _is_env_var_manipulation(command):
+                anomaly_types.append("env_var_manipulation")
+                explanations.append("Command modifies environment variables")
 
         # Compute score
         score = 0
@@ -999,6 +1226,7 @@ def build_anomaly_summary(
             "scope": "rule-based, no ML model",
             "rules": [
                 "new_tool_use",
+                "new_dangerous_tool_use",
                 "high_volume_file_access",
                 "sensitive_path_burst",
                 "unusual_hour",
@@ -1008,6 +1236,11 @@ def build_anomaly_summary(
                 "command_pattern_anomaly",
                 "path_anomaly",
                 "volume_anomaly",
+                "rapid_tool_switch",
+                "suspicious_file_type",
+                "network_activity",
+                "process_spawn",
+                "env_var_manipulation",
             ],
             "note": "This MVP uses deterministic heuristics only. "
             "Scores are additive, capped at 100, and advisory by default.",
