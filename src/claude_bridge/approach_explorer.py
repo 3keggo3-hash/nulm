@@ -372,10 +372,8 @@ _SYNONYM_MAP: dict[str, str] = {
     "retrieve": "search",
     "memo": "cache",
     "memorize": "cache",
-    "faster": "optimize",
     "speed": "optimize",
     "performance": "optimize",
-    "faster": "optimize",
     "slow": "optimize",
     "bottleneck": "optimize",
     "compile": "compiler",
@@ -394,7 +392,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(slow|sluggish|bottleneck|slow down)\b"), "optimize"),
     (re.compile(r"\b(legacy|old system|migrate|refactor)\b"), "refactor"),
     (re.compile(r"\b(replace|rewrite|big bang|rebuild)\b"), "refactor"),
-    (re.compile(r"\b(multithread|parallel|concurrent|async)\b"), "async"),
+    (re.compile(r"\b(multithread|parallel|concurrent|async|multithreading)\b"), "async"),
     (re.compile(r"\b(thread|process|core|cpu)\b"), "async"),
 ]
 
