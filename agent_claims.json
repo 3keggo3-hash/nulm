@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "description": "Agent coordination manifest - claims prevent conflicts",
+  "created_at": null,
+  "agents": {
+    "agent-03": {
+      "task": "audit-system",
+      "claimed_files": [
+        "src/claude_bridge/_audit_logging.py",
+        "src/claude_bridge/_audit_core.py"
+      ],
+      "improvements": [
+        "add session_start/session_end event logging",
+        "add agent_id parameter to log_tool_call",
+        "add policy_change audit event type"
+      ]
+    }
+  },
+  "conflicts": [],
+  "resolved": []
+}
+  },
+  "conflicts": [],
+  "resolved": []
+}
+  },
+  "conflicts": [],
+  "resolved": []
+}
+  },
+  "conflicts": [],
+  "resolved": []
+}
