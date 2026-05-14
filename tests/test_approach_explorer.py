@@ -185,3 +185,65 @@ class TestDetectKeywords:
 
     def test_case_insensitive(self):
         assert ae._detect_keywords("SORT the ARRAY") == ["sort"]
+
+
+class TestSynonymDetection:
+    def test_sorting_synonyms(self):
+        assert "sort" in ae._detect_keywords("need help with sorting numbers")
+
+    def test_find_synonym(self):
+        assert "search" in ae._detect_keywords("find the element in the array")
+
+    def test_performance_synonym(self):
+        assert "optimize" in ae._detect_keywords("improve performance of this code")
+
+    def test_container_synonym(self):
+        assert "deploy" in ae._detect_keywords("docker container deployment")
+
+
+class TestIntentPatternDetection:
+    def test_optimize_intent(self):
+        kw = ae._detect_keywords("make this faster")
+        assert "optimize" in kw
+
+    def test_slow_intent(self):
+        kw = ae._detect_keywords("this is slow")
+        assert "optimize" in kw
+
+    def test_legacy_intent(self):
+        kw = ae._detect_keywords("migrate legacy system")
+        assert "refactor" in kw
+
+    def test_parallel_intent(self):
+        kw = ae._detect_keywords("use multithreading")
+        assert "async" in kw
+
+
+class TestEdgeCases:
+    def test_count_zero(self):
+        result = ae.explore_approaches("sort an array", count=0)
+        assert result["ok"] is False
+        assert "positive" in result["message"]
+
+    def test_count_negative(self):
+        result = ae.explore_approaches("sort an array", count=-1)
+        assert result["ok"] is False
+
+    def test_count_exceeds_limit(self):
+        result = ae.explore_approaches("sort an array", count=100)
+        assert result["ok"] is False
+        assert "exceed" in result["message"]
+
+    def test_explore_with_relevance_flag(self):
+        result = ae.explore_approaches(
+            "sort and search and cache database", count=10, include_low_relevance=True
+        )
+        assert result["ok"] is True
+        assert len(result["approaches"]) <= 10
+
+    def test_explore_contains_relevance_scores(self):
+        result = ae.explore_approaches("optimize slow code", count=3)
+        assert result["ok"] is True
+        for approach in result["approaches"]:
+            assert "relevance_score" in approach
+            assert 0.0 <= approach["relevance_score"] <= 1.0
