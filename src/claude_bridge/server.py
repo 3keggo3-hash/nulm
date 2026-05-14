@@ -398,18 +398,43 @@ def _git_status_snapshot(project_dir: Path | None = None) -> dict[str, Any]:
 def _audit_tool_call(
     tool_name: str, params: dict[str, Any], result: str, *, started_at: float
 ) -> str:
-    enriched_result = _apply_onboarding(
-        tool_name,
-        result,
-        enabled=bool(current_config().get("onboarding_enabled", True)),
+    from claude_bridge.observability import get_metrics_collector
+    from claude_bridge.tracing import trace_tool_call
+
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    ok = _tool_result_ok(result)
+    metrics = get_metrics_collector()
+    metrics.increment("claude_bridge_tool_calls_total", labels={"tool": tool_name})
+    metrics.increment(
+        "claude_bridge_tool_call_results_total",
+        labels={"tool": tool_name, "ok": str(ok).lower()},
     )
-    _log_tool_call(
-        tool_name,
-        params,
-        enriched_result,
-        duration_ms=(time.perf_counter() - started_at) * 1000,
-    )
+    metrics.observe("claude_bridge_tool_call_duration_ms", duration_ms, labels={"tool": tool_name})
+    with trace_tool_call(tool_name, project_path=str(_project_dir())) as (_span, attrs):
+        attrs.tool_result_ok = ok
+        attrs.duration_ms = duration_ms
+        enriched_result = _apply_onboarding(
+            tool_name,
+            result,
+            enabled=bool(current_config().get("onboarding_enabled", True)),
+        )
+        _log_tool_call(
+            tool_name,
+            params,
+            enriched_result,
+            duration_ms=duration_ms,
+        )
     return enriched_result
+
+
+def _tool_result_ok(result: str) -> bool:
+    try:
+        payload = _json.loads(result)
+    except _json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return bool(payload.get("ok", False))
 
 
 def _safe_json_object_load(raw: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -634,6 +659,35 @@ anomaly_summary = _tool_or_disabled(_META_TOOLS, "anomaly_summary")
 generate_pr_description = _tool_or_disabled(_META_TOOLS, "generate_pr_description")
 get_trust_score = _tool_or_disabled(_META_TOOLS, "get_trust_score")
 autocomplete = _tool_or_disabled(_META_TOOLS, "autocomplete")
+
+if any(
+    _should_register_tool(name)
+    for name in {
+        "list_skills",
+        "inspect_skill",
+        "recommend_skills",
+        "inspect_skill_package",
+        "run_skill",
+    }
+):
+    from claude_bridge.skill_tool_server import register_skill_tools
+
+    _SKILL_TOOLS = register_skill_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        json_response=_json_response,
+        resolve_path=_resolve_path,
+        project_dir=_project_dir,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _SKILL_TOOLS = {}
+list_skills = _tool_or_disabled(_SKILL_TOOLS, "list_skills")
+inspect_skill = _tool_or_disabled(_SKILL_TOOLS, "inspect_skill")
+recommend_skills = _tool_or_disabled(_SKILL_TOOLS, "recommend_skills")
+inspect_skill_package = _tool_or_disabled(_SKILL_TOOLS, "inspect_skill_package")
+run_skill = _tool_or_disabled(_SKILL_TOOLS, "run_skill")
 
 if any(
     _should_register_tool(name)

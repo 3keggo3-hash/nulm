@@ -55,10 +55,20 @@ class TestSkillMeta:
             name="roundtrip-test",
             version="1.0",
             trigger_phrases=["test"],
+            description="Roundtrip skill",
+            tags=["tests"],
+            source="local",
+            homepage="https://example.invalid/skill",
+            risk_level="medium",
         )
         restored = SkillMeta.from_dict(meta.to_dict())
         assert restored.name == meta.name
         assert restored.version == meta.version
+        assert restored.description == "Roundtrip skill"
+        assert restored.tags == ["tests"]
+        assert restored.source == "local"
+        assert restored.homepage == "https://example.invalid/skill"
+        assert restored.risk_level == "medium"
 
 
 class TestSkillConfig:
@@ -125,16 +135,50 @@ class TestValidateSkillJson:
         valid, errors = validate_skill_json(data)
         assert valid is False
 
+    def test_empty_trigger_phrase_rejected(self) -> None:
+        data = {
+            "name": "test-skill",
+            "version": "1.0",
+            "trigger_phrases": [""],
+        }
+        valid, errors = validate_skill_json(data)
+        assert valid is False
+        assert any("non-empty phrases" in error for error in errors)
+
+    def test_invalid_risk_level_rejected(self) -> None:
+        data = {
+            "name": "test-skill",
+            "version": "1.0",
+            "trigger_phrases": ["test"],
+            "risk_level": "critical",
+        }
+        valid, errors = validate_skill_json(data)
+        assert valid is False
+        assert any("risk_level" in error for error in errors)
+
+    def test_non_list_tags_rejected(self) -> None:
+        data = {
+            "name": "test-skill",
+            "version": "1.0",
+            "trigger_phrases": ["test"],
+            "tags": "python",
+        }
+        valid, errors = validate_skill_json(data)
+        assert valid is False
+        assert any("tags" in error for error in errors)
+
 
 class TestLoadSkillJson:
     def test_load_valid_file(self, tmp_path: Path) -> None:
         skill_file = tmp_path / "test.v1.json"
         skill_file.write_text(
-            json.dumps({
-                "name": "load-test",
-                "version": "1.0",
-                "trigger_phrases": ["load"],
-            })
+            json.dumps(
+                {
+                    "name": "load-test",
+                    "version": "1.0",
+                    "trigger_phrases": ["load"],
+                }
+            )
         )
 
         data, errors = load_skill_json(skill_file)
@@ -186,6 +230,9 @@ class TestCreateSkillJson:
         assert data["name"] == "min-skill"
         assert data["auto_load"] is False
         assert data["permissions"] == []
+        assert data["description"] == ""
+        assert data["tags"] == []
+        assert data["risk_level"] == "low"
 
     def test_create_full(self) -> None:
         data = create_skill_json(

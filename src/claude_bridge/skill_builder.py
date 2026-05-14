@@ -7,7 +7,7 @@ import inspect
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Coroutine, cast
 
 from claude_bridge.skill_schema import (
     SkillMeta,
@@ -372,7 +372,7 @@ def _run_sync(awaitable: Any) -> Any:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(awaitable)
+        return asyncio.run(cast(Coroutine[Any, Any, Any], awaitable))
     raise RuntimeError("Cannot run synchronous skill proposal while an event loop is running")
 
 

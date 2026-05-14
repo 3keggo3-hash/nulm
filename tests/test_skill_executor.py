@@ -57,11 +57,13 @@ class TestSkillExecutor:
 
     def test_skill_env_drops_secret_environment(self, monkeypatch) -> None:
         monkeypatch.setenv("PATH", "/bin")
+        monkeypatch.setenv("PYTHONPATH", "/tmp/malicious")
         monkeypatch.setenv("SECRET_TOKEN", "abc123")
 
         env = _skill_env()
 
         assert env["PATH"] == "/bin"
+        assert "PYTHONPATH" not in env
         assert "SECRET_TOKEN" not in env
 
 

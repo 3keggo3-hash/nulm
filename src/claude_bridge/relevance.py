@@ -13,7 +13,7 @@ _PRESERVE_IDENTIFIER_PATTERN = re.compile(r"^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_]+$")
 _MAX_RELEVANCE_CACHE_ENTRIES = 128
 _RELEVANCE_CACHE: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
 _RELEVANCE_CACHE_LOCK = threading.RLock()
-_SHORTLIST_MULTIPLIER = 8
+_SHORTLIST_MULTIPLIER = 3
 _MIN_SHORTLIST_SIZE = 24
 
 _FIELD_REASON_MAP: dict[str, str] = {
@@ -99,9 +99,10 @@ def rank_indexed_files(
             "strategy": "two_phase_token_scoring",
         }
 
+    files = _candidate_files(index_payload, terms)
     candidates: list[dict[str, Any]] = []
 
-    for item in index_payload["files"]:
+    for item in files:
         functions = item.get("functions", [])
         classes = item.get("classes", [])
         imports = item.get("imports", [])
@@ -239,3 +240,32 @@ def rank_indexed_files(
         while len(_RELEVANCE_CACHE) > _MAX_RELEVANCE_CACHE_ENTRIES:
             _RELEVANCE_CACHE.popitem(last=False)
     return payload
+
+
+def _candidate_files(index_payload: dict[str, Any], terms: list[str]) -> list[dict[str, Any]]:
+    term_index = index_payload.get("_term_file_index")
+    files = index_payload.get("files", [])
+    if not isinstance(term_index, dict):
+        return list(files)
+
+    paths: set[str] = set()
+    for term in terms:
+        raw_paths = term_index.get(term, [])
+        if isinstance(raw_paths, list):
+            paths.update(str(path) for path in raw_paths)
+    for item in files:
+        haystack = " ".join(
+            [
+                str(item.get("path_lower", item.get("path", ""))).lower(),
+                " ".join(str(name).lower() for name in item.get("functions", [])),
+                " ".join(str(name).lower() for name in item.get("classes", [])),
+                " ".join(str(name).lower() for name in item.get("imports", [])),
+            ]
+        )
+        if any(term in haystack for term in terms):
+            paths.add(str(item.get("path")))
+    if not paths:
+        return list(files)
+
+    by_path = {str(item.get("path")): item for item in files if isinstance(item, dict)}
+    return [by_path[path] for path in sorted(paths) if path in by_path]

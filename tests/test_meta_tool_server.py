@@ -218,6 +218,8 @@ class TestBridgeStatus:
         assert "allowed_roots" in details
         assert "auto_approve" in details
         assert "context_budget_profile" in details
+        assert details["skill_governance"]["registered_count"] >= 0
+        assert details["skill_governance"]["source_visibility"] == "metadata_only"
         assert details["ai_evaluator"]["latency"]["sample_count"] >= 0
 
     async def test_bridge_status_includes_smart_features(self, temp_project):

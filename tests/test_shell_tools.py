@@ -554,6 +554,84 @@ class TestProcessSessionManagement:
         assert payload["details"]["max_sessions"] == 1
         st.reset_process_sessions()
 
+    def test_register_process_session_enforces_limit_atomically(self, monkeypatch, tmp_path):
+        class FakeProcess:
+            pid = 123
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                pass
+
+            def kill(self):
+                pass
+
+            def wait(self, timeout=None):
+                return None
+
+        monkeypatch.setattr(_sc, "_MAX_PROCESS_SESSIONS", 1)
+        st.reset_process_sessions()
+        first = st._ProcessSession(
+            session_id="first",
+            command="sleep 1",
+            argv=["sleep", "1"],
+            cwd=tmp_path,
+            process=FakeProcess(),
+            risk_level="low",
+            risk_reasons=[],
+        )
+        second = st._ProcessSession(
+            session_id="second",
+            command="sleep 1",
+            argv=["sleep", "1"],
+            cwd=tmp_path,
+            process=FakeProcess(),
+            risk_level="low",
+            risk_reasons=[],
+        )
+
+        assert st._register_process_session(first) is True
+        assert st._register_process_session(second) is False
+        with st._PROCESS_SESSIONS_LOCK:
+            assert set(st._PROCESS_SESSIONS) == {"first"}
+        st.reset_process_sessions()
+
+    def test_unregistered_process_cleanup_escalates_to_kill(self):
+        class FakeStream:
+            closed = False
+
+            def close(self):
+                self.closed = True
+
+        class FakeProcess:
+            killed = False
+            terminated = False
+
+            def __init__(self):
+                self.stdout = FakeStream()
+                self.stderr = FakeStream()
+                self.stdin = FakeStream()
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                raise subprocess.TimeoutExpired(["sleep"], timeout or 1)
+
+            def kill(self):
+                self.killed = True
+
+        process = FakeProcess()
+
+        _sr._terminate_unregistered_process(process)
+
+        assert process.terminated is True
+        assert process.killed is True
+        assert process.stdout.closed is True
+        assert process.stderr.closed is True
+        assert process.stdin.closed is True
+
     @pytest.mark.asyncio
     async def test_kill_process_force_uses_kill(self):
         class FakeProcess:

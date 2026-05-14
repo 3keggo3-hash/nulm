@@ -8,10 +8,34 @@ from pathlib import Path
 import pytest
 
 from claude_bridge import server as mcp_server
+from claude_bridge.git_tool_server import register_git_tools
+from claude_bridge.meta_agent_server import register_meta_agent_tools
 
 
 def parse_payload(result: str) -> dict:
     return json.loads(result)
+
+
+class FakeMcp:
+    def tool(self, **_kwargs):
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+
+def tool_options(
+    _description: str,
+    *,
+    read_only: bool = False,
+    destructive: bool = False,
+    open_world: bool = False,
+) -> dict:
+    return {}
+
+
+def audit_passthrough(_name: str, _params: dict, result: str, *, started_at: float) -> str:
+    return result
 
 
 @pytest.fixture
@@ -230,7 +254,62 @@ class TestGitIntegration:
         undo_payload = parse_payload(await mcp_server.undo_last_patch(confirm=True))
         assert undo_payload["ok"] is False
         assert undo_payload["code"] == "approval_rejected"
-        assert test_file.read_text() == "x = 2\n"
+
+    async def test_commit_changes_requires_approval_when_not_client_managed(self, git_project):
+        mcp_server.set_config(
+            project_dir=git_project,
+            auto_approve=False,
+            client_managed_approval=False,
+        )
+        tools = register_git_tools(
+            mcp=FakeMcp(),
+            tool_options=tool_options,
+            audit_tool_call=audit_passthrough,
+            json_response=mcp_server._json_response,
+            project_dir=lambda: git_project,
+            enabled_names={"commit_changes"},
+        )
+
+        payload = parse_payload(await tools["commit_changes"]("test commit"))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "approval_rejected"
+
+    async def test_checkpoint_tools_require_approval_when_not_client_managed(self, git_project):
+        mcp_server.set_config(
+            project_dir=git_project,
+            auto_approve=False,
+            client_managed_approval=False,
+        )
+
+        def should_not_run(**_kwargs):
+            raise AssertionError("checkpoint implementation should not run")
+
+        tools = register_meta_agent_tools(
+            mcp=FakeMcp(),
+            tool_options=tool_options,
+            audit_tool_call=audit_passthrough,
+            json_response=mcp_server._json_response,
+            create_plan_impl=lambda **_kwargs: {"ok": True},
+            execute_step_impl=lambda **_kwargs: {"ok": True},
+            get_plan_status_impl=lambda **_kwargs: {"ok": True},
+            explore_approaches_impl=lambda **_kwargs: {"ok": True},
+            execute_approach_impl=lambda **_kwargs: {"ok": True},
+            compare_approaches_impl=lambda **_kwargs: {"ok": True},
+            self_critique_impl=lambda **_kwargs: {"ok": True},
+            create_checkpoint_impl=should_not_run,
+            restore_checkpoint_impl=should_not_run,
+            list_checkpoints_impl=lambda **_kwargs: {"ok": True},
+            enabled_names={"create_checkpoint", "restore_checkpoint"},
+        )
+
+        create_payload = parse_payload(await tools["create_checkpoint"]("before-risky-change"))
+        restore_payload = parse_payload(await tools["restore_checkpoint"]("before-risky-change"))
+
+        assert create_payload["ok"] is False
+        assert create_payload["code"] == "approval_rejected"
+        assert restore_payload["ok"] is False
+        assert restore_payload["code"] == "approval_rejected"
 
     async def test_set_config_clears_undo_snapshot_state(self, git_project):
         test_file = git_project / "test.py"

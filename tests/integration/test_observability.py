@@ -59,3 +59,28 @@ class TestMetricsCollection:
         collector.reset()
         count = collector.get("tool_calls", labels={"tool": "write_file"})
         assert count == 0
+
+    async def test_audited_tool_call_records_metrics(self, temp_project):
+        from claude_bridge import server as mcp_server
+        from claude_bridge.observability import MetricsCollector
+
+        collector = MetricsCollector()
+        collector.reset()
+
+        await mcp_server.workspace_status()
+        await mcp_server.workspace_status()
+
+        assert (
+            collector.get(
+                "claude_bridge_tool_calls_total",
+                labels={"tool": "workspace_status"},
+            )
+            == 2
+        )
+        assert (
+            collector.get_histogram(
+                "claude_bridge_tool_call_duration_ms",
+                labels={"tool": "workspace_status"},
+            )
+            >= 0
+        )

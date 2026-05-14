@@ -212,6 +212,38 @@ class TestPolicyDecisionE2E:
         decision = assert_decision(payload, action="ask", source="rule", risk_level="medium")
         assert decision["metadata"]["rule_name"] == "ask-new-shell-script"
 
+    async def test_client_managed_approval_allows_custom_rule_ask(
+        self, policy_project: tuple[Path, Path]
+    ) -> None:
+        project, _ = policy_project
+        mcp_server.set_config(
+            project_dir=project,
+            auto_approve=False,
+            client_managed_approval=True,
+        )
+        (project / ".claude-bridge-guard.json").write_text(
+            json.dumps(
+                {
+                    "rules": [
+                        {
+                            "name": "ask-new-shell-script",
+                            "scope": "write_file",
+                            "action": "ask",
+                            "conditions": [
+                                {"type": "extension", "field": "path", "values": [".sh"]},
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = parse_payload(await mcp_server.write_file("deploy.sh", "echo ok"))
+
+        assert payload["ok"] is True
+        assert (project / "deploy.sh").read_text(encoding="utf-8") == "echo ok"
+
     async def test_custom_rule_allows_safe_validation_command(
         self, policy_project: tuple[Path, Path]
     ) -> None:
@@ -765,3 +797,23 @@ class TestRuntimeRolePolicyEnforcement:
         assert payload["code"] == "approval_rejected"
         assert "approval" in payload["message"].lower()
         assert not (temp_project / "notes.txt").exists()
+
+    async def test_move_and_copy_enforce_junior_approval_role(self, temp_project) -> None:
+        mcp_server.set_config(
+            project_dir=temp_project,
+            allowed_roots=[temp_project],
+            auto_approve=True,
+        )
+        await mcp_server.set_config_value("role", "junior")
+        (temp_project / "move-src.txt").write_text("move", encoding="utf-8")
+        (temp_project / "copy-src.txt").write_text("copy", encoding="utf-8")
+
+        move_payload = parse_payload(await mcp_server.move_file("move-src.txt", "move-dst.txt"))
+        copy_payload = parse_payload(await mcp_server.copy_path("copy-src.txt", "copy-dst.txt"))
+
+        assert move_payload["ok"] is False
+        assert move_payload["code"] == "approval_rejected"
+        assert copy_payload["ok"] is False
+        assert copy_payload["code"] == "approval_rejected"
+        assert not (temp_project / "move-dst.txt").exists()
+        assert not (temp_project / "copy-dst.txt").exists()

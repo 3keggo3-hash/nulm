@@ -135,6 +135,10 @@ See [`docs/agent-quality-chat-flows.md`](docs/agent-quality-chat-flows.md) for n
 flows such as public readiness, professionalizing code, reducing token use, fixing bugs, and
 checking whether completed work is good enough.
 
+Skill governance is documented in [`docs/skill-discovery.md`](docs/skill-discovery.md). V1 skill
+discovery is local-first: packages can be inspected before import, recommendations are explained,
+and remote auto-download/install/run is intentionally out of scope.
+
 ## Security
 
 - **Local-only by design**: no remote service needed for core operation

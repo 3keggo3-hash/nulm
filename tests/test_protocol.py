@@ -2231,6 +2231,39 @@ class TestWorkspaceTools:
         assert payload["details"]["active_project_dir"] == str(tertis_dir.resolve())
         assert payload["details"]["switched_from_subdirectory_rule"] is True
 
+    async def test_switch_project_root_preserves_security_config(self, temp_project):
+        desktop_root = temp_project.parent / "desktop-root-preserve"
+        desktop_root.mkdir(exist_ok=True)
+        nested_dir = desktop_root / "nested"
+        nested_dir.mkdir(exist_ok=True)
+        mcp_server.apply_config(
+            project_dir=temp_project,
+            allowed_roots=[temp_project, desktop_root],
+            auto_approve=False,
+            client_managed_approval=True,
+            shell_timeout=7,
+            tool_profile="full",
+            ai_evaluator_enabled=True,
+            ai_evaluator_provider="local",
+            ai_evaluator_timeout=3,
+            role="junior",
+            user="tester",
+        )
+
+        payload = parse_payload(await mcp_server.switch_project_root(str(nested_dir)))
+        config = mcp_server.current_config()
+
+        assert payload["ok"] is True
+        assert config["project_dir"] == nested_dir.resolve()
+        assert config["client_managed_approval"] is True
+        assert config["auto_approve"] is False
+        assert config["shell_timeout"] == 7
+        assert config["tool_profile"] == "full"
+        assert config["ai_evaluator_enabled"] is True
+        assert config["ai_evaluator_timeout"] == 3
+        assert config["role"] == "junior"
+        assert config["user"] == "tester"
+
 
 class TestAuditTools:
     async def test_get_recent_tool_calls_returns_logged_history(self, temp_project, monkeypatch):

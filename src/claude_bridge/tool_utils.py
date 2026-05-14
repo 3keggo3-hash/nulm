@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import fnmatch
+import inspect
 import json
 import re
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from claude_bridge.config import (
     allowed_roots,
     apply_config,
     approval_mode,
+    current_config,
     project_dir,
     shell_timeout,
 )
@@ -313,13 +315,26 @@ def set_active_project_dir(next_project_dir: Path) -> None:
     resolved = next_project_dir.resolve()
     if not any(is_within_root(resolved, root) for root in allowed_roots()):
         raise PermissionError("Requested project root is not in allowed roots")
-    auto_approve, client_managed_approval = approval_mode()
+    config = current_config()
     apply_config(
         project_dir=resolved,
-        allowed_roots=allowed_roots(),
-        auto_approve=auto_approve,
-        client_managed_approval=client_managed_approval,
-        shell_timeout=shell_timeout(),
+        allowed_roots=cast(list[Path], config["allowed_roots"]),
+        auto_approve=bool(config["auto_approve"]),
+        client_managed_approval=bool(config["client_managed_approval"]),
+        shell_timeout=int(config["shell_timeout"]),
+        approval_preset=cast(str | None, config["approval_preset"]),
+        onboarding_enabled=bool(config["onboarding_enabled"]),
+        context_budget_profile=str(config["context_budget_profile"]),
+        tool_profile=str(config["tool_profile"]),
+        intent_compaction_enabled=bool(config["intent_compaction_enabled"]),
+        ai_evaluator_enabled=bool(config["ai_evaluator_enabled"]),
+        ai_evaluator_provider=str(config["ai_evaluator_provider"]),
+        ai_evaluator_api_key=str(config["ai_evaluator_api_key"]),
+        ai_evaluator_model=str(config["ai_evaluator_model"]),
+        ai_evaluator_timeout=int(config["ai_evaluator_timeout"]),
+        ai_evaluator_fallback_action=str(config["ai_evaluator_fallback_action"]),
+        role=cast(str | None, config["role"]),
+        user=cast(str | None, config["user"]),
     )
     from claude_bridge.indexing import clear_index_cache
 
@@ -383,8 +398,19 @@ async def require_approval(
     rejection_details: dict[str, Any] | None = None,
     request_approval_fn: Callable[..., Awaitable[bool]] = request_approval,
     card: PermissionCard | None = None,
+    allow_auto_approve: bool = True,
 ) -> str | None:
-    approved = await request_approval_fn(tool_name, params, card=card)
+    auto_approve, client_managed_approval = approval_mode()
+    if not allow_auto_approve and auto_approve and not client_managed_approval:
+        approved = False
+    else:
+        try:
+            result = request_approval_fn(tool_name, params, card=card)
+        except TypeError as exc:
+            if "card" not in str(exc):
+                raise
+            result = request_approval_fn(tool_name, params)
+        approved = bool(await result) if inspect.isawaitable(result) else bool(result)
     if approved:
         return None
     return json_response(

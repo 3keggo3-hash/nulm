@@ -54,6 +54,25 @@ async def test_orchestrator_decompose_multiple_keywords():
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_decompose_skill_security_review():
+    orchestrator = OrchestratorAgent()
+    subtasks = await orchestrator.decompose("review skill marketplace security")
+
+    agent_names = [st["agent_name"] for st in subtasks]
+    assert "security_agent" in agent_names
+    assert "research_agent" in agent_names
+    assert "review_agent" in agent_names
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_decompose_skill_recommendation():
+    orchestrator = OrchestratorAgent()
+    subtasks = await orchestrator.decompose("recommend a skill for this task")
+
+    assert any(st["agent_name"] == "research_agent" for st in subtasks)
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_synthesize_success():
     orchestrator = OrchestratorAgent()
     results = [

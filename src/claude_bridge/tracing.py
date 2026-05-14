@@ -11,11 +11,16 @@ from enum import Enum
 from typing import Any, Generator
 
 try:
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.trace import Span, Status, StatusCode
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    from opentelemetry import trace  # type: ignore[import-not-found]
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+    from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
+        BatchSpanProcessor,
+        ConsoleSpanExporter,
+    )
+    from opentelemetry.trace import Span, Status, StatusCode  # type: ignore[import-not-found]
+    from opentelemetry.trace.propagation.tracecontext import (  # type: ignore[import-not-found]
+        TraceContextTextMapPropagator,
+    )
 except ImportError:
     trace = None
     Span = Status = StatusCode = None
@@ -56,7 +61,9 @@ class TracingManager:
             return
         self._tracer: trace.Tracer | None = None
         self._provider: TracerProvider | None = None
-        self._propagator = TraceContextTextMapPropagator() if TraceContextTextMapPropagator else None
+        self._propagator = (
+            TraceContextTextMapPropagator() if TraceContextTextMapPropagator else None
+        )
         self._level = TraceLevel.NONE
         self._initialized: bool = True
         self._configure_from_env()
@@ -88,7 +95,9 @@ class TracingManager:
         return self._level
 
     @contextmanager
-    def start_span(self, name: str, attributes: SpanAttributes | None = None) -> Generator[Span | None, None, None]:
+    def start_span(
+        self, name: str, attributes: SpanAttributes | None = None
+    ) -> Generator[Span | None, None, None]:
         if self._tracer is None or self._level == TraceLevel.NONE:
             yield None
             return
@@ -164,8 +173,19 @@ def trace_tool_call(
     )
     start = time.perf_counter()
     with manager.start_span(f"tool.{tool_name}", attrs) as span:
-        yield span, attrs
-        attrs.duration_ms = (time.perf_counter() - start) * 1000
+        try:
+            yield span, attrs
+            manager.set_ok(span)
+        except Exception as exc:
+            manager.record_exception(span, exc)
+            raise
+        finally:
+            if attrs.duration_ms is None:
+                attrs.duration_ms = (time.perf_counter() - start) * 1000
+            if span is not None:
+                span.set_attribute("tool.duration_ms", attrs.duration_ms)
+                if attrs.tool_result_ok is not None:
+                    span.set_attribute("tool.result_ok", attrs.tool_result_ok)
 
 
 @contextmanager
@@ -180,5 +200,13 @@ def trace_workflow(
     )
     start = time.perf_counter()
     with manager.start_span("workflow.execute", attrs) as span:
-        yield span, attrs
-        attrs.duration_ms = (time.perf_counter() - start) * 1000
+        try:
+            yield span, attrs
+            manager.set_ok(span)
+        except Exception as exc:
+            manager.record_exception(span, exc)
+            raise
+        finally:
+            attrs.duration_ms = (time.perf_counter() - start) * 1000
+            if span is not None:
+                span.set_attribute("workflow.duration_ms", attrs.duration_ms)

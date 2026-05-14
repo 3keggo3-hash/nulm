@@ -6,6 +6,11 @@ import json
 import time
 from typing import Any, Callable
 
+from claude_bridge.config import active_role, active_user, project_dir
+from claude_bridge.guard_policy import DecisionAction, ToolRequestContext
+from claude_bridge.rules_engine import evaluate_runtime_policy_chain
+from claude_bridge.tool_utils import require_approval
+
 
 def register_meta_agent_tools(
     *,
@@ -27,6 +32,47 @@ def register_meta_agent_tools(
 ) -> dict[str, Any]:
     _enabled = enabled_names
     results: dict[str, Any] = {}
+
+    async def _require_mutating_meta_approval(tool_name: str, params: dict[str, Any]) -> str | None:
+        policy_context = ToolRequestContext(
+            tool_name=tool_name,
+            params=params,
+            project_dir=str(project_dir()),
+            role=active_role(),
+            user=active_user(),
+        )
+        rule_decision = evaluate_runtime_policy_chain(policy_context)
+        if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="policy_denied",
+                details=params,
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+            return None
+        rejection = await require_approval(
+            tool_name,
+            params,
+            rejection_message=(
+                rule_decision.reason if rule_decision is not None else f"{tool_name} rejected"
+            ),
+            rejection_details=params,
+        )
+        if rejection is None:
+            return None
+        if rule_decision is None:
+            return rejection
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="approval_rejected",
+            details=params,
+            decision=rule_decision,
+            decision_in_details=True,
+        )
 
     if _enabled is None or "create_plan" in _enabled:
 
@@ -227,6 +273,14 @@ def register_meta_agent_tools(
         )
         async def create_checkpoint(name: str) -> str:
             started_at = time.perf_counter()
+            approval_result = await _require_mutating_meta_approval(
+                "create_checkpoint", {"name": name}
+            )
+            if approval_result is not None:
+                result = approval_result
+                return audit_tool_call(
+                    "create_checkpoint", {"name": name}, result, started_at=started_at
+                )
             impl_result = create_checkpoint_impl(name=name)
             result = json_response(
                 impl_result.get("ok", False),
@@ -244,6 +298,14 @@ def register_meta_agent_tools(
         @mcp.tool(**tool_options("Restore a previously saved checkpoint.", destructive=True))
         async def restore_checkpoint(name: str) -> str:
             started_at = time.perf_counter()
+            approval_result = await _require_mutating_meta_approval(
+                "restore_checkpoint", {"name": name}
+            )
+            if approval_result is not None:
+                result = approval_result
+                return audit_tool_call(
+                    "restore_checkpoint", {"name": name}, result, started_at=started_at
+                )
             impl_result = restore_checkpoint_impl(name=name)
             result = json_response(
                 impl_result.get("ok", False),

@@ -161,6 +161,16 @@ def _process_session_capacity() -> dict[str, int | bool]:
     }
 
 
+def _register_process_session(session: _ProcessSession) -> bool:
+    """Register a new process session atomically with session-limit trimming."""
+    with _PROCESS_SESSIONS_LOCK:
+        _trim_process_sessions()
+        if len(_PROCESS_SESSIONS) >= _const._MAX_PROCESS_SESSIONS:
+            return False
+        _PROCESS_SESSIONS[session.session_id] = session
+        return True
+
+
 def reset_process_sessions() -> None:
     with _PROCESS_SESSIONS_LOCK:
         sessions = list(_PROCESS_SESSIONS.values())

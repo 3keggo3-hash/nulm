@@ -9,7 +9,7 @@ import time
 from typing import Any, cast
 
 try:
-    import redis
+    import redis  # type: ignore[import-not-found]
 except ImportError:
     redis = None
 
@@ -25,7 +25,7 @@ class DistributedCache:
         self._enabled = enabled and redis is not None
         self._prefix = prefix
         self._default_ttl = default_ttl
-        self._client: redis.Redis | None = None
+        self._client: Any | None = None
         self._local_cache: dict[str, tuple[Any, float]] = {}
         self._local_lock = threading.Lock()
         if self._enabled:

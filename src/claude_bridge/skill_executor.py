@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from claude_bridge._shell_safety import _check_skill_code_blocked
 from claude_bridge.skill_registry import get_registry
 
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -69,14 +70,20 @@ class SkillExecutor:
         }
         return {k: v for k, v in context.items() if k in safe_keys}
 
-    def run_skill(self, name: str, context: dict[str, Any] | None = None) -> SkillResult:
+    def run_skill(
+        self,
+        name: str,
+        context: dict[str, Any] | None = None,
+        *,
+        registry_root: Path | None = None,
+    ) -> SkillResult:
         """Execute a skill by name with the given context.
 
         Runs the skill in a bounded subprocess with timeout.
         """
         import subprocess
 
-        registry = get_registry()
+        registry = get_registry(registry_root)
         loaded = registry.get_loaded().get(name)
         if loaded is None:
             success, _ = registry.load_skill(name)
@@ -104,6 +111,8 @@ class SkillExecutor:
         safe_context = self._prepare_context(context)
 
         skill_code = loaded.code
+        if blocked_reason := _check_skill_code_blocked(skill_code):
+            return SkillResult(status="denied", error=blocked_reason)
         start = time.monotonic()
 
         try:
@@ -199,7 +208,7 @@ _executor: SkillExecutor | None = None
 
 def _skill_env() -> dict[str, str]:
     env: dict[str, str] = {}
-    for key in ("PATH", "PYTHONPATH", "SYSTEMROOT", "WINDIR"):
+    for key in ("PATH", "SYSTEMROOT", "WINDIR"):
         value = os.environ.get(key)
         if value:
             env[key] = value

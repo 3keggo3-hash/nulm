@@ -88,6 +88,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "workspace",
             "workflow_core",
             "meta_core",
+            "skills_read",
             "smart",
             "insights_core",
         },
@@ -103,6 +104,8 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "workflow_core",
             "meta_core",
             "meta_agent",
+            "skills_read",
+            "skills_execute",
             "smart",
             "insights_core",
             "insights_extra",
@@ -189,6 +192,15 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "create_checkpoint",
         "restore_checkpoint",
         "list_checkpoints",
+    },
+    "skills_read": {
+        "list_skills",
+        "inspect_skill",
+        "recommend_skills",
+        "inspect_skill_package",
+    },
+    "skills_execute": {
+        "run_skill",
     },
     "smart": {
         "count_file_tokens",
@@ -354,15 +366,11 @@ def apply_config(
     if role is not None and (
         not isinstance(role, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", role)
     ):
-        raise ValueError(
-            f"role must be alphanumeric, hyphen, or underscore, got {role!r}"
-        )
+        raise ValueError(f"role must be alphanumeric, hyphen, or underscore, got {role!r}")
     if user is not None and (
         not isinstance(user, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", user)
     ):
-        raise ValueError(
-            f"user must be alphanumeric, hyphen, or underscore, got {user!r}"
-        )
+        raise ValueError(f"user must be alphanumeric, hyphen, or underscore, got {user!r}")
     with _CONFIG_LOCK:
         _CONFIG["project_dir"] = resolved_project_dir
         _CONFIG["allowed_roots"] = resolved_allowed_roots
@@ -682,23 +690,17 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
 
         if key == "role":
             if value is not None and (
-                not isinstance(value, str)
-                or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+                not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
             ):
-                raise ValueError(
-                    "role must be alphanumeric, hyphen, or underscore, or None"
-                )
+                raise ValueError("role must be alphanumeric, hyphen, or underscore, or None")
             _CONFIG[key] = value
             return current_config()
 
         if key == "user":
             if value is not None and (
-                not isinstance(value, str)
-                or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+                not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
             ):
-                raise ValueError(
-                    "user must be alphanumeric, hyphen, or underscore, or None"
-                )
+                raise ValueError("user must be alphanumeric, hyphen, or underscore, or None")
             _CONFIG[key] = value
             return current_config()
 

@@ -794,6 +794,50 @@ def build_agent_loop_policy(max_iterations: int) -> dict[str, Any]:
     }
 
 
+def preview_workflow(
+    mode: str,
+    target: str,
+    option: str | None = None,
+    language: str = "English",
+) -> dict[str, Any]:
+    """Return workflow preview without executing file operations.
+
+    Returns dict with:
+      - ok: bool
+      - mode, target, option, language
+      - prompt: resolved workflow prompt text
+      - token_estimate: int (word_count * 1.3, rough estimate)
+      - steps_summary: str (comma-joined WORKFLOW_STEPS for the mode)
+      - error: str (if mode invalid)
+      - valid_modes: list[str] (if mode invalid)
+    """
+    if mode not in SUPPORTED_WORKFLOW_MODES:
+        return {
+            "ok": False,
+            "error": f"Unsupported workflow mode: {mode}",
+            "valid_modes": sorted(SUPPORTED_WORKFLOW_MODES),
+            "mode": mode,
+            "target": target,
+            "option": option,
+            "language": language,
+        }
+    prompt = workflow_prompt(mode, target, option, language)
+    word_count = len(prompt.split())
+    token_estimate = int(word_count * 1.3)
+    steps = WORKFLOW_STEPS.get(mode, [])
+    steps_summary = ", ".join(f"step {i+1}: {s[:50]}" for i, s in enumerate(steps))
+    return {
+        "ok": True,
+        "mode": mode,
+        "target": target,
+        "option": option,
+        "language": language,
+        "prompt": prompt,
+        "token_estimate": token_estimate,
+        "steps_summary": steps_summary,
+    }
+
+
 def prompt_shortcut_catalog() -> dict[str, Any]:
     return {
         "shortcuts": [dict(item) for item in PROMPT_SHORTCUTS],

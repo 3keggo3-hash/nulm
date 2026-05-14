@@ -135,6 +135,7 @@ Tasks:
 Current polish:
 
 - [x] Surface Agent Quality parser telemetry in `bridge_status`.
+- [x] Surface metadata-only Skill Governance snapshot in `bridge_status`.
 - [x] Group Agent Quality tools by planning, config, and workflow/result review in
       `tools_overview`.
 
@@ -169,8 +170,13 @@ External confirmation still required before a broad launch:
 
 ## Deferred
 
+- Remote skill marketplace with curated trust metadata.
 - Remote policy marketplace.
 - Remote SaaS control plane.
+- HMAC audit integrity chain.
+- Security budget per session.
+- Agent Quality benchmark suite.
+- Adaptive workflow learning loop.
 - Unbounded autonomous execution.
 - Accepting API keys through chat/MCP tool parameters.
 - Weakening shell/path/security defaults for convenience.
