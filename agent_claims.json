@@ -43,6 +43,32 @@
         "Agent attribution now possible via optional agent_id parameter",
         "Policy changes (created, updated, deleted, enabled, disabled) are now auditable"
       ]
+    },
+    "agent-07-file-ops": {
+      "task": "file operations analysis - atomic writes and symlink protections",
+      "branch": "feature/agent-crew",
+      "files_analyzed": [
+        "src/claude_bridge/file_tools/_read.py",
+        "src/claude_bridge/file_tools/_write.py",
+        "src/claude_bridge/file_tools/_patch.py",
+        "src/claude_bridge/file_tools/_move.py",
+        "src/claude_bridge/file_tools/_helpers.py"
+      ],
+      "changes_verified": [
+        "Atomic write pattern: _write_text_exact() uses mkstemp + os.replace for non-exclusive writes",
+        "Atomic write pattern: os.O_EXCL for exclusive writes prevents race conditions",
+        "Symlink protection: write_file() blocks writes through symlinks with O_NOFOLLOW",
+        "Symlink protection: read_file() blocks reading symlinks directly",
+        "Symlink protection: read_multiple_files() blocks reading symlinks",
+        "Symlink protection: move_file() and copy_path() block operations on symlinks",
+        "Symlink protection: ELOOP handling added for symlink loop detection in atomic writes",
+        "Path traversal: resolve_path() enforces allowed_roots boundary checks"
+      ],
+      "verification_notes": [
+        "Improvements implemented by agent-02-shell-security in commit 102361c",
+        "File tools properly reject operations on symlinks and paths outside allowed_roots",
+        "Atomic writes use mkstemp + os.replace pattern to avoid partial writes"
+      ]
     }
   },
   "conflicts": [],
