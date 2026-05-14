@@ -61,6 +61,18 @@ async def read_file(
             decision=path_guard_decision(path, "read", outside_workspace=True),
         )
 
+    try:
+        if target.is_symlink():
+            return json_response(
+                False,
+                "Refusing to read symlink directly",
+                code="symlink_blocked",
+                details={"path": path},
+                decision=path_guard_decision(path, "read", sensitive_reason="symlink"),
+            )
+    except OSError:
+        pass
+
     sensitive_reason = sensitive_path_reason(target)
     if sensitive_reason is not None:
         return json_response(
@@ -161,6 +173,19 @@ async def read_multiple_files(
                 }
             )
             continue
+        try:
+            if target.is_symlink():
+                files.append(
+                    {
+                        "path": path,
+                        "ok": False,
+                        "code": "symlink_blocked",
+                        "details": {"path": path},
+                    }
+                )
+                continue
+        except OSError:
+            pass
         if not target.exists():
             files.append({"path": path, "ok": False, "code": "file_not_found"})
             continue

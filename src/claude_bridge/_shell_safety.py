@@ -21,7 +21,9 @@ from claude_bridge.guard_policy import (
     load_guard_policy,
 )
 
-_DANGEROUS_ENV_VARS = frozenset({"ld_preload", "dyld_insert_libraries", "path"})
+_DANGEROUS_ENV_VARS = frozenset(
+    {"ld_preload", "dyld_insert_libraries", "dyld_library_path", "path"}
+)
 
 
 def _command_basename(token: str) -> str:
@@ -116,6 +118,14 @@ def _find_unquoted_shell_construct(command: str) -> str | None:
     return None
 
 
+def _find_fork_bomb_unescaped(command: str) -> str | None:
+    """Check for fork bomb patterns that might bypass lowercase regex."""
+    unescaped = command.replace("\\:", ":").replace("\\|", "|").replace("\\&", "&")
+    if _FORK_BOMB_RE.search(unescaped):
+        return "fork bomb"
+    return None
+
+
 def _blocked_shell_construct(
     head: str,
     lower_tokens: list[str],
@@ -123,7 +133,10 @@ def _blocked_shell_construct(
     stripped: str,
     normalized: str,
 ) -> str | None:
-    return _find_unquoted_shell_construct(stripped)
+    reason = _find_unquoted_shell_construct(stripped)
+    if reason is not None:
+        return reason
+    return _find_fork_bomb_unescaped(stripped)
 
 
 def _blocked_custom_policy(
@@ -204,6 +217,18 @@ def _blocked_curl_wget(
         ]
         if suspect:
             return f"{head} to shell"
+    if head == "curl" and any(
+        token in {"-K", "--config", "-A", "--user-agent", "-H", "--header"}
+        for token in lower_tokens
+    ):
+        return f"{head} with config/header injection risk"
+    if "--silent" in lower_tokens or "-s" in lower_tokens:
+        has_output = output_file_tokens or any(
+            token.startswith("-o") or token.startswith("--output") for token in lower_tokens
+        )
+        has_remote_url = any("http://" in token or "https://" in token for token in lower_tokens)
+        if not has_output and has_remote_url and control_tokens_present:
+            return f"{head} silent fetch to shell"
     return None
 
 
@@ -395,11 +420,28 @@ def _blocked_fork_bomb(
     return None
 
 
+def _blocked_sudo_n(
+    head: str,
+    lower_tokens: list[str],
+    all_lower_tokens: list[str],
+    stripped: str,
+    normalized: str,
+) -> str | None:
+    if head != "sudo":
+        return None
+    if any(token == "-n" for token in lower_tokens):
+        return "sudo -n"
+    if any(token == "-E" for token in lower_tokens):
+        return "sudo -E"
+    return None
+
+
 _BLOCKED_MATCHERS = [
     _blocked_shell_construct,
     _blocked_custom_policy,
     _blocked_whitelist,
     _blocked_direct_commands,
+    _blocked_sudo_n,
     _blocked_inline_interpreter,
     _blocked_curl_wget,
     _blocked_dd,
@@ -453,11 +495,11 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         env_target = _interactive_target(tokens)
         if env_target is not None and env_target in _ENV_BLOCKED_COMMANDS:
             return f"env {env_target}"
-        for token in tokens[1:]:
-            if "=" in token and not token.startswith("-"):
-                var_name = token.split("=", 1)[0].lower()
-                if var_name in _DANGEROUS_ENV_VARS:
-                    return f"env {var_name}"
+    for token in tokens:
+        if "=" in token and not token.startswith("-"):
+            var_name = token.split("=", 1)[0].lower()
+            if var_name in _DANGEROUS_ENV_VARS:
+                return f"env {var_name}"
 
     for matcher in _BLOCKED_MATCHERS:
         reason = matcher(head, lower_tokens, all_lower_tokens, stripped, normalized)

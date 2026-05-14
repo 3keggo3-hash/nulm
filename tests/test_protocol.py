@@ -191,6 +191,20 @@ class TestWriteTool:
         assert payload["ok"] is False
         assert payload["code"] == "secret_pattern_detected"
 
+    async def test_write_blocks_credential_file_names(self, temp_project):
+        payload = parse_payload(await mcp_server.write_file("id_ed25519", "not a real key"))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "sensitive_file_blocked"
+        assert "Sensitive files" in payload["details"]["hint"]
+
+    async def test_write_blocks_credential_file_suffixes(self, temp_project):
+        payload = parse_payload(await mcp_server.write_file("service.p12", "not a real cert"))
+
+        assert payload["ok"] is False
+        assert payload["code"] == "sensitive_file_blocked"
+        assert "Sensitive files" in payload["details"]["hint"]
+
     async def test_write_file_warns_when_content_exceeds_max_lines(self, temp_project):
         content = "\n".join(f"line {index}" for index in range(3))
 
@@ -2375,6 +2389,8 @@ class TestAuditTools:
         assert payload["details"]["context_budget_tokens"] == 4000
         assert payload["details"]["intent_compaction_enabled"] is False
         assert "session_telemetry" in payload["details"]
+        assert payload["details"]["control_plane"]["local_first"] is True
+        assert "task_summary" in payload["details"]["control_plane"]
 
     async def test_tools_overview_groups_low_cost_tools(self, temp_project):
         payload = parse_payload(await mcp_server.tools_overview())
@@ -2382,6 +2398,7 @@ class TestAuditTools:
         assert payload["ok"] is True
         assert "compact_user_intent" in payload["details"]["groups"]["low_cost_context"]
         assert "narrow_context" in payload["details"]["groups"]["low_cost_context"]
+        assert "list_tasks" in payload["details"]["groups"]["control_plane"]
         assert payload["details"]["notes"]
 
 

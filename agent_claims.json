@@ -3,26 +3,27 @@
   "description": "Agent coordination manifest - claims prevent conflicts",
   "created_at": null,
   "agents": {
-    "agent-03": {
-      "task": "audit-system",
-      "claimed_files": [
-        "src/claude_bridge/_audit_logging.py",
-        "src/claude_bridge/_audit_core.py"
+    "agent-02-shell-security": {
+      "task": "shell security analysis and hardening",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_shell_safety.py",
+        "src/claude_bridge/shell_tools.py"
       ],
-      "improvements": [
-        "add session_start/session_end event logging",
-        "add agent_id parameter to log_tool_call",
-        "add policy_change audit event type"
+      "changes": [
+        "Added _find_fork_bomb_unescaped() to catch fork bombs with escaped chars that bypass lowercase regex",
+        "Extended _DANGEROUS_ENV_VARS to include dyld_library_path (macOS DLL injection vector)",
+        "Enhanced _blocked_curl_wget() to detect silent fetch patterns and config/header injection",
+        "Fixed dangerous env var detection to trigger for PATH= anywhere in command, not just after env prefix",
+        "Added _blocked_sudo_n() to block sudo -n (non-interactive password attempt) and sudo -E"
+      ],
+      "security_notes": [
+        "Fork bomb bypass: original regex worked on lowercased normalized string, but \\: \\| \\& escapes prevent lowercase from matching - now unescape before regex",
+        "macOS persistence: dyld_library_path mirrors ld_preload on Darwin for DYLD injection",
+        "Curl silently fetching remote content to shell is dangerous - added silent fetch detection",
+        "PATH= assignment anywhere in command can hijack command resolution"
       ]
     }
-  },
-  "conflicts": [],
-  "resolved": []
-}
-  },
-  "conflicts": [],
-  "resolved": []
-}
   },
   "conflicts": [],
   "resolved": []

@@ -62,23 +62,54 @@ def temp_audit_project():
 def _reset_global_state(monkeypatch, tmp_path):
     """Reset all global state between tests for full test isolation."""
     from claude_bridge import audit
+    from claude_bridge import ai_evaluator
     from claude_bridge import config as config_module
     from claude_bridge import file_tools
+    from claude_bridge import guard_policy
     from claude_bridge import indexing
+    from claude_bridge import relevance
+    from claude_bridge import workflow_cache
+    from claude_bridge._process_session import reset_process_sessions
 
     monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
     monkeypatch.setenv("CLAUDE_BRIDGE_UNSAFE_AUTO_APPROVE_CONFIRMED", "1")
-    _do_reset = _make_reset(audit, config_module, file_tools, indexing)
+    _do_reset = _make_reset(
+        audit,
+        ai_evaluator,
+        config_module,
+        file_tools,
+        guard_policy,
+        indexing,
+        relevance,
+        reset_process_sessions,
+        workflow_cache,
+    )
     _do_reset()
     yield
     _do_reset()
 
 
-def _make_reset(audit, config_module, file_tools, indexing):
+def _make_reset(
+    audit,
+    ai_evaluator,
+    config_module,
+    file_tools,
+    guard_policy,
+    indexing,
+    relevance,
+    reset_process_sessions,
+    workflow_cache,
+):
     def _reset():
+        reset_process_sessions()
         audit.reset_audit_session()
+        ai_evaluator.reset_ai_evaluator_state()
         _reset_config(config_module)
         _reset_last_bridge_change(file_tools)
+        guard_policy._invalidate_policy_cache()
+        indexing.clear_index_cache()
+        relevance.clear_relevance_cache()
+        workflow_cache.clear_workflow_caches()
         _reset_gitignore_cache(indexing)
 
     return _reset

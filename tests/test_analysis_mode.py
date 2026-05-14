@@ -29,7 +29,9 @@ class TestProjectScanner:
 
     def test_detect_framework_fastapi(self, tmp_path: Path):
         (tmp_path / "main.py").touch()
-        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\ndependencies = ['fastapi']\n")
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'test'\ndependencies = ['fastapi']\n"
+        )
         scanner = ProjectScanner(tmp_path)
         scanner.scan()
         assert scanner.framework == "fastapi"
@@ -53,13 +55,11 @@ class TestProjectScanner:
 
     def test_find_performance_hotspots_nested_loop(self, tmp_path: Path):
         py_file = tmp_path / "slow.py"
-        py_file.write_text(
-            """
+        py_file.write_text("""
 for i in range(10):
     for j in range(10):
         print(i, j)
-"""
-        )
+""")
         scanner = ProjectScanner(tmp_path)
         hotspots = scanner.find_performance_hotspots()
         nested_issues = [h for h in hotspots if h["issue"] == "nested_loop"]
@@ -81,7 +81,9 @@ class TestOptionGenerator:
         gen = OptionGenerator(scanner.scan(), "sistem çok yavaş")
         options = gen.generate_options()
         assert len(options) >= 1
-        assert any("performance" in str(opt).lower() or "optimiz" in str(opt).lower() for opt in options)
+        assert any(
+            "performance" in str(opt).lower() or "optimiz" in str(opt).lower() for opt in options
+        )
 
     def test_generate_security_options(self, tmp_path: Path):
         scanner = ProjectScanner(tmp_path)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -58,7 +59,7 @@ async def retry_with_backoff(
     last_exception: Exception | None = None
     for attempt in range(1, config.max_retries + 2):
         try:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 result = await func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)
@@ -145,7 +146,7 @@ class CircuitBreaker:
                     raise RuntimeError("Circuit breaker is HALF-OPEN, max calls reached")
                 self._half_open_calls += 1
         try:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 result = await func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)

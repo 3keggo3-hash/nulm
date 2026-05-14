@@ -38,7 +38,9 @@ def find_related_files(file_path: str, project_dir_path: Path) -> list[str]:
     return related[:10]
 
 
-def get_recent_changes(file_path: str, project_dir_path: Path, limit: int = 5) -> list[dict[str, Any]]:
+def get_recent_changes(
+    file_path: str, project_dir_path: Path, limit: int = 5
+) -> list[dict[str, Any]]:
     """Get recent git commits that modified the file."""
     changes: list[dict[str, Any]] = []
     try:

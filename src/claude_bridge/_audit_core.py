@@ -21,6 +21,7 @@ _AUDIT_LOCK = threading.RLock()
 _CURRENT_SESSION_ID = ""
 _MAX_AUDIT_SESSION_SCAN_FILES = 256
 _MAX_AUDIT_RECORD_SCAN_LINES = 10000
+_SESSION_START_RECORDED = False
 
 _VALID_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
@@ -45,10 +46,85 @@ def reset_audit_session() -> str:
 
 
 def current_session_id() -> str:
+    global _SESSION_START_RECORDED
     with _AUDIT_LOCK:
         if not _CURRENT_SESSION_ID:
-            return reset_audit_session()
+            session_id = reset_audit_session()
+            _SESSION_START_RECORDED = False
+            return session_id
         return _CURRENT_SESSION_ID
+
+
+def log_session_start(session_id: str, agent_id: str | None = None) -> int | None:
+    import json
+    import time
+    import uuid
+    from hashlib import sha256
+
+    record: dict[str, Any] = {
+        "record_id": uuid.uuid4().hex,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "session_id": session_id,
+        "tool_name": "session_start",
+        "params": {"agent_id": agent_id} if agent_id else {},
+        "params_hash": sha256(
+            json.dumps({"agent_id": agent_id}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "duration_ms": 0.0,
+        "result": {"ok": True, "message": "session started"},
+        "result_hash": sha256(b"session_start").hexdigest(),
+        "telemetry": {
+            "input_chars": 0,
+            "output_chars": 0,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+            "estimated_total_tokens": 0,
+            "result_truncated": False,
+        },
+    }
+    path = _session_file(session_id)
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    return _append_audit_record(path, line)
+
+
+def log_session_end(session_id: str, reason: str = "normal") -> int | None:
+    import json
+    import time
+    import uuid
+    from hashlib import sha256
+
+    record: dict[str, Any] = {
+        "record_id": uuid.uuid4().hex,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "session_id": session_id,
+        "tool_name": "session_end",
+        "params": {"reason": reason},
+        "params_hash": sha256(
+            json.dumps({"reason": reason}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "duration_ms": 0.0,
+        "result": {"ok": True, "message": f"session ended: {reason}"},
+        "result_hash": sha256(f"session_end:{reason}".encode("utf-8")).hexdigest(),
+        "telemetry": {
+            "input_chars": 0,
+            "output_chars": 0,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+            "estimated_total_tokens": 0,
+            "result_truncated": False,
+        },
+    }
+    path = _session_file(session_id)
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    return _append_audit_record(path, line)
+
+
+def ensure_session_start_logged(session_id: str, agent_id: str | None = None) -> None:
+    global _SESSION_START_RECORDED
+    with _AUDIT_LOCK:
+        if not _SESSION_START_RECORDED:
+            log_session_start(session_id, agent_id)
+            _SESSION_START_RECORDED = True
 
 
 def _session_file(session_id: str) -> Path:
@@ -170,3 +246,82 @@ def find_audit_record(record_id: str) -> dict[str, Any] | None:
             if record.get("record_id") == record_id:
                 return record
     return None
+
+
+def log_policy_change(
+    policy_name: str,
+    action: str,
+    old_rules_count: int | None = None,
+    new_rules_count: int | None = None,
+    *,
+    agent_id: str | None = None,
+    reason: str | None = None,
+) -> int | None:
+    """Log a policy change audit event.
+
+    Args:
+        policy_name: Name of the policy that changed.
+        action: Type of change (e.g., "created", "updated", "deleted", "enabled", "disabled").
+        old_rules_count: Number of rules before the change.
+        new_rules_count: Number of rules after the change.
+        agent_id: Optional agent that made the change.
+        reason: Optional explanation for the change.
+
+    Returns:
+        The file offset where the record was written, or None on error.
+    """
+    from hashlib import sha256
+
+    from claude_bridge._audit_redaction import _redact_sensitive_values, _summarize_value
+    from claude_bridge._audit_index import append_audit_index_record
+
+    session_id = current_session_id()
+    ensure_session_start_logged(session_id, agent_id)
+
+    params = {
+        "policy_name": policy_name,
+        "action": action,
+    }
+    if old_rules_count is not None:
+        params["old_rules_count"] = old_rules_count
+    if new_rules_count is not None:
+        params["new_rules_count"] = new_rules_count
+    if reason:
+        params["reason"] = reason
+
+    params_redacted = _redact_sensitive_values(_summarize_value(params))
+
+    record: dict[str, Any] = {
+        "record_id": uuid.uuid4().hex,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "session_id": session_id,
+        "tool_name": "policy_change",
+        "params": params_redacted,
+        "params_hash": sha256(
+            json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "duration_ms": 0.0,
+        "result": {
+            "ok": True,
+            "message": f"policy {action}: {policy_name}",
+        },
+        "result_hash": sha256(f"policy_change:{policy_name}:{action}".encode("utf-8")).hexdigest(),
+        "telemetry": {
+            "input_chars": len(json.dumps(params_redacted, ensure_ascii=False, sort_keys=True)),
+            "output_chars": 0,
+            "estimated_input_tokens": 0,
+            "estimated_output_tokens": 0,
+            "estimated_total_tokens": 0,
+            "result_truncated": False,
+        },
+        "policy_name": policy_name,
+        "policy_action": action,
+    }
+    if agent_id is not None:
+        record["agent_id"] = agent_id
+
+    path = _session_file(session_id)
+    line = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    offset = _append_audit_record(path, line)
+    append_audit_index_record(session_id, record, offset=offset)
+    return offset

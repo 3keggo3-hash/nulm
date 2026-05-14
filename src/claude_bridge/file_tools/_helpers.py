@@ -218,9 +218,17 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
     data = content.encode("utf-8")
     if exclusive:
         try:
-            fd = os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY)
+            fd = os.open(
+                str(target),
+                os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY,
+                0o644,
+            )
         except FileExistsError:
             raise FileExistsError(f"File already exists: {target}")
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise OSError(errno.ELOOP, "Symlink loop in path") from exc
+            raise
         try:
             os.write(fd, data)
             os.fsync(fd)
@@ -235,7 +243,9 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
             os.close(tmp_fd)
         try:
             os.replace(tmp_path, str(target))
-        except OSError:
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise OSError(errno.ELOOP, "Symlink loop in target path") from exc
             try:
                 os.unlink(tmp_path)
             except OSError:

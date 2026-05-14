@@ -5,7 +5,7 @@ CI: GitHub Actions | PyPI package: `claude-bridge-mcp` | CLI: `claude-bridge` |
 Python: 3.10+ | License: MIT |
 Code style: Black
 
-> A local-first agent quality and execution layer for Claude Desktop and other MCP clients.
+> A local-first agent quality and execution layer for MCP clients.
 
 Claude Bridge is a lightweight Python MCP server for local development and agent workflows. It lets
 an MCP client inspect project files, run guarded shell commands, apply controlled patches, build
@@ -13,22 +13,26 @@ context packs, search/index source code, use bounded workflow helpers, and coord
 meta-agent tasks without giving up path boundaries, auditability, or approval controls.
 
 It is designed to make rough user requests easier to turn into professional software work. Today it
-provides the local MCP execution substrate and early advisory tools. The longer-term direction is an
-Agent Quality Layer that improves prompts, critiques plans, chooses smaller context, suggests safe
-Bridge settings, reviews results, and reduces token waste while keeping the security model explicit,
-inspectable, and replayable.
+provides the local MCP execution substrate and early advisory tools. The longer-term direction is a
+local-first control plane for agentic development: prompt improvement, plan critique, smaller
+context choices, safe Bridge settings, result review, and token-waste reduction while keeping the
+security model explicit, inspectable, and replayable. The control plane is local-only: no remote
+service or VPS is required for core operation.
 
 ## Quick Start
 
 ```bash
-pip install -e .
+pipx install claude-bridge-mcp
+claude-bridge init
 claude-bridge doctor --project-dir .
-claude-bridge install
+TARGET=claude-desktop  # or generic-stdio / vscode
+claude-bridge install --target "$TARGET" --project-dir .
 ```
 
-Then fully quit and reopen Claude Desktop, and start a new conversation. A successful install gives
-Claude access to `tools_overview` and `bridge_status`; mutating actions should still ask for client
-approval.
+Use `claude-bridge install --help` to see supported MCP targets. After installing the target
+configuration, restart or reload that MCP client and start a new conversation/session. A successful
+install gives the client access to `tools_overview` and `bridge_status`; mutating actions should
+still ask for client approval when the client supports it.
 
 For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
 [`docs/ai-collaboration-token-budget.md`](docs/ai-collaboration-token-budget.md).
@@ -54,8 +58,8 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 - **Shell execution**: `run_shell` through a guarded `shell=False` execution path
 - **Code indexing**: `index_codebase`, `find_relevant_files` — symbolic source index and relevance
   ranking without embeddings
-- **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` — structured
-  review, explain, test, todo, quality, and bounded agent-loop flows
+- **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` —
+  structured review, explain, test, todo, quality, and bounded agent-loop flows
 - **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
   constrained text-only HTTP/HTTPS reading
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
@@ -69,43 +73,70 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 - **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
   safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
   advice parsing telemetry
+- **Local control plane**: task and approval state exposed through CLI, MCP tools, and a
+  localhost-only dashboard
 
 ## Installation
 
 ```bash
-pip install -e .          # core
-pip install -e .[dev]     # development
-pip install -e .[treesitter]  # optional Tree-sitter indexing
-pip install -e .[multi-format] # optional image/PDF reading
+pipx install claude-bridge-mcp
+claude-bridge init
+claude-bridge doctor --project-dir .
+TARGET=claude-desktop  # or generic-stdio / vscode
+claude-bridge install --target "$TARGET" --project-dir .
 ```
 
-### Add to Claude Desktop
+`claude-bridge` is the installed CLI command. The package name is `claude-bridge-mcp`.
+
+Optional extras are available when installing from an environment that supports extras:
 
 ```bash
-claude-bridge install    # auto-update config
-claude-bridge setup      # print config snippet
+pip install "claude-bridge-mcp[treesitter]"    # optional Tree-sitter indexing
+pip install "claude-bridge-mcp[multi-format]"  # optional image/PDF reading
 ```
 
-Manual config example:
+### Add to an MCP client
+
+`claude-bridge install` can write supported target configs, while `claude-bridge setup` prints a
+copy-pasteable snippet:
+
+```bash
+claude-bridge install --target claude-desktop --project-dir .
+claude-bridge setup --target generic-stdio --project-dir .
+claude-bridge setup --target vscode --project-dir .
+```
+
+Generic stdio server entry:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "claude-bridge": {
-      "command": "/usr/bin/env",
-      "args": ["python3", "-m", "claude_bridge.mcp_server"],
+      "command": "python3",
+      "args": ["-m", "claude_bridge.mcp_server"],
       "env": {
         "CLAUDE_BRIDGE_PROJECT_DIR": "/absolute/path/to/project",
         "CLAUDE_BRIDGE_ALLOWED_ROOTS": "/absolute/path/to/project",
         "CLAUDE_BRIDGE_AUTO_APPROVE": "0",
+        "CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL": "1",
         "CLAUDE_BRIDGE_TOOL_PROFILE": "standard",
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONPATH": "/absolute/path/to/repo/src"
+        "PYTHONUNBUFFERED": "1"
       }
     }
   }
 }
 ```
+
+Some clients use a different top-level wrapper than `servers`; keep the inner `claude-bridge`
+entry and adapt the wrapper to the client's MCP configuration format.
+
+### Claude Desktop example
+
+```bash
+claude-bridge install --target claude-desktop --project-dir .
+```
+
+Then fully quit and reopen Claude Desktop, and start a new conversation.
 
 ## Approval Model
 
@@ -138,6 +169,50 @@ checking whether completed work is good enough.
 Skill governance is documented in [`docs/skill-discovery.md`](docs/skill-discovery.md). V1 skill
 discovery is local-first: packages can be inspected before import, recommendations are explained,
 and remote auto-download/install/run is intentionally out of scope.
+
+The repository-root [`skills/`](skills/) directory contains development/example skill specs and
+helpers. It is not packaged as runtime user skills in the PyPI distribution; user-imported skills
+are handled through the documented local skill registry.
+
+## Local Control Plane
+
+When the machine is already running a long MCP task, Claude Bridge can keep local task and approval
+state under `~/.claude-bridge/control-plane`. You can inspect or intervene from another terminal:
+
+```bash
+claude-bridge tasks list
+claude-bridge tasks cancel latest --reason "Heading out"
+claude-bridge approvals list --status pending
+claude-bridge approvals approve latest
+```
+
+For a browser view on the same computer:
+
+```bash
+claude-bridge dashboard
+```
+
+The dashboard binds to `127.0.0.1` by default, uses a per-session token in the URL, and can list
+tasks, list approvals, cancel tasks, approve actions, and reject actions without requiring a remote
+server.
+
+## Feature Evaluation
+
+Claude Bridge should not keep features just for show. Each feature should have a clear local-first
+job and an honest current status:
+
+- **Keep** features that are implemented, useful, documented, and covered by focused tests.
+- **Rework** features that point in the right direction but need clearer behavior, names, or
+  boundaries.
+- **Hide** experimental or niche surfaces from default profiles when they add confusion or token
+  cost before they are broadly useful.
+- **Remove** features that are mostly decorative, duplicate better paths, or cannot be made safe
+  and explainable.
+
+The product direction is a local control plane and quality layer for MCP-based development, not a
+collection of impressive-sounding tools. Docs should distinguish implemented CLI/MCP behavior from
+planned control-plane ideas, and should not imply remote monitoring or hosted sync unless code for
+that surface is added.
 
 ## Security
 
@@ -216,7 +291,10 @@ not an OS or container sandbox.
 ## Development
 
 ```bash
+pip install -e .
 pip install -e .[dev]
+pip install -e .[treesitter]
+pip install -e .[multi-format]
 claude-bridge doctor --project-dir .
 ruff check .
 black --check .
@@ -234,15 +312,15 @@ claude-bridge benchmark --query "login auth" --path src --json
 
 | Issue | Fix |
 |---|---|
-| No file access | Fully quit and reopen Claude Desktop; try "Use `workspace_status`" |
+| No file access | Restart or reload the MCP client; try "Use `workspace_status`" |
 | macOS: Operation not permitted | Use `/usr/bin/env` with the module command in config. |
-| Prompts not appearing | Check `claude_desktop_config.json` is valid JSON; verify `PYTHONPATH` |
-| MCP logs | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |
+| Tools not appearing | Check the client MCP config is valid JSON; verify the Python environment. |
+| Claude Desktop logs | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |
 
 ## Requirements
 
 - Python 3.10+
-- Claude Desktop or another MCP client
+- An MCP client
 
 ## License
 

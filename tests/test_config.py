@@ -253,6 +253,8 @@ def test_standard_tool_profile_registers_documented_workflow_tools(tmp_path):
     assert "run_workflow" in tool_names
     assert "run_agent_loop_step" in tool_names
     assert "run_agent_loop_session" in tool_names
+    assert "list_tasks" in tool_names
+    assert "list_pending_approvals" in tool_names
     assert "recommend_skills" in tool_names
     assert "inspect_skill_package" in tool_names
     assert "run_skill" not in tool_names
@@ -309,6 +311,7 @@ def test_tool_profile_union_covers_public_server_exports():
         "register_smart_tools",
         "register_url_tools",
         "register_workflow_tools",
+        "register_control_plane_tools",
         "reset_audit_session",
         "reset_onboarding_state",
         "reset_process_sessions",

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from claude_bridge.skill_schema import SkillMeta, load_skill_json, validate_skill_json
+from claude_bridge.skill_schema import SkillMeta, load_skill_json, validate_skill_json, versions_compatible
 
 SKILLS_DIR = Path(".claude-bridge/skills")
 INDEX_FILE = SKILLS_DIR / "index.json"

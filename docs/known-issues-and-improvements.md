@@ -9,7 +9,33 @@ substrate.
 
 ## High Priority
 
-### 1. Anomaly baseline runtime policy
+### 1. Feature evaluation and public surface pruning
+
+**Current state:** Claude Bridge has accumulated implemented tools, advisory Agent Quality
+surfaces, optional extras, and planned product-direction language. Some features may be valuable
+only in niche profiles, need clearer naming, or read stronger in docs than they are in the current
+runtime.
+
+**Principle:** No feature should exist just for show. Every public feature should be evaluated as
+one of:
+
+- **Keep** when it is implemented, useful, documented, and covered by focused tests.
+- **Rework** when the idea is sound but behavior, naming, safety, or docs are not yet clear enough.
+- **Hide** when it is experimental, niche, or too costly/noisy for the default tool profile.
+- **Remove** when it duplicates better paths, is mostly decorative, or cannot be made safe and
+  explainable.
+
+**Open decision:**
+- Which full-profile and Agent Quality tools should be hidden from default docs until they have
+  stronger user workflows?
+- Which roadmap/control-plane ideas need explicit "planned" labels to avoid implying hosted sync,
+  mobile access, or remote monitoring exists today?
+
+**Affected files:** `README.md`, `docs/*`, tool profile registration tests
+
+---
+
+### 2. Anomaly baseline runtime policy
 
 **Current state:** Anomaly scoring and baseline-backed rules exist. Runtime behavior for v0.1
 is intentionally `warn_and_log`: scores are visible in audit/summary, but do not modify guard
@@ -25,7 +51,7 @@ decisions.
 
 ## Medium Priority
 
-### 2. Global state lock inconsistency
+### 3. Global state lock inconsistency
 
 **Current state:** `file_tools.py` uses `_LAST_BRIDGE_CHANGE` with `threading.Lock()`, `config.py`
 uses `_CONFIG` with `threading.RLock()`. No coordination.
@@ -39,7 +65,7 @@ uses `_CONFIG` with `threading.RLock()`. No coordination.
 
 **Affected files:** `src/claude_bridge/tool_utils.py` or new `state.py`
 
-### 3. Remaining registration/module split work
+### 4. Remaining registration/module split work
 
 **Current state:** `server.py` is smaller than the original single-file registration design and now
 delegates many tool groups to focused `*_tool_server.py` modules. It still contains orchestration
@@ -54,17 +80,6 @@ names, and the standard tool profile includes the documented workflow and bounde
 - Do not split everything in one pass.
 
 **Affected files:** `src/claude_bridge/server.py`, `src/claude_bridge/*_tool_server.py`
-
-### 4. Disk cache size quota
-
-**Current state:** `_prune_workflow_disk_cache` only limits file count (64), not total size.
-
-**Proposed solution:**
-- Add total size limit for cache files (e.g., 50MB)
-- Clean oldest files when quota exceeded
-- Check on every cache write
-
-**Affected files:** `src/claude_bridge/workflow_tools.py`
 
 ### 5. client_managed_approval real client contract
 
@@ -83,7 +98,7 @@ write/shell. This mode assumes the MCP client actually implements an approval UI
 
 ### 6. test_protocol.py size
 
-**Current state:** 2118 lines, all MCP tool tests in a single file.
+**Current state:** 2788 lines, all MCP tool tests in a single file.
 
 **Proposed solution:**
 - Split by category: `test_file_tools.py`, `test_shell_tools.py`, `test_meta_tools.py`,
@@ -109,6 +124,10 @@ write/shell. This mode assumes the MCP client actually implements an approval UI
 - **Shell blocklist bypass vectors** → basename/full-path/env normalization and extended shell
   list added
 - **Output truncation semantic integrity** → `TRUNCATED:` marker added when shell output is cut
+- **Disk cache size quota** → Indexing and workflow disk caches now prune by file count and total
+  byte size.
+- **Root skills directory ambiguity** → README now clarifies that repository-root `skills/`
+  contains development/example skill specs and is not packaged as the runtime user skill registry.
 
 ---
 

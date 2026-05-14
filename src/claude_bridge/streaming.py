@@ -172,6 +172,7 @@ def stream_sync_generator(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
+
             async def run() -> str:
                 return await _stream_async_with_sync_handler(generator, handler, config)
 

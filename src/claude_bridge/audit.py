@@ -10,6 +10,7 @@ from claude_bridge._audit_core import (  # noqa: F401
     _CURRENT_SESSION_ID,
     _MAX_AUDIT_RECORD_SCAN_LINES,
     _MAX_AUDIT_SESSION_SCAN_FILES,
+    _SESSION_START_RECORDED,
     _VALID_SESSION_ID_RE,
     _append_audit_record,
     _audit_dir,
@@ -20,8 +21,12 @@ from claude_bridge._audit_core import (  # noqa: F401
     _session_file,
     _session_files_newest_first,
     current_session_id,
+    ensure_session_start_logged,
     find_audit_record,
     latest_session_id,
+    log_policy_change,
+    log_session_end,
+    log_session_start,
     reset_audit_session,
 )
 

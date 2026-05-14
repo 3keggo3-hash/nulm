@@ -12,6 +12,7 @@ from claude_bridge._audit_core import (
     current_session_id,
     _session_file,
     _append_audit_record,
+    ensure_session_start_logged,
 )
 from claude_bridge._audit_index import append_audit_index_record
 from claude_bridge._audit_redaction import (
@@ -29,8 +30,10 @@ def log_tool_call(
     result: str,
     *,
     duration_ms: float,
+    agent_id: str | None = None,
 ) -> None:
     session_id = current_session_id()
+    ensure_session_start_logged(session_id, agent_id)
     summary, result_hash = _result_summary(result)
     summary = _redact_sensitive_values(summary)
     params_summary = _summarize_value(params)
@@ -53,6 +56,8 @@ def log_tool_call(
             "params": params_redacted,
         },
     }
+    if agent_id is not None:
+        record["agent_id"] = agent_id
     decision_fields = _extract_policy_decision(result)
     if decision_fields:
         record.update(decision_fields)

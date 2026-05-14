@@ -182,6 +182,13 @@ def reset_ai_latency_samples() -> None:
     _AI_LATENCY_SAMPLES_MS.clear()
 
 
+def reset_ai_evaluator_state() -> None:
+    """Clear in-memory AI evaluator telemetry and rate-limit state."""
+    reset_ai_latency_samples()
+    with _RATE_LIMIT_LOCK:
+        _RATE_LIMIT_TOKENS.clear()
+
+
 def _check_rate_limit() -> bool:
     """Return True if under rate limit, False if limit exceeded."""
     now = time.monotonic()
@@ -300,8 +307,7 @@ def _strip_content_for_remote(params: dict[str, Any]) -> dict[str, Any]:
     for k, v in params.items():
         if k in _MASKED_CONTENT_FIELDS and isinstance(v, str):
             safe[k] = (
-                f"[content-hash:{hashlib.sha256(v.encode()).hexdigest()[:16]}"
-                f" len:{len(v)}]"
+                f"[content-hash:{hashlib.sha256(v.encode()).hexdigest()[:16]}" f" len:{len(v)}]"
             )
         else:
             safe[k] = v
@@ -865,6 +871,7 @@ class TokenBudget:
 
 def _log_warning(message: str) -> None:
     import logging
+
     logging.warning(message)
 
 

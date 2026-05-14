@@ -33,6 +33,7 @@ from claude_bridge.config import (
     raw_ai_evaluator_config,
     update_runtime_config,
 )
+from claude_bridge.control_plane_tool_server import register_control_plane_tools
 from claude_bridge.onboarding import apply_onboarding as _apply_onboarding
 from claude_bridge.onboarding import reset_onboarding_state
 from claude_bridge.file_tools import (
@@ -658,6 +659,21 @@ send_feedback = _tool_or_disabled(_META_TOOLS, "send_feedback")
 anomaly_summary = _tool_or_disabled(_META_TOOLS, "anomaly_summary")
 generate_pr_description = _tool_or_disabled(_META_TOOLS, "generate_pr_description")
 get_trust_score = _tool_or_disabled(_META_TOOLS, "get_trust_score")
+
+
+_CONTROL_PLANE_TOOLS = register_control_plane_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    enabled_names=_ENABLED_TOOL_NAMES,
+)
+list_tasks = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "list_tasks")
+task_status = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "task_status")
+task_summary = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "task_summary")
+list_pending_approvals = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "list_pending_approvals")
+approve_pending_action = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "approve_pending_action")
+reject_pending_action = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "reject_pending_action")
 autocomplete = _tool_or_disabled(_META_TOOLS, "autocomplete")
 
 if any(

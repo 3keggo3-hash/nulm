@@ -21,6 +21,7 @@ from claude_bridge.audit import (
     apply_retention,
     export_audit_records,
     get_recent_tool_calls,
+    log_tool_call,
     reset_audit_session,
 )
 
@@ -197,6 +198,24 @@ class TestExtractPolicyDecision:
 
 
 class TestAuditIndex:
+    def test_rapid_same_tool_calls_are_not_dropped(self, temp_audit_project, monkeypatch):
+        project, audit_dir = temp_audit_project
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(audit_dir))
+
+        for idx in range(2):
+            log_tool_call(
+                "read_file",
+                {"path": f"file-{idx}.txt"},
+                json.dumps({"ok": True, "message": "ok"}),
+                duration_ms=1.0,
+            )
+
+        result = get_recent_tool_calls(limit=10, tool_name="read_file")
+
+        assert result["total_records"] == 2
+        assert result["returned_records"] == 2
+        assert [record["tool_name"] for record in result["records"]] == ["read_file", "read_file"]
+
     async def test_get_recent_tool_calls_uses_compact_audit_index(
         self, temp_audit_project, monkeypatch
     ):

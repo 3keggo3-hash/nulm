@@ -1,4 +1,4 @@
-"""Workflow state machine for Plan -> Onay -> Uygula -> Test -> Rapor flow."""
+"""Workflow state machine for Plan -> Approve -> Apply -> Test -> Report flow."""
 
 from __future__ import annotations
 
@@ -35,7 +35,16 @@ class WorkflowState(Enum):
 
 @dataclass
 class WorkflowStep:
-    """Single step in a workflow plan."""
+    """Single step in a workflow plan.
+
+    Attributes:
+        action: Human-readable description of the step.
+        files_affected: List of file paths involved in this step.
+        risk_score: Integer risk score (0-100); steps >= 60 trigger a checkpoint.
+        rollback_plan: Human-readable rollback instruction.
+        status: Current status ("pending", "completed", "failed").
+        result: Execution result from the step function, if any.
+    """
 
     action: str
     files_affected: list[str] = field(default_factory=list)
@@ -57,7 +66,16 @@ class WorkflowStep:
 
 @dataclass
 class WorkflowExecutionResult:
-    """Summary returned after a workflow plan execution attempt."""
+    """Summary returned after a workflow plan execution attempt.
+
+    Attributes:
+        status: Overall execution status ("empty", "pending_approval", "failed",
+                "needs_review", "done").
+        steps: List of step dictionaries with action, files_affected, risk_score,
+               rollback_plan, status, and result.
+        review: Optional review dictionary from self-review.
+        error: Error message if status indicates failure.
+    """
 
     status: str
     steps: list[dict[str, Any]]
@@ -93,6 +111,10 @@ class WorkflowEngine:
             -> REPORTING -> DONE (or REJECTED)
 
     Each step includes: action, files affected, risk score, rollback plan.
+
+    The engine enforces sequential workflow execution with built-in checkpoints
+    for high-risk steps (risk_score >= 60). Approval is requested before applying
+    changes, and self-review is run before transitioning to reporting.
     """
 
     def __init__(self, project_dir: Any = None) -> None:
