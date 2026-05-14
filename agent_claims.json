@@ -275,6 +275,26 @@
         "Discovery methods allow runtime tool introspection"
       ]
     }
+    "agent-24-shell-analysis": {
+      "task": "shell command parsing and analysis improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_shell_analysis.py",
+        "src/claude_bridge/_shell_constants.py"
+      ],
+      "changes": [
+        "Add _parse_error_details() for informative parse error messages with position",
+        "Add compound command analysis (&&, ||, ;) for chained risky operations",
+        "Add _extract_git_subcommand() helper to replace duplicated git parsing logic",
+        "Add dangerous glob pattern detection in rm/cd/mkdir commands"
+      ],
+      "analysis_improvements": [
+        "Parse errors now include character position and problematic character",
+        "Compound commands with && and || are flagged as high risk around risky operations",
+        "Git subcommand extraction refactored to avoid code duplication",
+        "Glob patterns (*, ?, []) in dangerous commands detected as potential risk"
+      ]
+    },
     "agent-28-onboarding": {
       "task": "onboarding flow and doctor diagnostics improvement",
       "branch": "feature/agent-crew",
