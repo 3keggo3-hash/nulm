@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,18 +13,27 @@ _DIAGNOSTIC_COMMANDS: dict[str, list[list[str]]] = {
         ["python", "-m", "py_compile"],
     ],
     "RUNTIME_ERROR": [
-        ["python", "-m", "pytest", "--collect-only"],
+        ["python", "-m", "pytest", "--collect-only", "-q"],
         ["python", "-c", "import sys; print(sys.version)"],
     ],
     "SECURITY_ERROR": [
         ["python", "-c", "import ast; ast.parse(open('.').read())"],
     ],
     "NETWORK_ERROR": [
-        ["ping", "-c", "1", "127.0.0.1"],
         ["python", "-c", "import socket; print(socket.gethostname())"],
+        ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1')"],
     ],
     "UNKNOWN": [
         ["python", "-c", "import sys; print(sys.version)"],
+    ],
+}
+
+_VALIDATOR_PATTERNS: dict[str, list[re.Pattern[str]]] = {
+    "SYNTAX_ERROR": [
+        re.compile(r"SyntaxError|IndentationError|TabError"),
+    ],
+    "RUNTIME_ERROR": [
+        re.compile(r"Error|Exception|Traceback"),
     ],
 }
 

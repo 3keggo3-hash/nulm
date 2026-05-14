@@ -447,7 +447,7 @@
         "State properties provide quick state checks"
       ]
     },
-    "agent-25-redaction": {
+"agent-25-redaction": {
       "task": "redaction pattern improvements",
       "branch": "feature/agent-crew",
       "files_modified": [
@@ -466,33 +466,35 @@
         "AWS access keys (AKIA...) now explicitly detected"
       ]
     },
-    "agent-40-trust": {
-      "task": "trust scoring algorithm improvements and explainability",
+    "agent-36-meta": {
+      "task": "meta-agent capabilities and reflective features",
       "branch": "feature/agent-crew",
       "files_modified": [
-        "src/claude_bridge/trust_score.py"
+        "src/claude_bridge/meta_agent_server.py",
+        "src/claude_bridge/meta_tool_server.py"
       ],
       "changes": [
-        "Added TrustSignals dataclass for structured signal extraction",
-        "Added TrustFactors dataclass for per-component penalty breakdown",
-        "Added get_trust_signals() function to expose raw signals",
-        "Added _compute_trust_factors() for weighted penalty calculation",
-        "Added _calculate_score() with explainable scoring",
-        "Added _explain_score() for human-readable explanations",
-        "Added _parse_timestamp() with multiple format support",
-        "Added new trust signals: error_rate, slow_response_rate, consecutive_denies, tool_deny_rates, daily_deny_rates, avg_response_time",
-        "Added SLOW_RESPONSE_THRESHOLD_MS and MAX_CONSECUTIVE_FOR_PENALTY constants",
-        "Added TRUST_WEIGHTS dict for configurable penalty weights"
+        "Added _MAX_REFLECT_RECURSION_DEPTH=3 and _MAX_META_REVIEW_ITEMS=20 constants to prevent infinite loops",
+        "Added _build_reflection_summary() for analyzing tool call patterns with depth tracking",
+        "Added reflect_on_recent_work tool: analyzes recent tool calls, computes tool counts, error rates, latency stats, and provides actionable suggestions",
+        "Added meta_review tool: reviews multiple tool results for inconsistencies between ok status and error fields",
+        "Added agent_introspection tool: exposes reflective tools and meta-tools to agents for self-awareness"
       ],
-      "trust_improvements": [
-        "Trust score now fully explainable with per-factor breakdown",
-        "Error rate and slow response rate tracked as new signals",
-        "Consecutive denies tracked with dedicated penalty",
-        "Tool-level deny rates enable per-tool trust analysis",
-        "Daily deny rates enable trend detection",
-        "Human-readable explanation added for each score range"
+      "reflective_features": [
+        "reflect_on_recent_work analyzes patterns in recent tool calls with bounded recursion",
+        "meta_review checks result consistency with truncation protection",
+        "agent_introspection provides self-awareness about available reflective capabilities"
+      ],
+      "safety_measures": [
+        "Reflection depth capped at _MAX_REFLECT_RECURSION_DEPTH",
+        "meta_review limits items to _MAX_META_REVIEW_ITEMS",
+        "Both tools are read_only and non-destructive"
       ]
     }
+  },
+  "conflicts": [],
+  "resolved": []
+}
   },
   "conflicts": [],
   "resolved": []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from claude_bridge import cli
 from claude_bridge.benchmarking import compare_benchmark_to_baseline
 from claude_bridge.benchmarking import load_benchmark_profile
 from claude_bridge.benchmarking import run_index_and_relevance_benchmark
+from claude_bridge.benchmarking import run_multi_query_benchmark
 
 runner = CliRunner()
 
@@ -209,3 +211,142 @@ class TestBenchmarking:
 
         assert result.exit_code == 1
         assert "Benchmark failed" in result.stdout
+
+
+class TestMultiQueryBenchmark:
+    def test_run_multi_query_benchmark_returns_per_query_results(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_multi_query_benchmark(
+            project_dir=temp_project,
+            path="src",
+            queries=["login auth", "session", "billing payment"],
+            limit=2,
+            repeats_per_query=2,
+        )
+
+        assert payload["index_duration_ms"] >= 0
+        assert len(payload["per_query_results"]) == 3
+        assert payload["queries"] == ["login auth", "session", "billing payment"]
+        assert all(r["query_avg_duration_ms"] >= 0 for r in payload["per_query_results"])
+
+    def test_run_multi_query_benchmark_validates_empty_queries(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        try:
+            run_multi_query_benchmark(
+                project_dir=temp_project,
+                path="src",
+                queries=[],
+                limit=2,
+                repeats_per_query=2,
+            )
+            raise AssertionError("Expected ValueError")
+        except ValueError as exc:
+            assert "queries list cannot be empty" in str(exc)
+
+    def test_run_multi_query_benchmark_validates_whitespace_query(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        try:
+            run_multi_query_benchmark(
+                project_dir=temp_project,
+                path="src",
+                queries=["login auth", "   ", "billing"],
+                limit=2,
+                repeats_per_query=2,
+            )
+            raise AssertionError("Expected ValueError")
+        except ValueError as exc:
+            assert "query cannot be empty or whitespace only" in str(exc)
+
+    def test_run_multi_query_benchmark_with_warmup(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_multi_query_benchmark(
+            project_dir=temp_project,
+            path="src",
+            queries=["login auth session"],
+            limit=2,
+            repeats_per_query=2,
+            warmup_repeats=1,
+        )
+
+        assert payload["warmup_repeats"] == 1
+        assert len(payload["per_query_results"]) == 1
+
+
+class TestMemoryMetrics:
+    def test_run_index_and_relevance_benchmark_reports_memory_delta(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_index_and_relevance_benchmark(
+            project_dir=temp_project,
+            path="src",
+            query="login auth session",
+            limit=2,
+            repeats=2,
+        )
+
+        assert "index_memory_delta_mb" in payload
+        assert "query_memory_delta_mb" in payload
+
+    def test_run_index_and_relevance_benchmark_reports_stddev(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_index_and_relevance_benchmark(
+            project_dir=temp_project,
+            path="src",
+            query="login auth session",
+            limit=2,
+            repeats=5,
+        )
+
+        assert "query_stddev_ms" in payload
+        assert payload["query_stddev_ms"] >= 0
+
+    def test_run_index_and_relevance_benchmark_with_warmup(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_index_and_relevance_benchmark(
+            project_dir=temp_project,
+            path="src",
+            query="login auth session",
+            limit=2,
+            repeats=2,
+            warmup_repeats=2,
+        )
+
+        assert payload["warmup_repeats"] == 2
+
+    def test_run_index_and_relevance_benchmark_clear_cache(self, temp_project):
+        _seed_benchmark_project(temp_project)
+
+        payload = run_index_and_relevance_benchmark(
+            project_dir=temp_project,
+            path="src",
+            query="login auth session",
+            limit=2,
+            repeats=1,
+            clear_cache=True,
+        )
+
+        assert payload["clear_cache"] is True
+
+
+class TestBaselineComparison:
+    def test_compare_benchmark_to_baseline_checks_stddev_if_present(self, temp_project):
+        _seed_benchmark_project(temp_project)
+        baseline = _load_baseline()
+        baseline["max_query_stddev_ms"] = 1000
+
+        payload = run_index_and_relevance_benchmark(
+            project_dir=temp_project,
+            path="src",
+            query="login auth session",
+            limit=2,
+            repeats=5,
+        )
+
+        comparison = compare_benchmark_to_baseline(payload, baseline)
+        assert comparison["ok"] is True

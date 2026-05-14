@@ -20,22 +20,27 @@ def find_related_files(file_path: str, project_dir_path: Path) -> list[str]:
     stem = target.stem
     suffix = target.suffix
 
-    for pattern in (f"*{stem}*", f"*{stem}.py", f"test_{stem}.py"):
+    seen: set[str] = set()
+    for pattern in (f"*{stem}*", f"*{stem}.py", f"test_{stem}.py", f"{stem}_test.py"):
         for match in project_dir_path.rglob(pattern):
-            if match.is_file() and str(match) != str(target):
-                related.append(str(match))
+            if match.is_file():
+                match_str = str(match)
+                if match_str not in seen and match_str != str(target):
+                    seen.add(match_str)
+                    related.append(match_str)
 
     if suffix == ".py":
         for match in project_dir_path.rglob("*.py"):
-            if match.is_file() and match != target:
+            if match.is_file() and str(match) not in seen:
                 try:
                     content = match.read_text(encoding="utf-8", errors="replace")
                     if stem in content or target.name in content:
+                        seen.add(str(match))
                         related.append(str(match))
                 except OSError:
                     pass
 
-    return related[:10]
+    return list(related)[:15]
 
 
 def get_recent_changes(
