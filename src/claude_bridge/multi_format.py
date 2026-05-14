@@ -19,17 +19,35 @@ _IMAGE_MAX_BYTES = 10 * 1024 * 1024
 _PDF_MAX_BYTES = 10 * 1024 * 1024
 _PDF_PAGE_LIMIT = 10
 _IMAGE_FORMATS = {
+    ".bmp": "image/bmp",
     ".gif": "image/gif",
+    ".ico": "image/x-icon",
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
     ".png": "image/png",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
     ".webp": "image/webp",
 }
 _PIL_FORMATS = {
+    "BMP": "image/bmp",
     "GIF": "image/gif",
+    "ICO": "image/x-icon",
     "JPEG": "image/jpeg",
     "PNG": "image/png",
+    "TIFF": "image/tiff",
     "WEBP": "image/webp",
+}
+
+_IMAGE_MAGIC = {
+    b"\x89PNG\r\n\x1a\n": "image/png",
+    b"\xff\xd8\xff": "image/jpeg",
+    b"GIF87a": "image/gif",
+    b"GIF89a": "image/gif",
+    b"BM": "image/bmp",
+    b"II\x2a\x00": "image/tiff",
+    b"MM\x00\x2a": "image/tiff",
+    b"\x00\x00\x01\x00": "image/x-icon",
 }
 
 
@@ -91,7 +109,14 @@ def _import_pdf_module() -> Any:
     return importlib.import_module("PyPDF2")
 
 
-async def read_image(path: str) -> str:
+def _detect_format_by_magic(data: bytes) -> str | None:
+    for magic, mime in _IMAGE_MAGIC.items():
+        if data.startswith(magic):
+            return mime
+    return None
+
+
+def read_image(path: str) -> str:
     """Read supported image metadata and base64 content from a workspace path."""
     target, error = _resolve_read_target(path)
     if error is not None:
