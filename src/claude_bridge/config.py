@@ -354,9 +354,14 @@ def apply_config(
         resolved_auto_approve = False
         resolved_client_managed = True
     if context_budget_profile not in BUDGET_PROFILES:
-        raise ValueError(f"Unknown context budget profile: {context_budget_profile}")
+        valid = ", ".join(BUDGET_PROFILES)
+        raise ValueError(
+            f"Unknown context budget profile: {context_budget_profile}. "
+            f"Available profiles: {valid}. Valid values: 'compact', 'balanced', 'expand'."
+        )
     if tool_profile not in TOOL_PROFILES:
-        raise ValueError(f"Unknown tool profile: {tool_profile}")
+        valid = ", ".join(TOOL_PROFILES)
+        raise ValueError(f"Unknown tool profile: {tool_profile}. " f"Available profiles: {valid}.")
     if not isinstance(shell_timeout, int) or shell_timeout <= 0:
         raise ValueError(f"shell_timeout must be a positive integer, got {shell_timeout!r}")
     if ai_evaluator_provider not in {"local", "openai", "anthropic", "ollama", "deepseek"}:

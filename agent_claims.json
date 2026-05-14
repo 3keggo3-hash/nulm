@@ -182,6 +182,39 @@
       ],
       "tests_added": 11
     },
+    "agent-30-observability": {
+      "task": "observability and tracing improvements",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/observability.py",
+        "src/claude_bridge/tracing.py"
+      ],
+      "changes": [
+        "Added get_rate() method to MetricsCollector for rate calculations",
+        "Added get_percentile() and get_histogram_stats() for detailed histogram analysis",
+        "Added percentile render output (_p50, _p95, _p99) in render_prometheus()",
+        "Added _last_update timestamp for tracking metrics freshness",
+        "Added agent_id, operation_type, cache_hit fields to SpanAttributes",
+        "Added in-memory span storage with get_recent_spans() and get_span_stats()",
+        "Added set_level() method for dynamic tracing level control",
+        "Span storage limited to 1000 entries to prevent memory bloat"
+      ],
+      "observability_improvements": [
+        "Metrics now track rate per second, not just counts",
+        "Histogram stats provide p50/p95/p99 percentiles",
+        "Prometheus output includes percentiles for latency analysis",
+        "Tracing spans stored locally for performance analysis",
+        "Span stats provide error rates and duration percentiles",
+        "Dynamic tracing level control for debugging"
+      ],
+      "actionable_metrics": [
+        "tool_call_rate: calls per second by tool",
+        "latency_p95: 95th percentile latency for SLA monitoring",
+        "span_error_rate: error percentage from tracing",
+        "cache_hit_rate: cache efficiency from trace attributes"
+      ]
+    }
+  },
     "agent-29-dashboard": {
       "task": "dashboard UI improvements and metrics display",
       "branch": "feature/agent-crew",

@@ -540,10 +540,16 @@ def _validate_provider_url(url: str) -> None:
     from claude_bridge.url_tools import _is_private_host, _resolve_and_check_host
 
     if _is_private_host(hostname):
-        raise ValueError(f"Provider URL hostname is blocked (private/internal): {hostname}")
+        raise ValueError(
+            f"Provider URL hostname is blocked (private/internal): {hostname}. "
+            f"Use a public hostname or IP address for the AI evaluator provider."
+        )
     private_ip = _resolve_and_check_host(hostname)
     if private_ip is not None:
-        raise ValueError(f"Provider URL hostname resolves to internal IP: {private_ip}")
+        raise ValueError(
+            f"Provider URL hostname resolves to internal IP: {private_ip}. "
+            f"AI evaluator cannot connect to private/internal networks for security."
+        )
 
 
 class OllamaProvider(Provider):
