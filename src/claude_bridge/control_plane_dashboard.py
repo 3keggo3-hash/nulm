@@ -221,7 +221,15 @@ def _dashboard_html(token: str) -> str:
       --line: #d1d5db;
       --panel: #ffffff;
       --accent: #0f766e;
+      --accent-bg: #f0fdfa;
+      --warning: #b45309;
+      --warning-bg: #fffbeb;
       --danger: #b91c1c;
+      --danger-bg: #fef2f2;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --pending: #1d4ed8;
+      --pending-bg: #eff6ff;
     }}
     @media (prefers-color-scheme: dark) {{
       :root {{
@@ -230,6 +238,11 @@ def _dashboard_html(token: str) -> str:
         --muted: #9ca3af;
         --line: #374151;
         --panel: #1f2937;
+        --accent-bg: #064e43;
+        --warning-bg: #451a03;
+        --danger-bg: #450a0a;
+        --success-bg: #14532d;
+        --pending-bg: #1e3a5f;
       }}
     }}
     * {{ box-sizing: border-box; }}
@@ -240,11 +253,32 @@ def _dashboard_html(token: str) -> str:
       font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }}
     header, main {{ max-width: 1120px; margin: 0 auto; padding: 20px; }}
-    header {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; }}
+    header {{ display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }}
     h1 {{ font-size: 22px; margin: 0; }}
     h2 {{ font-size: 16px; margin: 0 0 12px; }}
     .muted {{ color: var(--muted); }}
     .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }}
+    .metrics {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }}
+    .metric {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+    }}
+    .metric-value {{ font-size: 28px; font-weight: 700; line-height: 1.2; }}
+    .metric-label {{ font-size: 12px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }}
+    .status-dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }}
+    .status-pending {{ background: var(--pending); }}
+    .status-running {{ background: var(--accent); }}
+    .status-completed {{ background: var(--success); }}
+    .status-failed {{ background: var(--danger); }}
+    .status-cancelled {{ background: var(--muted); }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -253,9 +287,9 @@ def _dashboard_html(token: str) -> str:
       min-width: 0;
     }}
     table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ text-align: left; padding: 8px; border-top: 1px solid var(--line); }}
+    th, td {{ text-align: left; padding: 8px; border-top: 1px solid var(--line); vertical-align: middle; }}
     th {{ color: var(--muted); font-weight: 600; }}
-    code {{ overflow-wrap: anywhere; }}
+    code {{ overflow-wrap: anywhere; font-size: 12px; }}
     button {{
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -263,13 +297,21 @@ def _dashboard_html(token: str) -> str:
       color: var(--fg);
       padding: 5px 8px;
       cursor: pointer;
+      font-size: 12px;
     }}
     button.primary {{ border-color: var(--accent); color: var(--accent); }}
     button.danger {{ border-color: var(--danger); color: var(--danger); }}
     .actions {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-    @media (max-width: 820px) {{
+    .empty {{ text-align: center; padding: 24px; color: var(--muted); }}
+    .timestamp {{ font-size: 11px; color: var(--muted); }}
+    @media (max-width: 820px){{
       header {{ display: block; }}
       .grid {{ grid-template-columns: 1fr; }}
+      .metrics {{ grid-template-columns: repeat(2, 1fr); }}
+    }}
+    @media (max-width: 480px){{
+      .metrics {{ grid-template-columns: 1fr 1fr; }}
+      .metric-value {{ font-size: 22px; }}
     }}
   </style>
 </head>
@@ -281,15 +323,18 @@ def _dashboard_html(token: str) -> str:
     </div>
     <button onclick="load()">Refresh</button>
   </header>
-  <main class="grid">
-    <section>
-      <h2>Tasks</h2>
-      <div id="tasks"></div>
-    </section>
-    <section>
-      <h2>Approvals</h2>
-      <div id="approvals"></div>
-    </section>
+  <main>
+    <div class="metrics" id="metrics"></div>
+    <div class="grid">
+      <section>
+        <h2>Tasks</h2>
+        <div id="tasks"></div>
+      </section>
+      <section>
+        <h2>Approvals</h2>
+        <div id="approvals"></div>
+      </section>
+    </div>
   </main>
   <script>
     const token = {json.dumps(token)};
@@ -297,6 +342,7 @@ def _dashboard_html(token: str) -> str:
       const res = await fetch('/api/status?token=' + encodeURIComponent(token));
       const data = await res.json();
       document.getElementById('state').textContent = data.state_dir || '';
+      renderMetrics(data.summary || {{}});
       renderTasks(data.tasks || []);
       renderApprovals(data.approvals || []);
     }}
@@ -313,29 +359,53 @@ def _dashboard_html(token: str) -> str:
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       }}[ch]));
     }}
+    function renderMetrics(summary) {{
+      const total = summary.total || 0;
+      const byStatus = summary.by_status || {{}};
+      const statuses = [
+        {{ key: 'pending', label: 'Pending' }},
+        {{ key: 'running', label: 'Running' }},
+        {{ key: 'completed', label: 'Completed' }},
+        {{ key: 'failed', label: 'Failed' }},
+        {{ key: 'cancelled', label: 'Cancelled' }}
+      ];
+      let html = `<div class="metric"><div class="metric-value">${{total}}</div><div class="metric-label">Total Tasks</div></div>`;
+      for (const s of statuses) {{
+        const count = byStatus[s.key] || 0;
+        if (count > 0) {{
+          html += `<div class="metric"><div class="metric-value">${{count}}</div><div class="metric-label"><span class="status-dot status-${{s.key}}"></span>${{s.label}}</div></div>`;
+        }}
+      }}
+      document.getElementById('metrics').innerHTML = html;
+    }}
     function renderTasks(tasks) {{
-      document.getElementById('tasks').innerHTML = table(tasks, row => `
+      if (!tasks.length) {{
+        document.getElementById('tasks').innerHTML = '<div class="empty">No tasks recorded.</div>';
+        return;
+      }}
+      document.getElementById('tasks').innerHTML = `<table><thead><tr><th>ID</th><th>Status</th><th>Title</th><th></th></tr></thead>
+        <tbody>${{tasks.map(row => `<tr>
         <td><code>${{esc(row.id)}}</code></td>
-        <td>${{esc(row.status)}}</td>
-        <td>${{esc(row.title)}}</td>
+        <td><span class="status-dot status-${{esc(row.status)}}"></span>${{esc(row.status)}}</td>
+        <td>${{esc(row.title || '')}}</td>
         <td class="actions">
           <button class="danger" onclick="post('/api/tasks/${{esc(row.id)}}/cancel')">Cancel</button>
-        </td>`);
+        </td></tr>`).join('')}}</tbody></table>`;
     }}
     function renderApprovals(approvals) {{
-      document.getElementById('approvals').innerHTML = table(approvals, row => `
+      if (!approvals.length) {{
+        document.getElementById('approvals').innerHTML = '<div class="empty">No approvals pending.</div>';
+        return;
+      }}
+      document.getElementById('approvals').innerHTML = `<table><thead><tr><th>ID</th><th>Status</th><th>Title</th><th></th></tr></thead>
+        <tbody>${{approvals.map(row => `<tr>
         <td><code>${{esc(row.id)}}</code></td>
-        <td>${{esc(row.status)}}</td>
-        <td>${{esc(row.title)}}</td>
+        <td><span class="status-dot status-${{esc(row.status)}}"></span>${{esc(row.status)}}</td>
+        <td>${{esc(row.title || '')}}</td>
         <td class="actions">
           <button class="primary" onclick="post('/api/approvals/${{esc(row.id)}}/approve')">Approve</button>
           <button class="danger" onclick="post('/api/approvals/${{esc(row.id)}}/reject')">Reject</button>
-        </td>`);
-    }}
-    function table(rows, cells) {{
-      if (!rows.length) return '<p class="muted">No records.</p>';
-      return `<table><thead><tr><th>ID</th><th>Status</th><th>Title</th><th></th></tr></thead>
-        <tbody>${{rows.map(row => `<tr>${{cells(row)}}</tr>`).join('')}}</tbody></table>`;
+        </td></tr>`).join('')}}</tbody></table>`;
     }}
     load();
   </script>
