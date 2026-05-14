@@ -203,6 +203,26 @@
       ],
       "tests_added": 11
     },
+    "agent-31-memory": {
+      "task": "memory persistence improvements and cleanup strategies",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/memory.py",
+        "tests/test_memory.py"
+      ],
+      "changes": [
+        "Added cleanup_lessons() method with TTL-based expiration and max-lessons overflow handling",
+        "Added clear_all() method to wipe memory files",
+        "Added backup() method with backup file support",
+        "Added DEFAULT_MAX_LESSONS (500) and DEFAULT_LESSON_TTL_DAYS (90) constants"
+      ],
+      "cleanup_improvements": [
+        "TTL-based expiration removes lessons older than configurable days",
+        "Overflow cleanup keeps highest-hit lessons when exceeding max",
+        "Backup/restore capability for memory persistence",
+        "Full wipe capability for privacy/reset scenarios"
+      ]
+    },
     "agent-30-observability": {
       "task": "observability and tracing improvements",
       "branch": "feature/agent-crew",
@@ -398,6 +418,36 @@
         "ToolResults uses TypedDict for better IDE support"
       ]
     },
+    "agent-33-resilience": {
+      "task": "resilience patterns improvement",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/resilience.py"
+      ],
+      "changes": [
+        "Added jitter to RetryConfig for exponential backoff randomization",
+        "Added total_timeout to RetryConfig for absolute retry timeout",
+        "Added on_retry callback to RetryConfig for logging/metrics hooks",
+        "Added CircuitOpenError exception class for circuit breaker errors",
+        "Added excluded_exceptions to CircuitBreakerConfig",
+        "Added on_state_change callback to CircuitBreakerConfig",
+        "Added fallback_func parameter to CircuitBreaker.call()",
+        "Added _transition_to() helper for state change callbacks",
+        "Added total_calls, total_failures, last_success_time tracking",
+        "Added is_closed, is_open, is_half_open properties"
+      ],
+      "improvements": [
+        "Jitter prevents thundering herd on retry storms",
+        "total_timeout prevents infinite retries",
+        "on_retry enables logging during retries",
+        "CircuitOpenError provides cleaner error handling",
+        "excluded_exceptions allows ignoring expected errors",
+        "on_state_change enables audit trail for state transitions",
+        "fallback_func enables graceful degradation",
+        "State properties provide quick state checks"
+      ]
+    },
+    "agent-25-redaction": {
       "task": "redaction pattern improvements",
       "branch": "feature/agent-crew",
       "files_modified": [
@@ -414,6 +464,33 @@
         "JWT tokens now caught by content pattern",
         "GitHub/GitLab/Slack specific tokens now recognized",
         "AWS access keys (AKIA...) now explicitly detected"
+      ]
+    },
+    "agent-40-trust": {
+      "task": "trust scoring algorithm improvements and explainability",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/trust_score.py"
+      ],
+      "changes": [
+        "Added TrustSignals dataclass for structured signal extraction",
+        "Added TrustFactors dataclass for per-component penalty breakdown",
+        "Added get_trust_signals() function to expose raw signals",
+        "Added _compute_trust_factors() for weighted penalty calculation",
+        "Added _calculate_score() with explainable scoring",
+        "Added _explain_score() for human-readable explanations",
+        "Added _parse_timestamp() with multiple format support",
+        "Added new trust signals: error_rate, slow_response_rate, consecutive_denies, tool_deny_rates, daily_deny_rates, avg_response_time",
+        "Added SLOW_RESPONSE_THRESHOLD_MS and MAX_CONSECUTIVE_FOR_PENALTY constants",
+        "Added TRUST_WEIGHTS dict for configurable penalty weights"
+      ],
+      "trust_improvements": [
+        "Trust score now fully explainable with per-factor breakdown",
+        "Error rate and slow response rate tracked as new signals",
+        "Consecutive denies tracked with dedicated penalty",
+        "Tool-level deny rates enable per-tool trust analysis",
+        "Daily deny rates enable trend detection",
+        "Human-readable explanation added for each score range"
       ]
     }
   },
