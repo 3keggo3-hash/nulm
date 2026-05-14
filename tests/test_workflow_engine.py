@@ -254,3 +254,106 @@ class TestExecuteStep:
         result = await engine.execute_step(step, mock_fn)
         assert result is False
         assert step.status == "failed"
+
+
+class TestWorkflowExecutionResult:
+    def test_result_to_dict(self) -> None:
+        from claude_bridge.workflow_engine import WorkflowExecutionResult
+
+        result = WorkflowExecutionResult(
+            status="done",
+            steps=[{"action": "test", "status": "completed"}],
+            review={"status": "pass"},
+            error="",
+        )
+        d = result.__dict__
+        assert d["status"] == "done"
+        assert len(d["steps"]) == 1
+        assert d["review"]["status"] == "pass"
+
+
+class TestFormatPlanForUser:
+    def test_format_plan_for_user_empty(self, engine: WorkflowEngine) -> None:
+        result = engine.format_plan_for_user([])
+        assert result == "No plan available."
+
+    def test_format_plan_for_user_with_steps(self, engine: WorkflowEngine) -> None:
+        steps = [
+            WorkflowStep(action="Analyze requirements", risk_score=10),
+            WorkflowStep(action="Implement fix", risk_score=25),
+        ]
+        result = engine.format_plan_for_user(steps)
+        assert "Analyze requirements" in result
+        assert "Implement fix" in result
+        assert "Total Risk:" in result
+
+    def test_format_plan_for_user_uses_current_plan(self, engine: WorkflowEngine) -> None:
+        engine.create_plan("test task")
+        result = engine.format_plan_for_user()
+        assert "test task" in result or len(engine.steps) > 0
+
+
+class TestPauseAndResume:
+    def test_pause_workflow_from_applying(self, engine: WorkflowEngine) -> None:
+        engine.state = WorkflowState.APPLYING
+        engine.pause(reason="waiting for input")
+        assert engine.state == WorkflowState.PAUSED
+
+    def test_resume_workflow_goes_to_planning(self, engine: WorkflowEngine) -> None:
+        engine.state = WorkflowState.PAUSED
+        engine._state_metadata["last_active_state"] = WorkflowState.APPLYING
+        result = engine.resume()
+        assert result is True
+        assert engine.state == WorkflowState.PLANNING
+
+    def test_resume_with_unknown_last_state_goes_to_planning(self, engine: WorkflowEngine) -> None:
+        engine.state = WorkflowState.PAUSED
+        engine._state_metadata["last_active_state"] = None
+        result = engine.resume()
+        assert result is True
+        assert engine.state == WorkflowState.PLANNING
+
+    def test_resume_from_non_paused_returns_false(self, engine: WorkflowEngine) -> None:
+        result = engine.resume()
+        assert result is False
+
+    def test_pause_stores_reason(self, engine: WorkflowEngine) -> None:
+        engine.state = WorkflowState.APPLYING
+        engine.pause(reason="user requested pause")
+        assert engine._state_metadata.get("pause_reason") == "user requested pause"
+
+
+class TestGetChangedFiles:
+    def test_get_changed_files_empty(self, engine: WorkflowEngine) -> None:
+        engine.steps = []
+        files = engine._get_changed_files()
+        assert files == []
+
+    def test_get_changed_files_with_affected(self, engine: WorkflowEngine) -> None:
+        engine.steps = [
+            WorkflowStep(action="step1", files_affected=["file1.py", "file2.py"]),
+            WorkflowStep(action="step2", files_affected=["file1.py"]),
+        ]
+        files = engine._get_changed_files()
+        assert "file1.py" in files
+        assert "file2.py" in files
+        assert len(files) == 2
+
+
+class TestGetTestResults:
+    def test_get_test_results_all_completed(self, engine: WorkflowEngine) -> None:
+        engine.steps = [
+            WorkflowStep(action="step1", status="completed"),
+            WorkflowStep(action="step2", status="completed"),
+        ]
+        result = engine._get_test_results()
+        assert result["passed"] is True
+        assert result["steps_tested"] == 2
+
+    def test_get_test_results_with_failures(self, engine: WorkflowEngine) -> None:
+        engine.steps = [
+            WorkflowStep(action="step1", status="completed"),
+            WorkflowStep(action="step2", status="failed"),
+        ]
+        result = engine._get_test_results()
+        assert result["passed"] is False
