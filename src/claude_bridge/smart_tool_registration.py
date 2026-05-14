@@ -17,6 +17,8 @@ def register_smart_tools(
     count_tokens_for_path: Any,
     context_fit_check: Any,
     smart_available: Any,
+    get_tool_recommendation: Any,
+    estimate_context_savings: Any,
     enabled_names: set[str] | None = None,
 ) -> dict[str, Any]:
     _enabled = enabled_names
@@ -94,5 +96,67 @@ def register_smart_tools(
             return audit_tool_call("smart_status", {}, result, started_at=started_at)
 
         results["smart_status"] = smart_status
+
+    if _enabled is None or "tool_recommendation" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Get adaptive tool recommendations based on query analysis.",
+                read_only=True,
+            )
+        )
+        async def tool_recommendation(query: str, context_budget: int = 4000) -> str:
+            started_at = time.perf_counter()
+            available_tools = [
+                "count_file_tokens",
+                "context_fit",
+                "smart_status",
+                "batch_token_estimate",
+                "compact_intent",
+                "budget_metadata",
+            ]
+            rec = get_tool_recommendation(query, available_tools, context_budget)
+            result = json_response(
+                True,
+                f"Tool recommendation for query: {rec['primary_tool'] or 'no recommendation'}",
+                details=rec,
+            )
+            return audit_tool_call(
+                "tool_recommendation", {"query": query}, result, started_at=started_at
+            )
+
+        results["tool_recommendation"] = tool_recommendation
+
+    if _enabled is None or "context_savings" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Estimate token savings from compacting text.",
+                read_only=True,
+            )
+        )
+        async def context_savings(
+            original_tokens: int, compact_tokens: int, overhead_tokens: int
+        ) -> str:
+            started_at = time.perf_counter()
+            savings = estimate_context_savings(original_tokens, compact_tokens, overhead_tokens)
+            if "error" in savings:
+                result = json_response(
+                    False, savings["error"], code="context_savings_error", details=savings
+                )
+            else:
+                result = json_response(
+                    True,
+                    f"Context savings: {savings['savings_percent']}% ({savings['total_savings_tokens']} tokens saved)",
+                    details=savings,
+                )
+            return audit_tool_call(
+                "context_savings",
+                {"original_tokens": original_tokens, "compact_tokens": compact_tokens},
+                result,
+                started_at=started_at,
+            )
+
+        results["context_savings"] = context_savings
 
     return results
