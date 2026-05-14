@@ -359,12 +359,60 @@ _KEYWORD_APPROACHES: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+_SYNONYM_MAP: dict[str, str] = {
+    "sorting": "sort",
+    "sorted": "sort",
+    "sorts": "sort",
+    "arrange": "sort",
+    "organization": "sort",
+    "finding": "search",
+    "find": "search",
+    "lookup": "search",
+    "locate": "search",
+    "retrieve": "search",
+    "memo": "cache",
+    "memorize": "cache",
+    "faster": "optimize",
+    "speed": "optimize",
+    "performance": "optimize",
+    "faster": "optimize",
+    "slow": "optimize",
+    "bottleneck": "optimize",
+    "compile": "compiler",
+    "parsing": "parser",
+    "parse": "parser",
+    "grammar": "parser",
+    "containerize": "deploy",
+    "container": "deploy",
+    "docker": "deploy",
+    "kubernetes": "deploy",
+    "k8s": "deploy",
+}
+
+_INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(faster|speed up|improve performance|optimize)\b"), "optimize"),
+    (re.compile(r"\b(slow|sluggish|bottleneck|slow down)\b"), "optimize"),
+    (re.compile(r"\b(legacy|old system|migrate|refactor)\b"), "refactor"),
+    (re.compile(r"\b(replace|rewrite|big bang|rebuild)\b"), "refactor"),
+    (re.compile(r"\b(multithread|parallel|concurrent|async)\b"), "async"),
+    (re.compile(r"\b(thread|process|core|cpu)\b"), "async"),
+]
+
+_STORE_DIR_CACHE: Path | None = None
+
 
 def _approach_store_dir() -> Path:
-    """Ensure .claude-bridge/approaches/ exists and return its Path."""
-    store = project_dir() / ".claude-bridge" / "approaches"
-    store.mkdir(parents=True, exist_ok=True)
-    return store
+    global _STORE_DIR_CACHE
+    if _STORE_DIR_CACHE is None:
+        store = project_dir() / ".claude-bridge" / "approaches"
+        store.mkdir(parents=True, exist_ok=True)
+        _STORE_DIR_CACHE = store
+    return _STORE_DIR_CACHE
+
+
+def invalidate_store_dir_cache() -> None:
+    global _STORE_DIR_CACHE
+    _STORE_DIR_CACHE = None
 
 
 def _valid_approach_id(approach_id: str) -> bool:
@@ -372,16 +420,45 @@ def _valid_approach_id(approach_id: str) -> bool:
 
 
 def _detect_keywords(problem: str) -> list[str]:
-    """Return matching keyword keys found in the problem text."""
     lowered = problem.lower()
-    return [kw for kw in _KEYWORD_APPROACHES if kw in lowered]
+    keywords: set[str] = set()
+    for kw in _KEYWORD_APPROACHES:
+        if kw in lowered:
+            keywords.add(kw)
+    for syn, canonical in _SYNONYM_MAP.items():
+        if syn in lowered and canonical in _KEYWORD_APPROACHES:
+            keywords.add(canonical)
+    for pattern, kw in _INTENT_PATTERNS:
+        if pattern.search(problem) and kw in _KEYWORD_APPROACHES:
+            keywords.add(kw)
+    return sorted(keywords)
 
 
-def explore_approaches(problem: str, count: int = 3) -> dict[str, Any]:
+def _score_keyword_match(problem: str, keyword: str) -> float:
+    """Score how strongly a keyword matches the problem (0.0 to 1.0)."""
+    lowered = problem.lower()
+    count = lowered.count(keyword)
+    if count >= 3:
+        return 1.0
+    elif count == 2:
+        return 0.8
+    elif count == 1:
+        return 0.6
+    return 0.0
+
+
+def explore_approaches(
+    problem: str, count: int = 3, include_low_relevance: bool = False
+) -> dict[str, Any]:
     """Generate N alternative approaches based on keyword analysis of the problem.
 
     Each approach is stored as a JSON file under .claude-bridge/approaches/.
+    Relevance scoring ranks approaches by how well they match the problem domain.
     """
+    if count <= 0:
+        return {"ok": False, "message": "count must be positive.", "approaches": []}
+    if count > 20:
+        return {"ok": False, "message": "count cannot exceed 20.", "approaches": []}
     keywords = _detect_keywords(problem)
     if not keywords:
         return {
@@ -393,12 +470,26 @@ def explore_approaches(problem: str, count: int = 3) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     seen_names: set[str] = set()
     for kw in keywords:
+        relevance = _score_keyword_match(problem, kw)
         for tmpl in _KEYWORD_APPROACHES[kw]:
             if tmpl["name"] not in seen_names:
                 candidate = dict(tmpl)
                 candidate["keyword"] = kw
+                candidate["relevance_score"] = relevance
                 candidates.append(candidate)
                 seen_names.add(tmpl["name"])
+
+    complexity_rank = {"low": 0, "medium": 1, "high": 2}
+
+    def _weighted_score(a: dict[str, Any]) -> float:
+        relevance = a.get("relevance_score", 0.5)
+        complexity = complexity_rank.get(a.get("complexity", "medium"), 1)
+        return relevance * 0.7 + (1.0 - complexity / 2.0) * 0.3
+
+    candidates.sort(key=_weighted_score, reverse=True)
+
+    if not include_low_relevance:
+        candidates = [c for c in candidates if c.get("relevance_score", 0) >= 0.4]
 
     selected = candidates[:count]
     store_dir = _approach_store_dir()
