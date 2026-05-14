@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Any, Sequence, cast
 
+_ENV_PREFIX = "CLAUDE_BRIDGE_"
+
 APPROVAL_PRESETS: dict[str, dict[str, Any]] = {
     "read-only": {
         "auto_approve": False,
@@ -298,6 +300,45 @@ _ALLOWED_ROOTS_SNAPSHOT: tuple[Path, ...] = tuple(_CONFIG["allowed_roots"])
 _CONFIG_LOCK = threading.RLock()
 
 
+def validate_config_value(key: str, value: Any) -> None:
+    if key in {"shell_timeout", "ai_evaluator_timeout"}:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{key} must be a positive integer")
+    elif key == "ai_evaluator_provider":
+        if value not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
+            raise ValueError(
+                "ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek"
+            )
+    elif key == "ai_evaluator_fallback_action":
+        if value not in {"deny", "ask"}:
+            raise ValueError("ai_evaluator_fallback_action must be one of deny/ask")
+    elif key in {"role", "user"}:
+        if value is not None and (
+            not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+        ):
+            raise ValueError(f"{key} must be alphanumeric, hyphen, or underscore, or None")
+    elif key == "context_budget_profile":
+        if value not in BUDGET_PROFILES:
+            raise ValueError(f"Unknown context budget profile: {value}")
+    elif key == "tool_profile":
+        if value not in TOOL_PROFILES:
+            raise ValueError(f"Unknown tool profile: {value}")
+    elif key == "approval_preset":
+        if value is not None and value not in APPROVAL_PRESETS:
+            raise ValueError(f"Unknown approval preset: {value}")
+
+
+def _validate_all_config() -> None:
+    for key in {"shell_timeout", "ai_evaluator_timeout"}:
+        validate_config_value(key, _CONFIG[key])
+    validate_config_value("ai_evaluator_provider", _CONFIG["ai_evaluator_provider"])
+    validate_config_value("ai_evaluator_fallback_action", _CONFIG["ai_evaluator_fallback_action"])
+    validate_config_value("context_budget_profile", _CONFIG["context_budget_profile"])
+    validate_config_value("tool_profile", _CONFIG["tool_profile"])
+    if _CONFIG["approval_preset"] is not None:
+        validate_config_value("approval_preset", _CONFIG["approval_preset"])
+
+
 def resolve_approval_mode(
     *,
     approval_preset: str | None = None,
@@ -408,6 +449,70 @@ def apply_config(
             _CONFIG["role"] = role
         if user is not None:
             _CONFIG["user"] = user
+
+
+def load_config_from_toml(config_path: Path | str) -> dict[str, Any]:
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib
+        except ImportError:
+            raise ImportError(
+                "tomllib or tomli is required for TOML config loading. "
+                "Install with: pip install tomli"
+            )
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    result: dict[str, Any] = {}
+    if "project" in data:
+        proj = data["project"]
+        if "dir" in proj:
+            result["project_dir"] = Path(proj["dir"])
+    if "security" in data:
+        sec = data["security"]
+        if "auto_approve" in sec:
+            result["auto_approve"] = sec["auto_approve"]
+        if "allowed_roots" in sec:
+            result["allowed_roots"] = [Path(r) for r in sec["allowed_roots"]]
+        if "approval_preset" in sec:
+            result["approval_preset"] = sec["approval_preset"]
+    if "tools" in data:
+        tools = data["tools"]
+        if "profile" in tools:
+            result["tool_profile"] = tools["profile"]
+    if "features" in data:
+        feat = data["features"]
+        if "goals" in feat:
+            result["intent_compaction_enabled"] = feat["goals"]
+    return result
+
+
+def _config_from_env_var(key: str, default: str) -> str:
+    return os.environ.get(f"{_ENV_PREFIX}{key}", default)
+
+
+def _config_bool_from_env(key: str, default: bool = False) -> bool:
+    val = os.environ.get(f"{_ENV_PREFIX}{key}", "").strip().lower()
+    if not val:
+        return default
+    return val in {"1", "true", "yes", "on"}
+
+
+def _config_int_from_env(key: str, default: int, min_val: int | None = None) -> int:
+    val = os.environ.get(f"{_ENV_PREFIX}{key}", "").strip()
+    if not val:
+        return default
+    try:
+        parsed = int(val)
+        if min_val is not None and parsed < min_val:
+            return default
+        return parsed
+    except ValueError:
+        return default
 
 
 def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
