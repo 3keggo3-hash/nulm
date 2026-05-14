@@ -23,11 +23,27 @@
         "Curl silently fetching remote content to shell is dangerous - added silent fetch detection",
         "PATH= assignment anywhere in command can hijack command resolution"
       ]
+    },
+    "agent-03-audit-system": {
+      "task": "audit system analysis and improvement",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_audit_core.py",
+        "src/claude_bridge/_audit_logging.py",
+        "src/claude_bridge/audit.py"
+      ],
+      "changes": [
+        "Added session_start/session_end event logging with log_session_start(), log_session_end()",
+        "Added agent_id parameter to log_tool_call() for tracking which agent made the call",
+        "Added policy_change audit event type via log_policy_change()",
+        "Added ensure_session_start_logged() to auto-capture session start on first tool call"
+      ],
+      "audit_improvements": [
+        "Session lifecycle now has explicit audit events (session_start, session_end)",
+        "Agent attribution now possible via optional agent_id parameter",
+        "Policy changes (created, updated, deleted, enabled, disabled) are now auditable"
+      ]
     }
-  },
-  "conflicts": [],
-  "resolved": []
-}
   },
   "conflicts": [],
   "resolved": []
