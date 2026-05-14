@@ -3,6 +3,75 @@
   "description": "Agent coordination manifest - claims prevent conflicts",
   "created_at": null,
   "agents": {
+    "agent-01-architecture": {
+      "task": "Architecture analysis and module boundary review",
+      "branch": "feature/agent-crew",
+      "files_reviewed": [
+        "src/claude_bridge/__init__.py",
+        "src/claude_bridge/mcp_server.py",
+        "src/claude_bridge/server.py",
+        "src/claude_bridge/agents/__init__.py",
+        "src/claude_bridge/agents/base.py",
+        "src/claude_bridge/agents/orchestrator.py",
+        "src/claude_bridge/agents/dispatcher.py",
+        "src/claude_bridge/agents/result.py",
+        "src/claude_bridge/agents/shared_memory.py",
+        "src/claude_bridge/agents/sub/__init__.py",
+        "src/claude_bridge/agents/sub/git_agent.py",
+        "src/claude_bridge/detective.py",
+        "src/claude_bridge/skill_registry.py",
+        "src/claude_bridge/skill_executor.py",
+        "src/claude_bridge/workflow_engine.py",
+        "src/claude_bridge/workflow_agent_loop.py",
+        "src/claude_bridge/permissions.py",
+        "src/claude_bridge/config.py",
+        "src/claude_bridge/checkpoint.py",
+        "src/claude_bridge/memory.py",
+        "src/claude_bridge/snapshot.py",
+        "src/claude_bridge/self_critique.py",
+        "src/claude_bridge/agent_advisor.py",
+        "src/claude_bridge/guard_policy.py",
+        "src/claude_bridge/rules_engine.py",
+        "src/claude_bridge/_audit_core.py",
+        "src/claude_bridge/shell_tools.py",
+        "src/claude_bridge/_detective_classifiers.py",
+        "src/claude_bridge/_detective_investigator.py",
+        "src/claude_bridge/_detective_locator.py",
+        "src/claude_bridge/_optimizations.py"
+      ],
+      "changes": [
+        {
+          "file": "src/claude_bridge/_audit_core.py",
+          "issue": "sha256 undefined name errors - imported inside functions but not at module level",
+          "action": "Added 'from hashlib import sha256' at module level and removed redundant local imports from log_session_start(), log_session_end(), log_policy_change()"
+        },
+        {
+          "file": "tests/test_workflow_cache.py",
+          "issue": "Black formatting - unrelated test file",
+          "action": "Applied black formatting to fix formatting issues"
+        }
+      ],
+      "architecture_findings": [
+        "Server module (server.py) is the central orchestration hub - registers all tool servers and exposes ~60+ tool functions",
+        "Tool registration follows factory pattern: register_*_tools() functions create and register tools with the FastMCP instance",
+        "Agent system (agents/) is cleanly separated with BaseAgent abstract class and specialized sub-agents (GitAgent, SecurityAgent, etc.)",
+        "OrchestratorAgent coordinates sub-agents via TaskDispatcher with asyncio.gather for parallel execution",
+        "Permissions layer (permissions.py) provides agent-based tool permission matrix with runtime override capability",
+        "Skill system (skill_registry.py, skill_executor.py) has clear separation: registry manages metadata, executor runs skills in bounded subprocess",
+        "Detective system (_detective_*.py) handles error investigation with classifier/investigator/locator/learner/report sub-modules",
+        "Workflow engine (workflow_engine.py) implements state machine with explicit transitions and checkpoint support",
+        "No circular dependencies detected - imports flow cleanly from config/state -> tools -> servers",
+        "Consistent pattern: server.py uses lazy imports for heavy modules to avoid circular deps"
+      ],
+      "boundary_observations": [
+        "agents/ sub-module has clean boundaries: base.py defines interface, sub/ contains implementations, dispatcher handles coordination",
+        "skill_ modules (registry, executor, schema, builder, marketplace) form a coherent skill management layer",
+        "workflow_ modules (engine, agent_loop, context, project, runner, cache) handle workflow orchestration",
+        "_detective_ modules are internal helpers used only by detective.py - could be refactored as package",
+        "checkpoint.py delegates to snapshot.py - this indirection may be unnecessary but provides a stable interface",
+        "server.py is large (891 lines) - could benefit from splitting into tool-server registration modules"
+      ]
+    },
     "agent-09-documentation": {
       "task": "Analyze and improve documentation",
       "files_reviewed": [
@@ -68,6 +137,47 @@
         "re.compile() in loops is expensive - patterns now pre-compiled at import",
         "Cache returns use list(cached) unnecessarily - direct return saves allocation",
         "Path.resolve().parts called frequently - added memoization for common paths"
+      ]
+    },
+    "agent-02-shell-security": {
+      "task": "shell security analysis and hardening",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_shell_safety.py",
+        "src/claude_bridge/shell_tools.py"
+      ],
+      "changes": [
+        "Added _find_fork_bomb_unescaped() to catch fork bombs with escaped chars that bypass lowercase regex",
+        "Extended _DANGEROUS_ENV_VARS to include dyld_library_path (macOS DLL injection vector)",
+        "Enhanced _blocked_curl_wget() to detect silent fetch patterns and config/header injection",
+        "Fixed dangerous env var detection to trigger for PATH= anywhere in command, not just after env prefix",
+        "Added _blocked_sudo_n() to block sudo -n (non-interactive password attempt) and sudo -E"
+      ],
+      "security_notes": [
+        "Fork bomb bypass: original regex worked on lowercased normalized string, but \\: \\| \\& escapes prevent lowercase from matching - now unescape before regex",
+        "macOS persistence: dyld_library_path mirrors ld_preload on Darwin for DYLD injection",
+        "Curl silently fetching remote content to shell is dangerous - added silent fetch detection",
+        "PATH= assignment anywhere in command can hijack command resolution"
+      ]
+    },
+    "agent-03-audit-system": {
+      "task": "audit system analysis and improvement",
+      "branch": "feature/agent-crew",
+      "files_modified": [
+        "src/claude_bridge/_audit_core.py",
+        "src/claude_bridge/_audit_logging.py",
+        "src/claude_bridge/audit.py"
+      ],
+      "changes": [
+        "Added session_start/session_end event logging with log_session_start(), log_session_end()",
+        "Added agent_id parameter to log_tool_call() for tracking which agent made the call",
+        "Added policy_change audit event type via log_policy_change()",
+        "Added ensure_session_start_logged() to auto-capture session start on first tool call"
+      ],
+      "audit_improvements": [
+        "Session lifecycle now has explicit audit events (session_start, session_end)",
+        "Agent attribution now possible via optional agent_id parameter",
+        "Policy changes (created, updated, deleted, enabled, disabled) are now auditable"
       ]
     }
   },
