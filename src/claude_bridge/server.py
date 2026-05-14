@@ -753,6 +753,7 @@ if any(
         create_checkpoint_impl=_create_checkpoint_impl,
         restore_checkpoint_impl=_restore_checkpoint_impl,
         list_checkpoints_impl=_list_checkpoints_impl,
+        get_recent_tool_calls_impl=_get_recent_tool_calls_impl,
         enabled_names=_ENABLED_TOOL_NAMES,
     )
 else:

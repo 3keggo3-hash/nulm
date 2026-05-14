@@ -117,7 +117,11 @@ def _calculate_score(factors: TrustFactors, signals: TrustSignals) -> tuple[int,
         + factors.slow_response_penalty
     )
     score = max(0, min(100, base_score - deductions + factors.trend_adjustment))
-    reason = f"deny:{signals.deny_rate:.1%}, anomaly:{signals.anomaly_frequency:.1%}, consecutive:{signals.max_consecutive_denies}"
+    reason = (
+        f"deny:{signals.deny_rate:.1%}, "
+        f"anomaly:{signals.anomaly_frequency:.1%}, "
+        f"consecutive:{signals.max_consecutive_denies}"
+    )
     return int(round(score)), reason
 
 
