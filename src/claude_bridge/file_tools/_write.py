@@ -24,6 +24,7 @@ from claude_bridge.tool_utils import (
     json_response,
     path_outside_project_details,
     request_approval,
+    require_approval,
     resolve_path,
     safe_read_text,
     sensitive_file_blocked_details,
@@ -118,6 +119,7 @@ async def write_file(
         role=active_role(),
         user=active_user(),
     )
+    approval_decision = None
     rule_decision = evaluate_runtime_policy_chain(policy_context)
     if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
         return json_response(
@@ -129,13 +131,27 @@ async def write_file(
             decision_in_details=True,
         )
     if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            rule_decision.reason,
-            code="approval_rejected",
-            details={"path": path},
-            decision=rule_decision,
-            decision_in_details=True,
+        rejection = await require_approval(
+            "write_file",
+            {"file": path, "reason": rule_decision.reason},
+            rejection_message=rule_decision.reason,
+            rejection_details={"path": path},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={"path": path},
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "File write approved after policy ASK decision",
+            risk_level=rule_decision.risk_level,
+            risk_reasons=list(rule_decision.risk_reasons),
+            metadata={"tool": "write_file", "path": path, **dict(rule_decision.metadata)},
         )
 
     config = current_config()
@@ -171,13 +187,27 @@ async def write_file(
             decision_in_details=True,
         )
     if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            ai_decision.reason,
-            code="approval_rejected",
-            details={"path": path},
-            decision=ai_decision,
-            decision_in_details=True,
+        rejection = await require_approval(
+            "write_file",
+            {"file": path, "reason": ai_decision.reason},
+            rejection_message=ai_decision.reason,
+            rejection_details={"path": path},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={"path": path},
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "File write approved after AI ASK decision",
+            risk_level=ai_decision.risk_level,
+            risk_reasons=list(ai_decision.risk_reasons),
+            metadata={"tool": "write_file", "path": path, **dict(ai_decision.metadata)},
         )
 
     if target.exists() and target.is_dir():
@@ -218,7 +248,9 @@ async def write_file(
     decision_risk_reasons = ["writes modify workspace contents"]
     if overwrite:
         decision_risk_reasons.append("overwrite requested")
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if approval_decision is not None:
+        allow_decision = approval_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         approved = await request_approval("write_file", approval_params)

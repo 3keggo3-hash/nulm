@@ -20,6 +20,11 @@ class SkillMeta:
     trigger_context: list[str] = field(default_factory=list)
     auto_load: bool = False
     permissions: list[str] = field(default_factory=list)
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    source: str = "local"
+    homepage: str = ""
+    risk_level: str = "low"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +34,11 @@ class SkillMeta:
             "trigger_context": list(self.trigger_context),
             "auto_load": self.auto_load,
             "permissions": list(self.permissions),
+            "description": self.description,
+            "tags": list(self.tags),
+            "source": self.source,
+            "homepage": self.homepage,
+            "risk_level": self.risk_level,
         }
 
     @classmethod
@@ -40,6 +50,11 @@ class SkillMeta:
             trigger_context=list(data.get("trigger_context", [])),
             auto_load=bool(data.get("auto_load", False)),
             permissions=list(data.get("permissions", [])),
+            description=str(data.get("description", "")),
+            tags=list(data.get("tags", [])),
+            source=str(data.get("source", "local")),
+            homepage=str(data.get("homepage", "")),
+            risk_level=str(data.get("risk_level", "low")),
         )
 
 
@@ -105,6 +120,19 @@ SKILL_JSON_SCHEMA = {
             "items": {"type": "string"},
             "description": "Required permissions (read, analyze, write, execute)",
         },
+        "description": {"type": "string", "default": ""},
+        "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Searchable tags for recommendation",
+        },
+        "source": {"type": "string", "default": "local"},
+        "homepage": {"type": "string", "default": ""},
+        "risk_level": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "default": "low",
+        },
     },
 }
 
@@ -127,15 +155,27 @@ def validate_skill_json(data: dict[str, Any]) -> tuple[bool, list[str]]:
     if (
         not isinstance(trigger_phrases, list)
         or not trigger_phrases
-        or not all(isinstance(item, str) for item in trigger_phrases)
+        or not all(isinstance(item, str) and item.strip() for item in trigger_phrases)
     ):
-        errors.append("Validation error: trigger_phrases must be a non-empty string array")
+        errors.append(
+            "Validation error: trigger_phrases must be a non-empty string array "
+            "with non-empty phrases"
+        )
     for key in ("trigger_context", "permissions"):
         value = data.get(key, [])
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             errors.append(f"Validation error: {key} must be a string array")
+    tags = data.get("tags", [])
+    if not isinstance(tags, list) or not all(isinstance(item, str) for item in tags):
+        errors.append("Validation error: tags must be a string array")
     if "auto_load" in data and not isinstance(data["auto_load"], bool):
         errors.append("Validation error: auto_load must be a boolean")
+    for key in ("description", "source", "homepage"):
+        if key in data and not isinstance(data[key], str):
+            errors.append(f"Validation error: {key} must be a string")
+    risk_level = str(data.get("risk_level", "low"))
+    if risk_level not in {"low", "medium", "high"}:
+        errors.append("Validation error: risk_level must be one of low, medium, high")
     return not errors, errors
 
 
@@ -170,6 +210,11 @@ def create_skill_json(
     trigger_context: list[str] | None = None,
     auto_load: bool = False,
     permissions: list[str] | None = None,
+    description: str = "",
+    tags: list[str] | None = None,
+    source: str = "local",
+    homepage: str = "",
+    risk_level: str = "low",
 ) -> dict[str, Any]:
     """Create a skill JSON dictionary."""
     return {
@@ -179,6 +224,11 @@ def create_skill_json(
         "trigger_context": trigger_context or [],
         "auto_load": auto_load,
         "permissions": permissions or [],
+        "description": description,
+        "tags": tags or [],
+        "source": source,
+        "homepage": homepage,
+        "risk_level": risk_level,
     }
 
 

@@ -12,7 +12,7 @@ import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     from cryptography.fernet import Fernet as _ImportedFernet  # type: ignore[import-not-found]
@@ -55,7 +55,7 @@ def _get_key() -> bytes:
         KEY_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
-    return new_key
+    return cast(bytes, new_key)
 
 
 def _load_fernet() -> Any:

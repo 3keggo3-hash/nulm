@@ -12,6 +12,7 @@ from claude_bridge.guard_policy import (
     DecisionAction,
     RiskLevel,
     ToolRequestContext,
+    approval_allow_decision,
     builtin_deny_decision,
 )
 from claude_bridge.rules_engine import evaluate_runtime_policy_chain
@@ -131,6 +132,7 @@ async def patch_file(
         role=active_role(),
         user=active_user(),
     )
+    approval_decision = None
     rule_decision = evaluate_runtime_policy_chain(policy_context)
     if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
         return json_response(
@@ -142,13 +144,27 @@ async def patch_file(
             decision_in_details=True,
         )
     if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            rule_decision.reason,
-            code="approval_rejected",
-            details={"path": file},
-            decision=rule_decision,
-            decision_in_details=True,
+        rejection = await require_approval(
+            "patch_file",
+            {"file": file, "reason": rule_decision.reason},
+            rejection_message=rule_decision.reason,
+            rejection_details={"path": file},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={"path": file},
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Patch approved after policy ASK decision",
+            risk_level=rule_decision.risk_level,
+            risk_reasons=list(rule_decision.risk_reasons),
+            metadata={"tool": "patch_file", "path": file, **dict(rule_decision.metadata)},
         )
 
     config = current_config()
@@ -182,16 +198,32 @@ async def patch_file(
             decision_in_details=True,
         )
     if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            ai_decision.reason,
-            code="approval_rejected",
-            details={"path": file},
-            decision=ai_decision,
-            decision_in_details=True,
+        rejection = await require_approval(
+            "patch_file",
+            {"file": file, "reason": ai_decision.reason},
+            rejection_message=ai_decision.reason,
+            rejection_details={"path": file},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={"path": file},
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Patch approved after AI ASK decision",
+            risk_level=ai_decision.risk_level,
+            risk_reasons=list(ai_decision.risk_reasons),
+            metadata={"tool": "patch_file", "path": file, **dict(ai_decision.metadata)},
         )
 
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if approval_decision is not None:
+        pass
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         pass
     else:
         rejection = await require_approval(
@@ -257,6 +289,8 @@ async def patch_file(
             "risk": preview_payload["details"]["risk"],
             "diff": preview_payload["details"]["diff"],
         },
+        decision=approval_decision if approval_decision is not None else rule_decision,
+        decision_in_details=approval_decision is not None or rule_decision is not None,
     )
 
 

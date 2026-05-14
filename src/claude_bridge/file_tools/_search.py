@@ -162,11 +162,13 @@ async def search_in_files(
         )
 
     flags = 0 if case_sensitive else re.IGNORECASE
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         future = executor.submit(re.compile, query if regex else re.escape(query), flags)
         try:
             pattern = future.result(timeout=2)
         except concurrent.futures.TimeoutError:
+            future.cancel()
             return json_response(
                 False,
                 "Regular expression compilation timed out (potential ReDoS)",
@@ -210,7 +212,13 @@ async def search_in_files(
                 try:
                     match = search_future.result(timeout=2)
                 except concurrent.futures.TimeoutError:
-                    continue
+                    search_future.cancel()
+                    return json_response(
+                        False,
+                        "Regular expression search timed out (potential ReDoS)",
+                        code="regex_timeout",
+                        details={"query": query, "path": str(file_path)},
+                    )
                 if not match:
                     continue
                 if match_count < offset:
@@ -231,29 +239,32 @@ async def search_in_files(
                 truncated = True
                 break
 
-    return json_response(
-        True,
-        f"Search completed for query: {query}",
-        details={
-            "query": query,
-            "path": path,
-            "regex": regex,
-            "case_sensitive": case_sensitive,
-            "include_glob": include_glob,
-            "offset": offset,
-            "next_offset": offset + len(results) if truncated else -1,
-            "results": results,
-            "truncated": truncated,
-            "files_searched": files_searched,
-            "search_backend": "python",
-            **_budget_metadata(
-                estimated_tokens=_estimate_token_count(
-                    "\n".join(
-                        f"{item['path']}:{item['line_number']}:{item['line']}" for item in results
-                    )
+        return json_response(
+            True,
+            f"Search completed for query: {query}",
+            details={
+                "query": query,
+                "path": path,
+                "regex": regex,
+                "case_sensitive": case_sensitive,
+                "include_glob": include_glob,
+                "offset": offset,
+                "next_offset": offset + len(results) if truncated else -1,
+                "results": results,
+                "truncated": truncated,
+                "files_searched": files_searched,
+                "search_backend": "python",
+                **_budget_metadata(
+                    estimated_tokens=_estimate_token_count(
+                        "\n".join(
+                            f"{item['path']}:{item['line_number']}:{item['line']}"
+                            for item in results
+                        )
+                    ),
+                    budget_tokens=budget_tokens,
+                    recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
                 ),
-                budget_tokens=budget_tokens,
-                recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
-            ),
-        },
-    )
+            },
+        )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)

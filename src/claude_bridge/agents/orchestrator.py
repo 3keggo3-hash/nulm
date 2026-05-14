@@ -80,6 +80,7 @@ Return JSON:
 
         request = EvaluationRequest(prompt=prompt)
         import inspect
+
         if inspect.iscoroutinefunction(provider.evaluate):
             response: Any = await provider.evaluate(request)
         else:
@@ -105,12 +106,14 @@ Return JSON:
                     if isinstance(st, dict):
                         agent = st.get("agent", "research")
                         agent_name = f"{agent}_agent"
-                        result.append({
-                            "id": f"{agent}_task_{i}",
-                            "task": st.get("description", ""),
-                            "agent_name": agent_name,
-                            "priority": st.get("priority", 2),
-                        })
+                        result.append(
+                            {
+                                "id": f"{agent}_task_{i}",
+                                "task": st.get("description", ""),
+                                "agent_name": agent_name,
+                                "priority": st.get("priority", 2),
+                            }
+                        )
                 if result:
                     return result
         except Exception:
@@ -123,46 +126,77 @@ Return JSON:
         subtasks: list[dict[str, Any]] = []
 
         if any(kw in task_lower for kw in ["git", "commit", "branch", "diff", "log"]):
-            subtasks.append({
-                "id": "git_task",
-                "task": task,
-                "agent_name": "git_agent",
-            })
+            subtasks.append(
+                {
+                    "id": "git_task",
+                    "task": task,
+                    "agent_name": "git_agent",
+                }
+            )
 
-        if any(kw in task_lower for kw in ["security", "vuln", "secret", "audit"]):
-            subtasks.append({
-                "id": "security_task",
-                "task": task,
-                "agent_name": "security_agent",
-            })
+        if any(
+            kw in task_lower
+            for kw in ["security", "vuln", "secret", "audit", "risk", "package safety"]
+        ):
+            subtasks.append(
+                {
+                    "id": "security_task",
+                    "task": task,
+                    "agent_name": "security_agent",
+                }
+            )
 
         if any(kw in task_lower for kw in ["debug", "error", "fix", "crash"]):
-            subtasks.append({
-                "id": "debug_task",
-                "task": task,
-                "agent_name": "debug_agent",
-            })
+            subtasks.append(
+                {
+                    "id": "debug_task",
+                    "task": task,
+                    "agent_name": "debug_agent",
+                }
+            )
 
-        if any(kw in task_lower for kw in ["research", "find", "search", "analyze"]):
-            subtasks.append({
-                "id": "research_task",
-                "task": task,
-                "agent_name": "research_agent",
-            })
+        if any(
+            kw in task_lower
+            for kw in [
+                "research",
+                "find",
+                "search",
+                "analyze",
+                "skill",
+                "marketplace",
+                "registry",
+                "recommend",
+                "package",
+            ]
+        ):
+            subtasks.append(
+                {
+                    "id": "research_task",
+                    "task": task,
+                    "agent_name": "research_agent",
+                }
+            )
 
-        if any(kw in task_lower for kw in ["review", "check", "quality", "critique"]):
-            subtasks.append({
-                "id": "review_task",
-                "task": task,
-                "agent_name": "review_agent",
-            })
+        if any(
+            kw in task_lower
+            for kw in ["review", "check", "quality", "critique", "creative features"]
+        ):
+            subtasks.append(
+                {
+                    "id": "review_task",
+                    "task": task,
+                    "agent_name": "review_agent",
+                }
+            )
 
         if not subtasks:
-            subtasks.append({
-                "id": "general_task",
-                "task": task,
-                "agent_name": "research_agent",
-            })
+            subtasks.append(
+                {
+                    "id": "general_task",
+                    "task": task,
+                    "agent_name": "research_agent",
+                }
+            )
 
         return subtasks
 

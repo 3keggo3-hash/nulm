@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import copy
 import fnmatch
 import importlib
 import json
@@ -589,15 +588,49 @@ def clear_index_cache() -> None:
 def get_cached_index(cache_key: str) -> dict[str, Any] | None:
     with _INDEX_CACHE_LOCK:
         cached = _INDEX_CACHE.get(cache_key)
-        return copy.deepcopy(cached) if cached is not None else None
+        return _clone_cached_index(cached) if cached is not None else None
 
 
 def set_cached_index(cache_key: str, snapshot: tuple[Any, ...], payload: dict[str, Any]) -> None:
     with _INDEX_CACHE_LOCK:
-        _INDEX_CACHE[cache_key] = {"snapshot": snapshot, "payload": copy.deepcopy(payload)}
+        _INDEX_CACHE[cache_key] = {"snapshot": snapshot, "payload": _clone_index_payload(payload)}
         while len(_INDEX_CACHE) > _MAX_INDEX_CACHE_ENTRIES:
             oldest_key = next(iter(_INDEX_CACHE))
             _INDEX_CACHE.pop(oldest_key, None)
+
+
+def _clone_cached_index(cached: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "snapshot": tuple(cached.get("snapshot", ())),
+        "payload": _clone_index_payload(cached.get("payload", {})),
+    }
+
+
+def _clone_index_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    cloned = dict(payload)
+    cloned["files"] = [_clone_jsonlike(item) for item in payload.get("files", [])]
+    if "_file_cache" in payload:
+        cloned["_file_cache"] = {
+            str(path): _clone_jsonlike(value)
+            for path, value in payload.get("_file_cache", {}).items()
+        }
+    if "_term_file_index" in payload:
+        cloned["_term_file_index"] = {
+            str(term): list(paths) for term, paths in payload.get("_term_file_index", {}).items()
+        }
+    return cloned
+
+
+def _clone_jsonlike(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _clone_jsonlike(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clone_jsonlike(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clone_jsonlike(item) for item in value)
+    if isinstance(value, set):
+        return set(value)
+    return value
 
 
 def public_index_payload(
@@ -755,6 +788,23 @@ def _token_metadata_for_index_entry(
         "import_tokens": sorted(_tokenize_names(imports)),
         "content_tokens": sorted(_tokenize_text(content)),
     }
+
+
+def _term_file_index(indexed_files: list[dict[str, Any]]) -> dict[str, list[str]]:
+    term_paths: dict[str, set[str]] = {}
+    token_fields = (
+        "path_tokens",
+        "function_tokens",
+        "class_tokens",
+        "import_tokens",
+        "content_tokens",
+    )
+    for item in indexed_files:
+        path = str(item.get("path", ""))
+        for field in token_fields:
+            for token in item.get(field, []):
+                term_paths.setdefault(str(token), set()).add(path)
+    return {term: sorted(paths) for term, paths in sorted(term_paths.items())}
 
 
 def _snapshot_key(snapshot: tuple[Any, ...]) -> str:
@@ -1280,6 +1330,7 @@ def build_index(
         "cached": False,
         "_snapshot_key": snapshot_key,
         "_file_cache": next_file_cache,
+        "_term_file_index": _term_file_index(indexed_files),
     }
     set_cached_index(cache_key, snapshot, payload)
     try:

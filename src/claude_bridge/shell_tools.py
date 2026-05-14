@@ -13,6 +13,7 @@ from claude_bridge._process_session import (  # noqa: F401
     _process_session_capacity,
     _PROCESS_SESSIONS,
     _PROCESS_SESSIONS_LOCK,
+    _register_process_session,
     _trim_process_sessions,
     reset_process_sessions,
 )

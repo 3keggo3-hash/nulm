@@ -9,8 +9,8 @@ from enum import Enum
 from typing import Any
 
 try:
-    import prometheus_client as prometheus
-    from prometheus_client import Counter, Gauge, Histogram
+    import prometheus_client as prometheus  # type: ignore[import-not-found]
+    from prometheus_client import Counter, Gauge, Histogram  # type: ignore[import-not-found]
 except ImportError:
     prometheus = None
     Counter = Gauge = Histogram = None
@@ -149,6 +149,8 @@ class MetricsCollector:
             return cls._instance
 
     def __init__(self) -> None:
+        if self._initialized:
+            return
         self._counters: dict[str, float] = {}
         self._histograms: dict[str, list[float]] = {}
         self._gauges: dict[str, float] = {}
@@ -156,7 +158,9 @@ class MetricsCollector:
         self._lock_metrics = threading.Lock()
         self._initialized: bool = True
 
-    def increment(self, name: str, value: float = 1.0, labels: dict[str, str] | None = None) -> None:
+    def increment(
+        self, name: str, value: float = 1.0, labels: dict[str, str] | None = None
+    ) -> None:
         key = self._make_key(name, labels)
         with self._lock_metrics:
             self._counters[key] = self._counters.get(key, 0.0) + value
@@ -207,7 +211,7 @@ class MetricsCollector:
             for key, value in self._counters.items():
                 if "{" in key:
                     name = key.split("{")[0]
-                    lines.append(f"{name}{{instance=\"claude-bridge\"}} {value}")
+                    lines.append(f'{name}{{instance="claude-bridge"}} {value}')
                 else:
                     lines.append(f"{key} {value}")
             for key, values in self._histograms.items():
@@ -215,13 +219,13 @@ class MetricsCollector:
                     avg = sum(values) / len(values)
                     if "{" in key:
                         name = key.split("{")[0]
-                        lines.append(f"{name}_sum{{instance=\"claude-bridge\"}} {avg}")
+                        lines.append(f'{name}_sum{{instance="claude-bridge"}} {avg}')
                     else:
                         lines.append(f"{key}_sum {avg}")
             for key, value in self._gauges.items():
                 if "{" in key:
                     name = key.split("{")[0]
-                    lines.append(f"{name}{{instance=\"claude-bridge\"}} {value}")
+                    lines.append(f'{name}{{instance="claude-bridge"}} {value}')
                 else:
                     lines.append(f"{key} {value}")
         return "\n".join(lines)

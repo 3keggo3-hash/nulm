@@ -192,6 +192,7 @@ def register_file_tools(
                 overwrite=overwrite,
                 create_parents=create_parents,
                 git_commit_fn=git_commit_fn,
+                ai_provider=_get_ai() if _get_ai else None,
             )
             return audit_tool_call(
                 "move_file",
@@ -227,6 +228,7 @@ def register_file_tools(
                 overwrite=overwrite,
                 create_parents=create_parents,
                 git_commit_fn=git_commit_fn,
+                ai_provider=_get_ai() if _get_ai else None,
             )
             return audit_tool_call(
                 "copy_path",

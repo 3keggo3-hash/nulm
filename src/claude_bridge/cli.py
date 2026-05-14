@@ -36,11 +36,33 @@ policy_app = typer.Typer(help="Validate and simulate local guard policy files")
 anomaly_app = typer.Typer(help="Anomaly detection on audit sessions")
 audit_app = typer.Typer(help="Audit session management and export")
 doctor_app = typer.Typer(help="Environment and security checks")
+skill_app = typer.Typer(help="Skill discovery, inspection, import, and export")
 app.add_typer(policy_app, name="policy")
 app.add_typer(anomaly_app, name="anomaly")
 app.add_typer(audit_app, name="audit")
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(skill_app, name="skill")
 console = Console()
+
+
+def _version_option(value: bool) -> None:
+    if value:
+        console.print(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def root_options(
+    version_option: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_option,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """Claude Bridge command line interface."""
+    _ = version_option
 
 
 class _MCPProxy:
@@ -741,6 +763,180 @@ def version() -> None:
     console.print(f"[bold cyan]Claude Bridge[/bold cyan] version [green]{__version__}[/green]")
 
 
+@skill_app.command("list")
+def skill_list(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """List registered skills without executing skill code."""
+    from claude_bridge.skill_registry import get_registry
+
+    skills = get_registry().list_skill_metadata()
+    payload = {"schema_version": "skill_list.v1", "skills": skills}
+    if json_output:
+        console.print_json(data=payload)
+        return
+    if not skills:
+        console.print("No skills registered.")
+        return
+    for item in skills:
+        meta = item["meta"]
+        console.print(f"[bold]{escape(meta['name'])}[/bold] v{escape(meta['version'])}")
+
+
+@skill_app.command("inspect")
+def skill_inspect(
+    name: str,
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Inspect a registered skill without executing it."""
+    from claude_bridge.skill_registry import get_registry
+
+    loaded = get_registry().inspect_skill(name)
+    if loaded is None:
+        payload = {"error": f"Skill '{name}' not found"}
+        if json_output:
+            console.print_json(data=payload)
+        else:
+            console.print(f"[red]{escape(payload['error'])}[/red]")
+        raise typer.Exit(code=1)
+    success_payload: dict[str, Any] = {
+        "schema_version": "skill_inspect.v1",
+        "skill": loaded.metadata_dict(),
+    }
+    if json_output:
+        console.print_json(data=success_payload)
+        return
+    meta = loaded.meta
+    console.print(Panel.fit(json.dumps(meta.to_dict(), indent=2), title=name))
+
+
+@skill_app.command("recommend")
+def skill_recommend(
+    query: str,
+    context: list[str] = typer.Option(None, "--context", help="Context tag for matching"),
+    limit: int = typer.Option(5, "--limit", help="Maximum recommendations to return"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Recommend registered skills for a task."""
+    from claude_bridge.skill_registry import get_registry
+
+    matches = get_registry().recommend(query, context=context or [], limit=limit)
+    payload = {
+        "schema_version": "skill_recommendations.v1",
+        "query": query,
+        "matches": [match.to_dict() for match in matches],
+    }
+    if json_output:
+        console.print_json(data=payload)
+        return
+    if not matches:
+        console.print("No matching skills found.")
+        return
+    for match in matches:
+        console.print(f"[bold]{escape(match.name)}[/bold] score={match.score}")
+        for reason in match.reasons:
+            console.print(f"  - {escape(reason)}")
+
+
+@skill_app.command("packages")
+def skill_packages(
+    directory: Path,
+    query: str = typer.Option("", "--query", help="Package metadata query"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Search local skill packages without importing them."""
+    from claude_bridge.skill_marketplace import search_packages
+
+    packages = search_packages(directory, query)
+    payload = {"schema_version": "skill_packages.v1", "packages": packages}
+    if json_output:
+        console.print_json(data=payload)
+        return
+    if not packages:
+        console.print("No matching packages found.")
+        return
+    for package in packages:
+        console.print(
+            f"[bold]{escape(str(package['name']))}[/bold] "
+            f"{escape(str(package['version']))} {escape(str(package['file']))}"
+        )
+
+
+@skill_app.command("package-inspect")
+def skill_package_inspect(
+    package: Path,
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Inspect a skill package without importing or executing it."""
+    from claude_bridge.skill_marketplace import inspect_package
+
+    inspection, errors = inspect_package(package)
+    if errors:
+        payload = {"error": "Package inspection failed", "errors": errors}
+        if json_output:
+            console.print_json(data=payload)
+        else:
+            for error in errors:
+                console.print(f"[red]{escape(error)}[/red]")
+        raise typer.Exit(code=1)
+    success_payload: dict[str, Any] = {
+        "schema_version": "skill_package_inspect.v1",
+        "inspection": inspection,
+    }
+    if json_output:
+        console.print_json(data=success_payload)
+        return
+    console.print(Panel.fit(json.dumps(inspection, indent=2), title=str(package)))
+
+
+@skill_app.command("import")
+def skill_import(
+    package: Path,
+    allow_high_risk: bool = typer.Option(
+        False,
+        "--allow-high-risk",
+        help="Allow importing a package scored as high risk",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Import a reviewed skill package."""
+    from claude_bridge.skill_marketplace import import_skill_reviewed
+
+    success, errors = import_skill_reviewed(package, allow_high_risk=allow_high_risk)
+    payload = {"ok": success, "errors": errors}
+    if json_output:
+        console.print_json(data=payload)
+    elif success:
+        console.print("[green]Skill imported[/green]")
+    else:
+        for error in errors:
+            console.print(f"[red]{escape(error)}[/red]")
+    if not success:
+        raise typer.Exit(code=1)
+
+
+@skill_app.command("export")
+def skill_export(
+    name: str,
+    destination: Path,
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
+) -> None:
+    """Export a registered skill package."""
+    from claude_bridge.skill_marketplace import export_skill
+
+    success, errors = export_skill(name, destination)
+    payload = {"ok": success, "errors": errors, "destination": str(destination)}
+    if json_output:
+        console.print_json(data=payload)
+    elif success:
+        console.print(f"[green]Skill exported to {escape(str(destination))}[/green]")
+    else:
+        for error in errors:
+            console.print(f"[red]{escape(error)}[/red]")
+    if not success:
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def update(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
@@ -904,6 +1100,36 @@ def init(
         )
     finally:
         signal.signal(signal.SIGINT, original)
+
+
+@app.command("workflow-preview")
+def workflow_preview(
+    mode: str,
+    target: str = ".",
+    option: str | None = typer.Option(None, "--option", help="Workflow focus/option"),
+    language: str = typer.Option("English", "--language", help="Response language"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Preview a workflow prompt without executing it."""
+    from claude_bridge.workflow_presets import preview_workflow
+
+    result = preview_workflow(mode, target, option, language)
+    if json_output:
+        console.print_json(data=result)
+        return
+    if not result["ok"]:
+        console.print(f"[red]Error:[/red] {result['error']}")
+        console.print(f"Valid modes: {', '.join(result['valid_modes'])}")
+        raise typer.Exit(code=1)
+    console.print(
+        Panel.fit(
+            f"[bold]Mode:[/bold] {result['mode']}  [bold]Target:[/bold] {result['target']}",
+            title="Workflow Preview",
+        )
+    )
+    console.print(f"\n[bold]Token estimate:[/bold] ~{result['token_estimate']} tokens")
+    console.print(f"\n[bold]Steps:[/bold] {result['steps_summary']}")
+    console.print(f"\n[bold]Prompt:[/bold]\n{result['prompt']}")
 
 
 @app.command()

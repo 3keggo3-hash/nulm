@@ -890,9 +890,16 @@ def register_meta_tools(
             smart_avail = smart_available()
             from claude_bridge.ai_evaluator import ai_latency_summary
             from claude_bridge.agent_advisor import agent_quality_telemetry_summary
+            from claude_bridge.skill_registry import get_registry
 
             profile_name = str(config_snapshot.get("context_budget_profile", "balanced"))
             profile = budget_profiles.get(profile_name, {})
+            skills = get_registry(project_dir()).list_skills()
+            auto_load_count = sum(1 for skill in skills if skill.meta.auto_load)
+            execute_capable_count = sum(
+                1 for skill in skills if "execute" in set(skill.meta.permissions)
+            )
+            high_risk_count = sum(1 for skill in skills if skill.meta.risk_level == "high")
             result = json_response(
                 True,
                 "Bridge status loaded",
@@ -972,6 +979,14 @@ def register_meta_tools(
                             "guarded_by": "SAFE_CHAT_CONFIG_KEYS",
                             "only_via": "apply_bridge_config_change",
                         },
+                    },
+                    "skill_governance": {
+                        "registered_count": len(skills),
+                        "auto_load_count": auto_load_count,
+                        "execute_capable_count": execute_capable_count,
+                        "high_risk_count": high_risk_count,
+                        "storage_root": str(get_registry(project_dir()).root),
+                        "source_visibility": "metadata_only",
                     },
                     "smart_features": smart_avail,
                     "session_telemetry": session_summary.get("telemetry", {}),

@@ -137,3 +137,31 @@ class TestRelevanceScoring:
         ranked = rank_indexed_files(payload, query="user login", limit=2)
         assert ranked["results"][0]["path"] == "docs/auth_flow.md"
         assert ranked["results"][0]["matched_fields"] == ["content"]
+
+    def test_rank_indexed_files_uses_term_file_index(self):
+        payload = {
+            "_snapshot_key": "term-index-test",
+            "_term_file_index": {"login": ["auth.py"]},
+            "files": [
+                {
+                    "path": "auth.py",
+                    "functions": ["login_user"],
+                    "classes": [],
+                    "imports": [],
+                    "function_tokens": ["login", "user"],
+                    "parser_backend": "fallback",
+                },
+                {
+                    "path": "billing.py",
+                    "functions": ["charge_card"],
+                    "classes": [],
+                    "imports": [],
+                    "function_tokens": ["charge", "card"],
+                    "parser_backend": "fallback",
+                },
+            ],
+        }
+
+        ranked = rank_indexed_files(payload, query="login", limit=2)
+
+        assert [item["path"] for item in ranked["results"]] == ["auth.py"]

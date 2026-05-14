@@ -464,3 +464,19 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         if reason is not None:
             return reason
     return None
+
+
+def _check_skill_code_blocked(skill_code: str) -> str | None:
+    patterns = [
+        (r"os\.system\s*\(", "os.system"),
+        (r"os\.popen\s*\(", "os.popen"),
+        (r"subprocess\.run\s*\(.*shell\s*=\s*True", "subprocess.run with shell=True"),
+        (r"\beval\s*\(", "eval"),
+        (r"\bexec\s*\(", "exec"),
+        (r"\b__import__\s*\(", "__import__"),
+        (r"importlib\.import_module\s*\(", "importlib.import_module"),
+    ]
+    for pattern, name in patterns:
+        if re.search(pattern, skill_code):
+            return f"skill code contains blocked pattern: {name}"
+    return None

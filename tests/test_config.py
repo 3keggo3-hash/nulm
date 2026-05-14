@@ -253,7 +253,15 @@ def test_standard_tool_profile_registers_documented_workflow_tools(tmp_path):
     assert "run_workflow" in tool_names
     assert "run_agent_loop_step" in tool_names
     assert "run_agent_loop_session" in tool_names
+    assert "recommend_skills" in tool_names
+    assert "inspect_skill_package" in tool_names
+    assert "run_skill" not in tool_names
     assert "_run_workflow" not in tool_names
+
+
+def test_full_tool_profile_registers_skill_execution(tmp_path):
+    tool_names = _list_tools_for_profile(tmp_path, "full")
+    assert "run_skill" in tool_names
 
 
 def test_missing_tool_profile_env_registers_standard_not_full(tmp_path):
@@ -297,6 +305,7 @@ def test_tool_profile_union_covers_public_server_exports():
         "register_multi_format_tools",
         "register_prompts",
         "register_shell_tools",
+        "register_skill_tools",
         "register_smart_tools",
         "register_url_tools",
         "register_workflow_tools",

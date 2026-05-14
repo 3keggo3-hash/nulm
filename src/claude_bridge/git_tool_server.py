@@ -27,7 +27,11 @@ def register_git_tools(
     if ctx.should_register("commit_changes"):
 
         async def commit_changes(message: str) -> str:
+            from claude_bridge.config import active_role, active_user
             from claude_bridge.git_ops import commit_changes as _commit_changes
+            from claude_bridge.guard_policy import DecisionAction, ToolRequestContext
+            from claude_bridge.rules_engine import evaluate_runtime_policy_chain
+            from claude_bridge.tool_utils import require_approval
 
             started_at = ctx.now_ms()
             if not message.strip():
@@ -43,6 +47,53 @@ def register_git_tools(
                     result,
                     started_at=started_at,
                 )
+            policy_context = ToolRequestContext(
+                tool_name="commit_changes",
+                params={"message": message},
+                project_dir=str(project_dir()),
+                role=active_role(),
+                user=active_user(),
+            )
+            rule_decision = evaluate_runtime_policy_chain(policy_context)
+            if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+                result = json_response(
+                    False,
+                    rule_decision.reason,
+                    code="policy_denied",
+                    details={},
+                    decision=rule_decision,
+                    decision_in_details=True,
+                )
+                return audit_tool_call(
+                    "commit_changes", {"message": message}, result, started_at=started_at
+                )
+            if rule_decision is None or rule_decision.action == DecisionAction.ASK:
+                rejection = await require_approval(
+                    "commit_changes",
+                    {"message": message},
+                    rejection_message=(
+                        rule_decision.reason
+                        if rule_decision is not None
+                        else "Commit rejected by user"
+                    ),
+                    rejection_details={},
+                )
+                if rejection is not None:
+                    if rule_decision is not None:
+                        result = json_response(
+                            False,
+                            rule_decision.reason,
+                            code="approval_rejected",
+                            details={},
+                            decision=rule_decision,
+                            decision_in_details=True,
+                        )
+                    else:
+                        result = rejection
+                    return audit_tool_call(
+                        "commit_changes", {"message": message}, result, started_at=started_at
+                    )
+
             payload = _commit_changes(message, project_dir=project_dir())
             result = json_response(
                 payload["commit"],

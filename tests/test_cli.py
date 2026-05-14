@@ -6,10 +6,17 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from claude_bridge import cli
+from claude_bridge import skill_registry
 from claude_bridge.prompt import build_desktop_config, build_target_config, generate_mcp_setup_guide
 from claude_bridge import server as mcp_server
+from claude_bridge.skill_schema import SkillMeta
 
 runner = CliRunner()
+
+
+def _reset_skill_registry(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    skill_registry._registry = None
 
 
 class TestDesktopConfig:
@@ -145,6 +152,63 @@ class TestCLI:
         assert result.exit_code == 0
         assert result.stdout == ""
         assert calls == ["run_mcp_server"]
+
+    def test_version_option(self):
+        result = runner.invoke(cli.app, ["--version"])
+
+        assert result.exit_code == 0
+        assert cli.__version__ in result.stdout
+
+    def test_skill_list_json(self, tmp_path: Path, monkeypatch):
+        _reset_skill_registry(tmp_path, monkeypatch)
+        registry = skill_registry.get_registry()
+        registry.register(
+            "docs",
+            SkillMeta(name="docs", version="1.0", trigger_phrases=["docs"]),
+            "def run(ctx): return None",
+        )
+
+        result = runner.invoke(cli.app, ["skill", "list", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["schema_version"] == "skill_list.v1"
+        assert payload["skills"][0]["meta"]["name"] == "docs"
+
+    def test_skill_recommend_json(self, tmp_path: Path, monkeypatch):
+        _reset_skill_registry(tmp_path, monkeypatch)
+        registry = skill_registry.get_registry()
+        registry.register(
+            "release-docs",
+            SkillMeta(
+                name="release-docs",
+                version="1.0",
+                trigger_phrases=["release notes"],
+                tags=["docs"],
+            ),
+            "def run(ctx): return None",
+        )
+
+        result = runner.invoke(
+            cli.app,
+            ["skill", "recommend", "write release notes", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["schema_version"] == "skill_recommendations.v1"
+        assert payload["matches"][0]["name"] == "release-docs"
+        assert payload["matches"][0]["score"] > 0
+
+    def test_skill_package_inspect_bad_package_json(self, tmp_path: Path):
+        result = runner.invoke(
+            cli.app,
+            ["skill", "package-inspect", str(tmp_path / "missing.tar.gz"), "--json"],
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["error"] == "Package inspection failed"
 
     def test_setup_command_prints_setup_text(self, tmp_path: Path):
         extra_root = tmp_path.parent / "extra"

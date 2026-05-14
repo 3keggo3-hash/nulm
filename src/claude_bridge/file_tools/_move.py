@@ -9,7 +9,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
+from claude_bridge.ai_evaluator import evaluate_tool_with_ai
+from claude_bridge.config import active_role, active_user, current_config
 from claude_bridge.git_ops import git_commit as _git_commit
+from claude_bridge.guard_policy import (
+    DecisionAction,
+    ToolRequestContext,
+    approval_allow_decision,
+)
+from claude_bridge.rules_engine import evaluate_runtime_policy_chain
 from claude_bridge.tool_utils import (
     allowed_roots,
     infer_project_root,
@@ -31,6 +39,7 @@ async def move_file(
     create_parents: bool = False,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+    ai_provider: Any = None,
 ) -> str:
     try:
         source_path = resolve_path(source)
@@ -86,14 +95,106 @@ async def move_file(
             details={"destination": destination, "parent": str(destination_path.parent)},
         )
 
-    rejection = await require_approval(
-        "move_file",
-        {"source": source, "destination": destination, "overwrite": overwrite},
-        rejection_message="Move rejected by user",
-        rejection_details={"source": source, "destination": destination},
+    policy_context = ToolRequestContext(
+        tool_name="move_file",
+        params={
+            "source": source,
+            "destination": destination,
+            "file": destination,
+            "overwrite": overwrite,
+            "create_parents": create_parents,
+        },
+        project_dir=str(infer_project_root(destination_path.parent)),
+        role=active_role(),
+        user=active_user(),
     )
-    if rejection is not None:
-        return rejection
+    approval_decision = None
+    rule_decision = evaluate_runtime_policy_chain(policy_context)
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={"source": source, "destination": destination},
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "move_file",
+            {"source": source, "destination": destination, "reason": rule_decision.reason},
+            rejection_message=rule_decision.reason,
+            rejection_details={"source": source, "destination": destination},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={"source": source, "destination": destination},
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Move approved after policy ASK decision",
+            risk_level=rule_decision.risk_level,
+            risk_reasons=list(rule_decision.risk_reasons),
+            metadata={"tool": "move_file", **dict(rule_decision.metadata)},
+        )
+
+    config = current_config()
+    ai_decision = await evaluate_tool_with_ai(
+        policy_context,
+        provider=ai_provider,
+        enabled=bool(config.get("ai_evaluator_enabled", False)),
+        timeout=int(config.get("ai_evaluator_timeout", 5)),
+        fallback_action=str(config.get("ai_evaluator_fallback_action", "ask")),
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={"source": source, "destination": destination},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "move_file",
+            {"source": source, "destination": destination, "reason": ai_decision.reason},
+            rejection_message=ai_decision.reason,
+            rejection_details={"source": source, "destination": destination},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={"source": source, "destination": destination},
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Move approved after AI ASK decision",
+            risk_level=ai_decision.risk_level,
+            risk_reasons=list(ai_decision.risk_reasons),
+            metadata={"tool": "move_file", **dict(ai_decision.metadata)},
+        )
+
+    if approval_decision is None and not (
+        rule_decision is not None and rule_decision.action == DecisionAction.ALLOW
+    ):
+        rejection = await require_approval(
+            "move_file",
+            {"source": source, "destination": destination, "overwrite": overwrite},
+            rejection_message="Move rejected by user",
+            rejection_details={"source": source, "destination": destination},
+        )
+        if rejection is not None:
+            return rejection
 
     if create_parents:
         destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +268,8 @@ async def move_file(
             "overwritten": overwrite,
             "git": git_results,
         },
+        decision=approval_decision if approval_decision is not None else rule_decision,
+        decision_in_details=approval_decision is not None or rule_decision is not None,
     )
 
 
@@ -177,6 +280,7 @@ async def copy_path(
     create_parents: bool = False,
     *,
     git_commit_fn: Callable[..., dict[str, Any]] = _git_commit,
+    ai_provider: Any = None,
 ) -> str:
     try:
         source_path = resolve_path(source)
@@ -232,14 +336,106 @@ async def copy_path(
             details={"destination": destination, "parent": str(destination_path.parent)},
         )
 
-    rejection = await require_approval(
-        "copy_path",
-        {"source": source, "destination": destination, "overwrite": overwrite},
-        rejection_message="Copy rejected by user",
-        rejection_details={"source": source, "destination": destination},
+    policy_context = ToolRequestContext(
+        tool_name="copy_path",
+        params={
+            "source": source,
+            "destination": destination,
+            "file": destination,
+            "overwrite": overwrite,
+            "create_parents": create_parents,
+        },
+        project_dir=str(infer_project_root(destination_path.parent)),
+        role=active_role(),
+        user=active_user(),
     )
-    if rejection is not None:
-        return rejection
+    approval_decision = None
+    rule_decision = evaluate_runtime_policy_chain(policy_context)
+    if rule_decision is not None and rule_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            rule_decision.reason,
+            code="policy_denied",
+            details={"source": source, "destination": destination},
+            decision=rule_decision,
+            decision_in_details=True,
+        )
+    if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "copy_path",
+            {"source": source, "destination": destination, "reason": rule_decision.reason},
+            rejection_message=rule_decision.reason,
+            rejection_details={"source": source, "destination": destination},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={"source": source, "destination": destination},
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Copy approved after policy ASK decision",
+            risk_level=rule_decision.risk_level,
+            risk_reasons=list(rule_decision.risk_reasons),
+            metadata={"tool": "copy_path", **dict(rule_decision.metadata)},
+        )
+
+    config = current_config()
+    ai_decision = await evaluate_tool_with_ai(
+        policy_context,
+        provider=ai_provider,
+        enabled=bool(config.get("ai_evaluator_enabled", False)),
+        timeout=int(config.get("ai_evaluator_timeout", 5)),
+        fallback_action=str(config.get("ai_evaluator_fallback_action", "ask")),
+    )
+    if ai_decision is not None and ai_decision.action == DecisionAction.DENY:
+        return json_response(
+            False,
+            ai_decision.reason,
+            code="policy_denied",
+            details={"source": source, "destination": destination},
+            decision=ai_decision,
+            decision_in_details=True,
+        )
+    if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
+        rejection = await require_approval(
+            "copy_path",
+            {"source": source, "destination": destination, "reason": ai_decision.reason},
+            rejection_message=ai_decision.reason,
+            rejection_details={"source": source, "destination": destination},
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={"source": source, "destination": destination},
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = approval_allow_decision(
+            "Copy approved after AI ASK decision",
+            risk_level=ai_decision.risk_level,
+            risk_reasons=list(ai_decision.risk_reasons),
+            metadata={"tool": "copy_path", **dict(ai_decision.metadata)},
+        )
+
+    if approval_decision is None and not (
+        rule_decision is not None and rule_decision.action == DecisionAction.ALLOW
+    ):
+        rejection = await require_approval(
+            "copy_path",
+            {"source": source, "destination": destination, "overwrite": overwrite},
+            rejection_message="Copy rejected by user",
+            rejection_details={"source": source, "destination": destination},
+        )
+        if rejection is not None:
+            return rejection
 
     if create_parents:
         destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,4 +597,6 @@ async def copy_path(
             "overwritten": overwrite,
             "git": git_result,
         },
+        decision=approval_decision if approval_decision is not None else rule_decision,
+        decision_in_details=approval_decision is not None or rule_decision is not None,
     )

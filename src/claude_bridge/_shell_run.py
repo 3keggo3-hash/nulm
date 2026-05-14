@@ -15,6 +15,7 @@ from claude_bridge.config import active_role, active_user, approval_mode, curren
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
+    PolicyDecision,
     ToolRequestContext,
 )
 from claude_bridge.rules_engine import evaluate_runtime_policy_chain
@@ -26,8 +27,8 @@ from claude_bridge._process_session import (
     _process_session_capacity,
     _PROCESS_SESSIONS,
     _PROCESS_SESSIONS_LOCK,
+    _register_process_session,
     _start_stream_threads,
-    _trim_process_sessions,
 )
 from claude_bridge._shell_analysis import (
     _is_long_running_command,
@@ -170,6 +171,7 @@ async def run_shell(
         )
 
     stripped = command.strip()
+    approval_decision: PolicyDecision | None = None
     policy_context = ToolRequestContext(
         tool_name="run_shell",
         params={"command": stripped},
@@ -192,17 +194,47 @@ async def run_shell(
             decision_in_details=True,
         )
     if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            rule_decision.reason,
-            code="approval_rejected",
-            details={
+        rejection = await require_approval(
+            "run_shell",
+            {"command": stripped},
+            rejection_message=rule_decision.reason,
+            rejection_details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=rule_decision,
-            decision_in_details=True,
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="shell_agent",
+                action="Run shell command",
+                reason=rule_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    rule_decision.risk_level.value, 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="run_shell",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Shell command approved after policy ASK decision",
         )
 
     config = current_config()
@@ -242,17 +274,47 @@ async def run_shell(
             source=DecisionSource.AI,
             reason=ai_decision.reason,
         )
-        return json_response(
-            False,
-            ai_decision.reason,
-            code="approval_rejected",
-            details={
+        rejection = await require_approval(
+            "run_shell",
+            {"command": stripped},
+            rejection_message=ai_decision.reason,
+            rejection_details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=ask_decision,
-            decision_in_details=True,
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="shell_agent",
+                action="Run shell command",
+                reason=ai_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    analysis["details"].get("risk_level", "low"), 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="run_shell",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=ask_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Shell command approved after AI ASK decision",
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
     auto_approve_on, client_managed = approval_mode()
@@ -262,7 +324,7 @@ async def run_shell(
             action=DecisionAction.ASK,
             source=DecisionSource.BUILTIN_GUARD,
             reason=f"Shell command risk level {analysis_risk} requires approval; "
-            "auto_approve is disabled for medium+ risk commands",
+            "auto_approve is disabled for high+ risk commands",
         )
         return json_response(
             False,
@@ -279,7 +341,9 @@ async def run_shell(
     risk_score = int(analysis["details"].get("risk_score", 50))
     risk_category = str(analysis["details"].get("risk_category", "Medium"))
 
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if approval_decision is not None:
+        allow_decision = approval_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         shell_card = PermissionCard(
@@ -459,6 +523,7 @@ async def start_process(
         )
 
     stripped = command.strip()
+    approval_decision: PolicyDecision | None = None
     policy_context = ToolRequestContext(
         tool_name="start_process",
         params={"command": stripped},
@@ -481,17 +546,47 @@ async def start_process(
             decision_in_details=True,
         )
     if rule_decision is not None and rule_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            rule_decision.reason,
-            code="approval_rejected",
-            details={
+        rejection = await require_approval(
+            "start_process",
+            {"command": stripped},
+            rejection_message=rule_decision.reason,
+            rejection_details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=rule_decision,
-            decision_in_details=True,
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="process_agent",
+                action="Start background process",
+                reason=rule_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    rule_decision.risk_level.value, 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="start_process",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                rule_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=rule_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Process start approved after policy ASK decision",
         )
 
     config = current_config()
@@ -525,17 +620,47 @@ async def start_process(
             decision_in_details=True,
         )
     if ai_decision is not None and ai_decision.action == DecisionAction.ASK:
-        return json_response(
-            False,
-            ai_decision.reason,
-            code="approval_rejected",
-            details={
+        rejection = await require_approval(
+            "start_process",
+            {"command": stripped},
+            rejection_message=ai_decision.reason,
+            rejection_details={
                 "command": _mask_secrets(command),
                 "risk_level": analysis["details"]["risk_level"],
                 "risk_reasons": analysis["details"]["risk_reasons"],
             },
-            decision=ai_decision,
-            decision_in_details=True,
+            request_approval_fn=request_approval,
+            card=PermissionCard(
+                agent="process_agent",
+                action="Start background process",
+                reason=ai_decision.reason,
+                risk={"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
+                    analysis["details"].get("risk_level", "low"), 50
+                ),
+                files=_extract_files_from_command(stripped),
+                tool_name="start_process",
+                params={"command": _mask_secrets(stripped)},
+            ),
+            allow_auto_approve=False,
+        )
+        if rejection is not None:
+            return json_response(
+                False,
+                ai_decision.reason,
+                code="approval_rejected",
+                details={
+                    "command": _mask_secrets(command),
+                    "risk_level": analysis["details"]["risk_level"],
+                    "risk_reasons": analysis["details"]["risk_reasons"],
+                },
+                decision=ai_decision,
+                decision_in_details=True,
+            )
+        approval_decision = _shell_analysis_decision(
+            analysis,
+            action=DecisionAction.ALLOW,
+            source=DecisionSource.APPROVAL,
+            reason="Process start approved after AI ASK decision",
         )
     analysis_risk = analysis["details"].get("risk_level", "low")
     auto_approve_on, client_managed = approval_mode()
@@ -545,7 +670,7 @@ async def start_process(
             action=DecisionAction.ASK,
             source=DecisionSource.BUILTIN_GUARD,
             reason=f"Process risk level {analysis_risk} requires approval; "
-            "auto_approve is disabled for medium+ risk commands",
+            "auto_approve is disabled for high+ risk commands",
         )
         return json_response(
             False,
@@ -559,7 +684,9 @@ async def start_process(
             decision=ask_decision,
             decision_in_details=True,
         )
-    if rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
+    if approval_decision is not None:
+        allow_decision = approval_decision
+    elif rule_decision is not None and rule_decision.action == DecisionAction.ALLOW:
         allow_decision = rule_decision
     else:
         risk_score = {"low": 20, "medium": 50, "high": 70, "critical": 90}.get(
@@ -663,10 +790,17 @@ async def start_process(
         risk_level=str(analysis["details"]["risk_level"]),
         risk_reasons=list(analysis["details"]["risk_reasons"]),
     )
+    if not _register_process_session(session):
+        _terminate_unregistered_process(process)
+        return json_response(
+            False,
+            "Process session limit reached; stop an existing process before starting another.",
+            code="process_session_limit_exceeded",
+            details=_process_session_capacity(),
+            decision=allow_decision,
+            decision_in_details=True,
+        )
     _start_stream_threads(session)
-    with _PROCESS_SESSIONS_LOCK:
-        _PROCESS_SESSIONS[session_id] = session
-    _trim_process_sessions()
     return json_response(
         True,
         "Process started successfully",
@@ -674,6 +808,24 @@ async def start_process(
         decision=allow_decision,
         decision_in_details=True,
     )
+
+
+def _terminate_unregistered_process(process: subprocess.Popen[str]) -> None:
+    try:
+        process.terminate()
+        process.wait(timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            process.kill()
+        except OSError:
+            pass
+    for stream in (process.stdout, process.stderr, process.stdin):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except OSError:
+            pass
 
 
 async def read_process_output(session_id: str, offset: int = 0, limit: int = 4000) -> str:

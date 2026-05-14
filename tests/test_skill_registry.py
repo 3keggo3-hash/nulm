@@ -6,6 +6,7 @@ import pytest
 
 from claude_bridge.skill_registry import (
     LoadedSkill,
+    SkillMatch,
     SkillRegistry,
     get_registry,
 )
@@ -53,6 +54,16 @@ class TestSkillRegistry:
         success, errors = registry.register("dup-skill", meta, code)
         assert success is True
 
+    def test_register_rejects_name_mismatch(self, temp_skills_dir: Path) -> None:
+        registry = SkillRegistry()
+        meta = SkillMeta(name="safe", version="1.0", trigger_phrases=["safe"])
+
+        success, errors = registry.register("../escape", meta, "code")
+
+        assert success is False
+        assert any("match metadata" in error for error in errors)
+        assert not (temp_skills_dir.parent / "escape.py").exists()
+
     def test_unregister_skill(self, temp_skills_dir: Path) -> None:
         registry = SkillRegistry()
         meta = SkillMeta(
@@ -73,6 +84,12 @@ class TestSkillRegistry:
         success, errors = registry.unregister("nonexistent")
         assert success is False
         assert len(errors) > 0
+
+    def test_unregister_rejects_unsafe_name(self, temp_skills_dir: Path) -> None:
+        registry = SkillRegistry()
+        success, errors = registry.unregister("../escape")
+        assert success is False
+        assert any("Invalid skill name" in error for error in errors)
 
     def test_find_matching(self, temp_skills_dir: Path) -> None:
         registry = SkillRegistry()
@@ -96,7 +113,12 @@ class TestSkillRegistry:
 
         registry.register(
             "analyze-code",
-            SkillMeta(name="analyze-code", version="1.0", trigger_phrases=["analyze"], trigger_context=["python"]),
+            SkillMeta(
+                name="analyze-code",
+                version="1.0",
+                trigger_phrases=["analyze"],
+                trigger_context=["python"],
+            ),
             "code",
         )
 
@@ -142,6 +164,44 @@ class TestSkillRegistry:
         success, errors = new_registry.load_skill("loadable")
         assert success is True
         assert errors == []
+
+    def test_recommend_returns_scores_and_reasons(self, temp_skills_dir: Path) -> None:
+        registry = SkillRegistry()
+        registry.register(
+            "docs",
+            SkillMeta(
+                name="docs",
+                version="1.0",
+                trigger_phrases=["release notes"],
+                description="Draft release notes and documentation",
+                tags=["docs"],
+                permissions=["read"],
+                risk_level="low",
+            ),
+            "code",
+        )
+
+        matches = registry.recommend("please write release notes", context=["docs"])
+
+        assert len(matches) == 1
+        assert isinstance(matches[0], SkillMatch)
+        assert matches[0].name == "docs"
+        assert matches[0].score > 0
+        assert any("trigger phrase" in reason for reason in matches[0].reasons)
+        assert matches[0].to_dict()["permissions"] == ["read"]
+
+    def test_recommend_limit_and_tie_sort(self, temp_skills_dir: Path) -> None:
+        registry = SkillRegistry()
+        for name in ("b-skill", "a-skill"):
+            registry.register(
+                name,
+                SkillMeta(name=name, version="1.0", trigger_phrases=["same"]),
+                "code",
+            )
+
+        matches = registry.recommend("same", limit=1)
+
+        assert [match.name for match in matches] == ["a-skill"]
 
 
 class TestLoadedSkill:

@@ -732,7 +732,7 @@ def evaluate_role_post_restrictions(
         if restriction not in _POST_RULE_RESTRICTIONS:
             continue
         if restriction == "unapproved_write":
-            write_tools = {"write_file", "patch_file"}
+            write_tools = {"write_file", "patch_file", "move_file", "copy_path"}
             if ctx.tool_name in write_tools and current_decision.action == DecisionAction.ALLOW:
                 return make_policy_decision(
                     DecisionAction.ASK,
