@@ -7,6 +7,30 @@ from typing import Any
 from claude_bridge._audit_core import _load_records, current_session_id
 from claude_bridge.anomaly import compute_anomaly_scores
 
+# Decompression bomb protection limits
+_MAX_COMPRESSION_RATIO = 1000  # 1MB compressed → 1GB decompressed max
+_COMPRESSION_SIZE_LIMIT = 100 * 1024 * 1024  # 100MB max decompressed size
+
+
+def validate_compression_ratio(compressed_size: int, decompressed_size: int) -> None:
+    """Validate that decompressed data doesn't exceed safe limits.
+
+    Raises:
+        ValueError: If decompressed size exceeds safe limits or ratio is too high.
+    """
+    if decompressed_size > _COMPRESSION_SIZE_LIMIT:
+        raise ValueError(
+            f"Decompressed size {decompressed_size:,} bytes exceeds limit of "
+            f"{_COMPRESSION_SIZE_LIMIT:,} bytes"
+        )
+    if compressed_size > 0:
+        ratio = decompressed_size / compressed_size
+        if ratio > _MAX_COMPRESSION_RATIO:
+            raise ValueError(
+                f"Compression ratio {ratio:.1f}x (size {decompressed_size:,} bytes from "
+                f"{compressed_size:,} bytes) exceeds maximum allowed ratio {_MAX_COMPRESSION_RATIO}x"
+            )
+
 
 def compress_session(session_id: str) -> str:
     """Return a compact text summary of a session for context window reduction.
@@ -69,7 +93,10 @@ def compress_session(session_id: str) -> str:
     if anomaly_count > 0:
         lines.append(f"Anomalies: {anomaly_count}")
 
-    return " | ".join(lines)
+    summary = " | ".join(lines)
+    # Validate output size to prevent decompression bomb attacks
+    validate_compression_ratio(len(records), len(summary))
+    return summary
 
 
 def summarize_audit_records(records: list[dict[str, Any]]) -> str:

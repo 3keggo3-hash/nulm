@@ -16,6 +16,7 @@ from claude_bridge._audit_activity import (
     filter_audit_records,
     build_activity_summary,
 )
+from claude_bridge._audit_query_parser import AuditQueryParser, AuditQueryAST, QueryError
 
 _VALID_DECISION_ACTIONS = {"allow", "deny", "ask"}
 _VALID_DECISION_SOURCES = {"default", "builtin_guard", "rule", "approval", "ai"}
@@ -202,7 +203,170 @@ def summarize_session(
             "total_input_chars": total_input_chars,
             "total_output_chars": total_output_chars,
             "total_estimated_tokens": total_estimated_tokens,
-            "truncated_results": truncated_results,
+"truncated_results": truncated_results,
             "tool_estimated_tokens": tool_token_totals,
+        },
+    }
+
+
+def query_audit(
+    query: str,
+    session_id: str | None = None,
+    *,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Execute a SQL-like query against the audit trail.
+
+    Args:
+        query: SQL-like query string (e.g., "SELECT tool_name WHERE ok = true LIMIT 10")
+        session_id: Session to query. Defaults to current/last session.
+        limit: Maximum records to return (default 100). Acts as a safety ceiling.
+
+    Returns:
+        Dictionary with keys: session_id, records, total_records, returned_records,
+        query_strategy, parsed_query (AST summary)
+
+    Supported syntax:
+        SELECT <fields>     -- comma-separated, default: *
+        WHERE <conditions>  -- field op value, supports AND/OR
+        ORDER BY <field> [ASC|DESC]
+        LIMIT <n>
+
+    Supported fields: tool_name, ok, decision_action, decision_source,
+                      decision_risk_level, timestamp, duration_ms, session_id
+
+    Supported operators: =, !=, >, <, >=, <=, LIKE, LIKE%, %LIKE, %LIKE%
+
+    ReDoS protection is applied to LIKE patterns using the same validation
+    as guard_policy.py.
+
+    Raises:
+        QueryError: If the query is malformed, contains invalid fields,
+                    or has unsafe LIKE patterns.
+
+    Example:
+        >>> query_audit("SELECT tool_name WHERE decision_action = 'deny' LIMIT 20")
+        >>> query_audit("WHERE ok = false ORDER BY timestamp DESC LIMIT 50")
+    """
+    selected_session_id = session_id or latest_session_id() or current_session_id()
+
+    # Parse query with ReDoS protection
+    parser = AuditQueryParser()
+    try:
+        ast = parser.parse(query)
+    except QueryError:
+        raise
+    except Exception as exc:
+        raise QueryError(f"Failed to parse query: {exc}") from exc
+
+    # Enforce absolute limit
+    if ast.limit is not None and ast.limit > limit:
+        ast = AuditQueryAST(
+            select_fields=ast.select_fields,
+            where=ast.where,
+            order_by=ast.order_by,
+            limit=limit,
+        )
+
+    # Try index-based query first using existing filter infrastructure
+    index_entries = load_audit_index(selected_session_id)
+
+    if index_entries:
+        # Map WHERE conditions to index filter parameters
+        tool_name = None
+        ok = None
+        decision_action = None
+        decision_source = None
+        decision_risk_level = None
+
+        if ast.where:
+            for cond in ast.where.conditions:
+                if cond.field == "tool_name":
+                    tool_name = str(cond.value)
+                elif cond.field == "ok":
+                    ok = bool(cond.value) if isinstance(cond.value, bool) else None
+                elif cond.field == "decision_action":
+                    decision_action = str(cond.value)
+                elif cond.field == "decision_source":
+                    decision_source = str(cond.value)
+                elif cond.field == "decision_risk_level":
+                    decision_risk_level = str(cond.value)
+
+        # Check if we can use index (simple equality filters only)
+        if ast.where and all(
+            c.operator == "=" for c in ast.where.conditions
+        ):
+            filtered_entries = _filter_index_entries(
+                index_entries,
+                tool_name=tool_name,
+                ok=ok,
+                decision_action=decision_action,
+                decision_source=decision_source,
+                decision_risk_level=decision_risk_level,
+            )
+            total_after_filter = len(filtered_entries)
+
+            # Apply ordering and limit from parsed AST
+            if ast.order_by:
+                reverse = ast.order_by.direction.value == "DESC"
+                filtered_entries = sorted(
+                    filtered_entries,
+                    key=lambda e: e.get(ast.order_by.field, ""),
+                    reverse=reverse,
+                )
+
+            actual_limit = ast.limit if ast.limit is not None else limit
+            limited_entries = list(reversed(filtered_entries))[: actual_limit]
+
+            records = _load_records_at_offsets(
+                selected_session_id,
+                [int(entry["offset"]) for entry in limited_entries],
+            )
+            return {
+                "session_id": selected_session_id,
+                "records": records,
+                "total_records": total_after_filter,
+                "returned_records": len(records),
+                "query_strategy": "audit_index",
+                "parsed_query": {
+                    "select_fields": ast.select_fields if ast.select_fields else ["*"],
+                    "where": (
+                        [(c.field, c.operator, c.value) for c in ast.where.conditions]
+                        if ast.where else []
+                    ),
+                    "order_by": (
+                        (ast.order_by.field, ast.order_by.direction.value)
+                        if ast.order_by else None
+                    ),
+                    "limit": actual_limit,
+                },
+            }
+
+    # Fall back to loading all records and applying parser
+    records = _load_records(selected_session_id)
+    filtered_records = parser.execute(ast, records)
+    total_after_filter = len(filtered_records)
+
+    # Apply built-in limit
+    actual_limit = ast.limit if ast.limit is not None else limit
+    limited_records = filtered_records[:actual_limit]
+
+    return {
+        "session_id": selected_session_id,
+        "records": limited_records,
+        "total_records": total_after_filter,
+        "returned_records": len(limited_records),
+        "query_strategy": "linear_scan",
+        "parsed_query": {
+            "select_fields": ast.select_fields if ast.select_fields else ["*"],
+            "where": (
+                [(c.field, c.operator, c.value) for c in ast.where.conditions]
+                if ast.where else []
+            ),
+            "order_by": (
+                (ast.order_by.field, ast.order_by.direction.value)
+                if ast.order_by else None
+            ),
+            "limit": actual_limit,
         },
     }

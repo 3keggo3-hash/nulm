@@ -1,6 +1,7 @@
 """Tests for CLI setup and desktop integration helpers."""
 
 import json
+import os
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -36,7 +37,7 @@ class TestDesktopConfig:
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
         assert server["env"]["CLAUDE_BRIDGE_PROJECT_DIR"] == str(tmp_path.resolve())
         assert server["env"]["CLAUDE_BRIDGE_ALLOWED_ROOTS"] == (
-            f"{tmp_path.resolve()}:{extra_root.resolve()}"
+            os.pathsep.join([str(tmp_path.resolve()), str(extra_root.resolve())])
         )
         assert server["env"]["CLAUDE_BRIDGE_AUTO_APPROVE"] == "1"
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "0"
@@ -262,7 +263,7 @@ class TestCLI:
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
         assert server["env"]["CLAUDE_BRIDGE_PROJECT_DIR"] == str(project_dir.resolve())
         assert server["env"]["CLAUDE_BRIDGE_ALLOWED_ROOTS"] == (
-            f"{project_dir.resolve()}:{extra_root.resolve()}"
+            os.pathsep.join([str(project_dir.resolve()), str(extra_root.resolve())])
         )
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "1"
 

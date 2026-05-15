@@ -1,5 +1,13 @@
 # Claude Bridge
 
+## What's New
+
+- **Context Compression Manager** — IMPLEMENTED (decompression bomb protection added to `_context_compression.py`)
+- **Audit Trail Query Interface** — IMPLEMENTED (SQL-like parser in `_audit_query_parser.py`)
+- **Autonomous Skill Discovery** — IMPLEMENTED security hardening (26 blocked patterns in `_shell_safety.py`)
+- **Hierarchical Approval System** — IMPLEMENTED (`_approval_hierarchy.py` + `tool_utils.py` integration)
+- **Parallel Workflow Executor** — IMPLEMENTED (`_parallel_executor.py` + `workflow_engine.py` extension)
+
 <!-- GitHub Topics: mcp-server, claude-bridge, agent-quality, local-ai, developer-tools -->
 CI: GitHub Actions | PyPI package: `claude-bridge-mcp` | CLI: `claude-bridge` |
 Python: 3.10+ | License: MIT |

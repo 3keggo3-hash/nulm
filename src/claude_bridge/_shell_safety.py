@@ -553,16 +553,122 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
 
 
 def _check_skill_code_blocked(skill_code: str) -> str | None:
+    """Check skill code for blocked security-sensitive patterns.
+
+    Blocked patterns cover:
+    - Code execution: eval, exec, __import__, importlib.import_module, compile, bytes
+    - File access: open (read/write), pathlib overrides
+    - Native code: ctypes, cffi, CYthon, marshal
+    - Dynamic introspection: globals, locals, vars, getattr, setattr
+    - Subprocess with shell injection potential
+    - Network access: socket creation, urllib/requests, nc/netcat
+    """
     patterns = [
-        (r"os\.system\s*\(", "os.system"),
-        (r"os\.popen\s*\(", "os.popen"),
-        (r"subprocess\.run\s*\(.*shell\s*=\s*True", "subprocess.run with shell=True"),
+        # Code execution
         (r"\beval\s*\(", "eval"),
         (r"\bexec\s*\(", "exec"),
+        (r"\bcompile\s*\(", "compile"),
         (r"\b__import__\s*\(", "__import__"),
         (r"importlib\.import_module\s*\(", "importlib.import_module"),
+        (r"\bmarshal\.load\b|\bmarshal\.loads\b", "marshal"),
+        (r"types\.CodeType\b", "CodeType"),
+        # File operations (open can write/delete, pathlib can overwrite)
+        (r"\bopen\s*\(", "open"),
+        (r"pathlib.*\.write_text\b|\.write_bytes\b", "pathlib write"),
+        (r"pathlib.*\.unlink\b|\.remove\b|\.rmdir\b", "pathlib delete"),
+        # Native code / FFI
+        (r"\bctypes\.", "ctypes"),
+        (r"\bcffi\b", "cffi"),
+        (r"\bCython\b", "Cython"),
+        (r"\bCython\.Embed\b", "Cython.Embed"),
+        # Dynamic introspection / code gen
+        (r"\bglobals\s*\(", "globals"),
+        (r"\blocals\s*\(", "locals"),
+        (r"\bvars\s*\(", "vars"),
+        (r"\bgetattr\s*\(", "getattr"),
+        (r"\bsetattr\s*\(", "setattr"),
+        (r"\bhasattr\s*\(", "hasattr"),
+        # Subprocess shell injection risk
+        (r"subprocess\.run\s*\([^)]*shell\s*=\s*True", "subprocess.run with shell=True"),
+        (r"subprocess\.run\s*\([^)]*shell\s*=\s*1", "subprocess.run with shell=True"),
+        (r"subprocess\.run\s*\([^)]*executable\s*=", "subprocess.run with executable"),
+        (r"subprocess\.Popen\s*\(", "subprocess.Popen"),
+        # OS command execution
+        (r"os\.system\s*\(", "os.system"),
+        (r"os\.popen\s*\(", "os.popen"),
+        (r"os\.spawn", "os.spawn"),
+        (r"signal\.signal\s*\(.*SIG_DFL", "signal.signal reset"),
+        # Network
+        (r"\bsocket\s*\.", "socket"),
+        (r"\bsocket\.socket\s*\(", "socket.socket"),
+        (r"urllib\.request\.", "urllib.request"),
+        (r"\brequests\.", "requests"),
+        (r"\bhttp\.client\.", "http.client"),
+        (r"netcat|nc\s+", "netcat"),
     ]
     for pattern, name in patterns:
         if re.search(pattern, skill_code):
             return f"skill code contains blocked pattern: {name}"
+    return None
+
+
+def check_skill_metadata_blocked(skill_meta: dict) -> str | None:
+    """Check skill metadata for injection or malicious patterns.
+
+    Validates: name, description, trigger_phrases, tags, permissions.
+    Raises on: path traversal, command injection, placeholder/template
+    variables, empty required fields, suspicious unicode or length anomalies.
+    """
+    # Required non-empty strings
+    for field in ("name", "description"):
+        val = skill_meta.get(field, "")
+        if not isinstance(val, str) or not val.strip():
+            return f"skill metadata field '{field}' is missing or empty"
+        if len(val) > 500:
+            return f"skill metadata field '{field}' exceeds max length 500"
+
+    # Name must be a valid identifier (no path traversal, shell chars)
+    name = skill_meta.get("name", "")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
+        return f"skill name contains invalid characters: {name!r}"
+
+    # Description injection: block template placeholders like {{...}} or ${...}
+    desc = skill_meta.get("description", "")
+    if re.search(r"\{\{.*\}\}|\$\{.*\}", desc):
+        return "skill description contains unresolved template placeholders"
+
+    # Block suspicious unicode (zero-width, bidirectional override chars)
+    if re.search(r"[\u200b\u200c\u200d\u2060\u2061-\u2064\ufeff]", desc):
+        return "skill description contains hidden unicode characters"
+
+    # Triggers must be non-empty list
+    triggers = skill_meta.get("trigger_phrases", [])
+    if not isinstance(triggers, list) or len(triggers) == 0:
+        return "skill trigger_phrases must be a non-empty list"
+
+    for i, phrase in enumerate(triggers):
+        if not isinstance(phrase, str) or not phrase.strip():
+            return f"skill trigger_phrases[{i}] is empty or invalid"
+        if len(phrase) > 200:
+            return f"skill trigger_phrases[{i}] exceeds max length 200"
+        # Block path traversal and command injection in triggers
+        if re.search(r"[;&|`$<>\"\']|--|\brem\b|\brm\b|\bdel\b", phrase):
+            return f"skill trigger_phrases[{i}] contains suspicious characters"
+
+    # Tags (optional) should be plain alphanum + dash/underscore
+    for i, tag in enumerate(skill_meta.get("tags", [])):
+        if not isinstance(tag, str):
+            return f"skill tags[{i}] is not a string"
+        if tag and not re.fullmatch(r"[a-zA-Z0-9_-]*", tag):
+            return f"skill tags[{i}] contains invalid characters"
+
+    # Permissions: must be known safe set
+    allowed_permissions = frozenset({
+        "read", "write", "execute", "network", "filesystem",
+        "process", "env", "sudo", "admin",
+    })
+    for perm in skill_meta.get("permissions", []):
+        if perm not in allowed_permissions:
+            return f"skill permission {perm!r} is not in allowed set"
+
     return None
