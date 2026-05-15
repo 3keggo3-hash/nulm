@@ -25,6 +25,7 @@ TaskStatus = Literal[
     "cancelled",
 ]
 ApprovalStatus = Literal["pending", "approved", "denied", "cancelled", "expired"]
+MessageStatus = Literal["queued", "acknowledged", "completed", "failed", "cancelled"]
 
 _TASK_STATUSES: tuple[TaskStatus, ...] = (
     "pending",
@@ -45,6 +46,13 @@ _APPROVAL_STATUSES: tuple[ApprovalStatus, ...] = (
     "denied",
     "cancelled",
     "expired",
+)
+_MESSAGE_STATUSES: tuple[MessageStatus, ...] = (
+    "queued",
+    "acknowledged",
+    "completed",
+    "failed",
+    "cancelled",
 )
 _RecordT = TypeVar("_RecordT")
 
@@ -73,6 +81,17 @@ class ControlPlaneApproval(TypedDict, total=False):
     tool: str
     command: str
     reason: str
+
+
+class ControlPlaneMessage(TypedDict, total=False):
+    schema_version: str
+    id: str
+    status: MessageStatus
+    created_at: str
+    updated_at: str
+    message: str
+    response: str
+    metadata: dict[str, Any]
 
 
 DEFAULT_APPROVAL_EXPIRY_MINUTES = 30
@@ -314,13 +333,74 @@ def check_approval_expiry(approval_id: str) -> bool:
     return False
 
 
+def create_message(
+    message: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> ControlPlaneMessage:
+    """Append a dashboard/user message for agents to pick up."""
+    now = _utc_timestamp()
+    record: ControlPlaneMessage = {
+        "schema_version": SCHEMA_VERSION,
+        "id": _new_id("message"),
+        "status": "queued",
+        "created_at": now,
+        "updated_at": now,
+        "message": message,
+    }
+    if metadata is not None:
+        record["metadata"] = metadata
+    _append_record(_messages_file(), record)
+    return record
+
+
+def list_messages(
+    *,
+    status: str | None = None,
+    limit: int | None = None,
+) -> list[ControlPlaneMessage]:
+    records = [_coerce_message(record) for record in _read_jsonl(_messages_file())]
+    filtered = _latest_records_by_id([record for record in records if record is not None])
+    if status is not None:
+        filtered = [record for record in filtered if record.get("status") == status]
+    return _apply_limit(filtered, limit)
+
+
+def update_message_status(
+    message_id: str,
+    status: MessageStatus,
+    *,
+    response: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> ControlPlaneMessage | None:
+    """Append a message state transition and return the updated message."""
+    _validate_status(status, _MESSAGE_STATUSES, "message")
+    message = _get_latest_by_id(list_messages(), message_id)
+    if message is None:
+        return None
+    updated = cast(ControlPlaneMessage, dict(message))
+    updated["status"] = status
+    updated["updated_at"] = _utc_timestamp()
+    if response:
+        updated["response"] = response
+    if metadata is not None:
+        existing = dict(updated.get("metadata", {}))
+        existing.update(metadata)
+        updated["metadata"] = existing
+    _append_record(_messages_file(), updated)
+    return updated
+
+
 def _is_approval_expired(approval: ControlPlaneApproval) -> bool:
     expires_at = approval.get("expires_at")
     if not expires_at:
         return False
     from datetime import datetime, timezone
+
     try:
-        expiry_time = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        expiry_time = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
         return datetime.now(timezone.utc) > expiry_time
     except ValueError:
         return False
@@ -332,6 +412,10 @@ def _tasks_file() -> Path:
 
 def _approvals_file() -> Path:
     return control_plane_dir() / "approvals.jsonl"
+
+
+def _messages_file() -> Path:
+    return control_plane_dir() / "messages.jsonl"
 
 
 def _append_record(path: Path, record: Mapping[str, Any]) -> None:
@@ -405,6 +489,29 @@ def _coerce_approval(record: dict[str, Any]) -> ControlPlaneApproval | None:
     return approval
 
 
+def _coerce_message(record: dict[str, Any]) -> ControlPlaneMessage | None:
+    record_id = record.get("id")
+    message = record.get("message")
+    if not isinstance(record_id, str) or not isinstance(message, str):
+        return None
+    status = record.get("status", "queued")
+    if not isinstance(status, str) or status not in _MESSAGE_STATUSES:
+        status = "queued"
+    result: ControlPlaneMessage = {
+        "schema_version": _string_value(record.get("schema_version"), SCHEMA_VERSION),
+        "id": record_id,
+        "status": cast(MessageStatus, status),
+        "created_at": _string_value(record.get("created_at"), ""),
+        "updated_at": _string_value(record.get("updated_at"), ""),
+        "message": message,
+        "response": _string_value(record.get("response"), ""),
+    }
+    metadata = record.get("metadata")
+    if isinstance(metadata, dict):
+        result["metadata"] = cast(dict[str, Any], metadata)
+    return result
+
+
 def _apply_limit(records: list[_RecordT], limit: int | None) -> list[_RecordT]:
     if limit is None or limit <= 0:
         return records
@@ -432,6 +539,13 @@ def _string_value(value: object, default: str) -> str:
     return default
 
 
+def _get_latest_by_id(records: list[_RecordT], record_id: str) -> _RecordT | None:
+    for record in records:
+        if isinstance(record, dict) and record.get("id") == record_id:
+            return record
+    return None
+
+
 def _validate_status(status: str, valid_statuses: tuple[str, ...], label: str) -> None:
     if status not in valid_statuses:
         valid = ", ".join(valid_statuses)
@@ -444,6 +558,7 @@ def _new_id(prefix: str) -> str:
 
 def _utc_timestamp(offset_minutes: int = 0) -> str:
     from datetime import datetime, timedelta, timezone
+
     if offset_minutes:
         future = datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
         return future.strftime("%Y-%m-%dT%H:%M:%SZ")

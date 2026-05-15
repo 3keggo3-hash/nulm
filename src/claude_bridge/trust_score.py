@@ -34,6 +34,7 @@ class TrustInsight:
     affected_tools: list[str] = field(default_factory=list)
     recommendation: str = ""
 
+
 SLOW_RESPONSE_THRESHOLD_MS = 5000
 MAX_CONSECUTIVE_FOR_REVIEW = 5
 
@@ -82,9 +83,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
             )
         )
 
-    high_error_tools = [
-        tool for tool, rate in diagnostics.tool_deny_rates.items() if rate > 0.5
-    ]
+    high_error_tools = [tool for tool, rate in diagnostics.tool_deny_rates.items() if rate > 0.5]
     if high_error_tools:
         insights.append(
             TrustInsight(
@@ -375,7 +374,11 @@ def get_trust_score(days: int = 7) -> dict[str, Any]:
     return {
         "ok": True,
         "has_data": total > 0,
-        "message": f"Trust diagnostics: {len(insights)} issue(s) found" if insights else "Trust diagnostics: no issues detected",
+        "message": (
+            f"Trust diagnostics: {len(insights)} issue(s) found"
+            if insights
+            else "Trust diagnostics: no issues detected"
+        ),
         "details": {
             "days_analyzed": days,
             "last_updated": datetime.now(timezone.utc).isoformat(),

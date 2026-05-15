@@ -218,12 +218,10 @@ def _log_fuzzy_match_attempt(*, file: str, search: str, suggestions: list[str]) 
 def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) -> None:
     data = content.encode("utf-8")
     if exclusive:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
-            fd = os.open(
-                str(target),
-                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                0o644,
-            )
+            fd = os.open(str(target), flags, 0o644)
         except FileExistsError:
             raise FileExistsError(f"File already exists: {target}")
         except OSError as exc:

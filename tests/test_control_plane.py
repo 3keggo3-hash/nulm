@@ -59,6 +59,24 @@ def test_control_plane_create_list_show_and_summary(monkeypatch, tmp_path: Path)
     assert summary["by_status"]["cancelled"] == 1
 
 
+def test_control_plane_messages(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+
+    message = control_plane.create_message("Please check the dashboard", metadata={"source": "t"})
+    acknowledged = control_plane.update_message_status(
+        message["id"],
+        "acknowledged",
+        response="seen",
+    )
+
+    assert (tmp_path / "state" / "messages.jsonl").exists()
+    assert control_plane.list_messages(status="queued") == []
+    assert acknowledged is not None
+    assert acknowledged["status"] == "acknowledged"
+    assert acknowledged["response"] == "seen"
+    assert control_plane.list_messages(status="acknowledged")[0]["id"] == message["id"]
+
+
 def test_control_plane_cli_lists_tasks_and_approvals(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
     task = control_plane.create_task("Document state")
@@ -131,15 +149,31 @@ async def test_control_plane_mcp_tools_list_tasks_and_approvals(
     assert approved_payload["details"]["approval"]["status"] == "approved"
 
 
+async def test_control_plane_mcp_tools_messages(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    message = control_plane.create_message("Run validation when free")
+
+    messages_payload = json.loads(await mcp_server.list_user_messages())
+    ack_payload = json.loads(await mcp_server.ack_user_message(message["id"], "working"))
+    complete_payload = json.loads(await mcp_server.complete_user_message(message["id"], "done"))
+
+    assert messages_payload["ok"] is True
+    assert messages_payload["details"]["messages"][0]["id"] == message["id"]
+    assert ack_payload["details"]["message"]["status"] == "acknowledged"
+    assert complete_payload["details"]["message"]["status"] == "completed"
+
+
 def test_control_plane_dashboard_payload_and_actions(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
     task = control_plane.create_task("Watch background job")
     approval = control_plane.create_approval("Approve release gate")
 
     payload = control_plane_dashboard.build_dashboard_payload()
+    json.dumps(payload)
     assert payload["schema_version"] == "control_plane.dashboard.v1"
     assert payload["tasks"][0]["id"] == task["id"]
     assert payload["approvals"][0]["id"] == approval["id"]
+    assert payload["messages"] == []
 
     cancelled = control_plane_dashboard.apply_dashboard_action(
         "cancel-task",
@@ -166,6 +200,23 @@ def test_control_plane_dashboard_http_requires_token(monkeypatch, tmp_path: Path
         with urlopen(f"{base_url}/api/status?token={token}", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
         assert payload["tasks"][0]["title"] == "Watch dashboard"
+        assert "messages" in payload
+
+        message_request = Request(
+            f"{base_url}/api/messages?token={token}",
+            data=json.dumps({"message": "dashboard validation"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(message_request, timeout=2) as response:
+            message_payload = json.loads(response.read().decode("utf-8"))
+        assert message_payload["ok"] is True
+        assert message_payload["record"]["status"] == "queued"
+        assert message_payload["record"]["message"] == "dashboard validation"
+
+        with urlopen(f"{base_url}/api/messages?token={token}", timeout=2) as response:
+            messages_payload = json.loads(response.read().decode("utf-8"))
+        assert messages_payload["messages"][0]["message"] == "dashboard validation"
 
         request = Request(f"{base_url}/api/status", method="GET")
         try:
@@ -194,7 +245,9 @@ def test_approval_has_expires_at_field(monkeypatch, tmp_path: Path) -> None:
     approval = control_plane.create_approval("Test approval", tool="run_shell", command="ls")
     assert "expires_at" in approval
     expected_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
-    actual_expiry = datetime.strptime(approval["expires_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    actual_expiry = datetime.strptime(approval["expires_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
     delta = abs((actual_expiry - expected_expiry).total_seconds())
     assert delta < 5
 

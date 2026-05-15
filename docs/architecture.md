@@ -94,9 +94,11 @@ def register_my_tools(*, mcp, tool_options, audit_tool_call, ...):
 
 See `docs/security-model.md` for full details.
 
-## Mobile Control Plane Dashboard v2
+## Local Control Plane Dashboard
 
-The mobile dashboard provides a responsive PWA interface for monitoring and managing Claude Bridge operations from any device.
+The dashboard provides a responsive localhost interface for monitoring and managing Claude Bridge
+operations from the same machine. Phone access is available only when the user explicitly starts a
+tunnel and opens the token-protected tunnel URL.
 
 ### Approvals
 
@@ -104,52 +106,28 @@ The approval workflow enables real-time decision-making on pending operations:
 
 - **List pending**: Fetch all unresolved approvals with timestamp, tool name, and risk indicator
 - **Approve/deny**: Resolve individual requests; approvals are durable and survive server restarts
-- **Batch operations**: Approve or deny multiple pending items in a single request
-- **Auto-timeout**: Optional TTL-based auto-denial for unattended sessions
-- **Audit trail**: All resolution actions logged with actor identity and rationale
-
-### Processes
-
-Process management provides visibility and control over active operations:
-
-- **List processes**: Enumerate running tasks with status, start time, and resource usage
-- **Output retrieval**: Stream stdout/stderr from active or completed processes; supports pagination
-- **Input submission**: Send input to running processes (e.g., password prompts)
-- **Process kill**: Terminate by ID; supports graceful shutdown before force kill
-
-### Activity/Rationale Stream
-
-A real-time event feed captures the "why" behind system decisions:
-
-- **Event types**: Approval requests, process lifecycle events, config changes, errors
-- **Rationale attach**: Each event includes structured reasoning (e.g., "denied because path outside project_dir")
-- **Streaming**: Server-Sent Events (SSE) endpoint for live tailing; reconnect-safe
-- **Filtering**: Filter by event type, severity, time range, or tool name
+- **Audit trail**: Resolution actions are written back to durable control-plane state
 
 ### Messages Queue
 
-Asynchronous message handling for decoupled inter-component communication:
+Asynchronous message handling for dashboard-to-agent communication:
 
-- **Enqueue/Dequeue**: Submit and consume messages with optional TTL and priority
-- **DLQ handling**: Dead letter queue for failed messages after max retries
-- **Queue management**: Create, pause, resume, delete queues; inspect depth and age
+- **Enqueue**: Submit a text instruction from the dashboard into the local message queue
+- **Consume**: MCP tools can list, acknowledge, and complete queued dashboard messages
 
 ### Config/Status
 
-Runtime configuration and system health monitoring:
+Runtime state visibility:
 
-- **Config read/update**: Hot-reloadable settings via validated PATCH operations
-- **Status overview**: Server uptime, version, active process count, queue depths, approval backlog
-- **Feature flags**: Toggle experimental features without restart
+- **Status overview**: Show task counts, pending approvals, and queued dashboard messages
 
-### Mobile-First PWA
+### Mobile-Friendly Layout
 
-Progressive web app architecture for cross-device reliability:
+The interface uses responsive CSS so the same token-protected dashboard remains usable on narrow
+screens when exposed through an explicit tunnel:
 
 - **Responsive layout**: Adapts to phone, tablet, and desktop viewports
-- **Offline-capable**: Service worker caches critical assets and queues actions when disconnected
-- **Push notifications**: Browser push for approval requests and process completion alerts
-- **Touch-optimized**: Large tap targets, swipe gestures, no hover-dependent UI
+- **Touch-friendly controls**: Action buttons and message input do not depend on hover
 
 ## Adaptive Skills Approval Model
 

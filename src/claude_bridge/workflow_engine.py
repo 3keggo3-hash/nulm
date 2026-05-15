@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
@@ -18,6 +18,9 @@ from claude_bridge.skill_builder import (
     propose_skill_creation as propose_skill_creation_async,
 )
 from claude_bridge.tool_utils import request_approval
+
+if TYPE_CHECKING:
+    from claude_bridge._parallel_executor import ParallelStepGroup
 
 
 class WorkflowState(Enum):
@@ -123,19 +126,19 @@ class ParallelWorkflowExecutor:
         results: dict[str, dict[str, Any]] = {}
         errors: dict[str, str] = {}
 
-        def run_sync(task_fn: Callable[[], Awaitable[dict[str, Any]]]) -> tuple[str, dict[str, Any] | None, str | None]:
+        def run_sync(
+            task_fn: Callable[[], Awaitable[dict[str, Any]]],
+        ) -> tuple[str, dict[str, Any] | None, str | None]:
             try:
                 import asyncio
+
                 result = asyncio.run(task_fn())
                 return ("", result, None)
             except Exception as e:
                 return ("", None, str(e))
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            futures = {
-                pool.submit(run_sync, task_fn): name
-                for name, task_fn in tasks.items()
-            }
+            futures = {pool.submit(run_sync, task_fn): name for name, task_fn in tasks.items()}
 
             for future in as_completed(futures):
                 name = futures[future]
@@ -365,7 +368,7 @@ class WorkflowEngine:
                     files_affected=[],
                     risk_score=10,
                     rollback_plan="Revert changes if validation fails",
-)
+                )
             )
 
         return steps
@@ -533,9 +536,12 @@ class WorkflowEngine:
         failed: list[WorkflowStep] = []
         errors: dict[str, str] = {}
 
-        def run_step_sync(step: WorkflowStep) -> tuple[WorkflowStep, dict[str, Any] | None, str | None]:
+        def run_step_sync(
+            step: WorkflowStep,
+        ) -> tuple[WorkflowStep, dict[str, Any] | None, str | None]:
             try:
                 import asyncio
+
                 result = asyncio.run(execute_fn(step)) if execute_fn is not None else None
                 if result is None:
                     step.status = "completed"

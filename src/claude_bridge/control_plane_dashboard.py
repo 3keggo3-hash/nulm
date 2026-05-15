@@ -12,8 +12,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 from claude_bridge.control_plane import (
     ControlPlaneApproval,
     ControlPlaneTask,
+    create_message,
     control_plane_dir,
     list_approvals,
+    list_messages,
     list_tasks,
     resolve_approval,
     summarize_tasks,
@@ -45,6 +47,7 @@ def build_dashboard_payload(*, limit: int = 50) -> dict[str, Any]:
         "summary": summarize_tasks(),
         "tasks": tasks,
         "approvals": approvals,
+        "messages": list_messages(limit=limit),
     }
 
 
@@ -129,6 +132,17 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     return
                 self._send_json(build_dashboard_payload())
                 return
+            if parsed.path == "/api/messages":
+                if not self._is_authorized(parsed.query):
+                    self._send_json({"error": "unauthorized"}, status=401)
+                    return
+                self._send_json(
+                    {
+                        "schema_version": "control_plane.messages.v1",
+                        "messages": list_messages(limit=50),
+                    }
+                )
+                return
             self._send_json({"error": "not_found"}, status=404)
 
         def do_POST(self) -> None:
@@ -137,25 +151,42 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": "unauthorized"}, status=401)
                 return
             parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+            body = self._read_body()
+            if len(parts) == 2 and parts == ["api", "messages"]:
+                message = body.get("message", "")
+                if not isinstance(message, str) or not message.strip():
+                    self._send_json({"error": "message_required"}, status=400)
+                    return
+                message_record = create_message(
+                    message.strip(),
+                    metadata={"source": "dashboard"},
+                )
+                self._send_json({"ok": True, "record": message_record})
+                return
             if len(parts) != 4 or parts[0] != "api":
                 self._send_json({"error": "not_found"}, status=404)
                 return
             _, collection, record_id, action = parts
-            reason = self._read_reason()
+            reason = _string_body_value(body, "reason")
+            action_record: Any
             try:
                 if collection == "tasks" and action == "cancel":
-                    record = apply_dashboard_action("cancel-task", record_id, reason=reason)
+                    action_record = apply_dashboard_action(
+                        "cancel-task",
+                        record_id,
+                        reason=reason,
+                    )
                 elif collection == "approvals" and action == "approve":
-                    record = apply_dashboard_action("approve", record_id, reason=reason)
+                    action_record = apply_dashboard_action("approve", record_id, reason=reason)
                 elif collection == "approvals" and action == "reject":
-                    record = apply_dashboard_action("reject", record_id, reason=reason)
+                    action_record = apply_dashboard_action("reject", record_id, reason=reason)
                 else:
                     self._send_json({"error": "unsupported_action"}, status=400)
                     return
             except ControlPlaneDashboardError as exc:
                 self._send_json({"error": str(exc)}, status=404)
                 return
-            self._send_json({"ok": True, "record": record})
+            self._send_json({"ok": True, "record": action_record})
 
         def log_message(self, format: str, *args: Any) -> None:
             return
@@ -166,25 +197,24 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 supplied = parse_qs(query).get("token", [""])[0]
             return bool(supplied) and hmac.compare_digest(supplied, token)
 
-        def _read_reason(self) -> str:
+        def _read_body(self) -> dict[str, Any]:
             raw_length = self.headers.get("Content-Length", "0")
             try:
                 length = min(int(raw_length), MAX_ACTION_BODY_BYTES)
             except ValueError:
                 length = 0
             if length <= 0:
-                return ""
+                return {}
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             if "application/json" in self.headers.get("Content-Type", ""):
                 try:
                     body = json.loads(raw)
                 except json.JSONDecodeError:
-                    return ""
+                    return {}
                 if isinstance(body, dict):
-                    reason = body.get("reason", "")
-                    return reason if isinstance(reason, str) else ""
-                return ""
-            return parse_qs(raw).get("reason", [""])[0]
+                    return body
+                return {}
+            return {key: values[-1] for key, values in parse_qs(raw).items() if values}
 
         def _send_html(self, html: str) -> None:
             encoded = html.encode("utf-8")
@@ -203,6 +233,11 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(encoded)
 
     return ControlPlaneDashboardHandler
+
+
+def _string_body_value(body: dict[str, Any], key: str) -> str:
+    value = body.get(key, "")
+    return value if isinstance(value, str) else ""
 
 
 def _dashboard_html(token: str) -> str:
@@ -304,6 +339,17 @@ def _dashboard_html(token: str) -> str:
     .actions {{ display: flex; gap: 6px; flex-wrap: wrap; }}
     .empty {{ text-align: center; padding: 24px; color: var(--muted); }}
     .timestamp {{ font-size: 11px; color: var(--muted); }}
+    textarea {{
+      width: 100%;
+      min-height: 76px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: var(--panel);
+      color: var(--fg);
+    }}
+    .messages {{ margin-top: 16px; }}
     @media (max-width: 820px){{
       header {{ display: block; }}
       .grid {{ grid-template-columns: 1fr; }}
@@ -334,6 +380,12 @@ def _dashboard_html(token: str) -> str:
         <h2>Approvals</h2>
         <div id="approvals"></div>
       </section>
+      <section class="messages">
+        <h2>Messages</h2>
+        <textarea id="messageText" placeholder="Send an instruction or note to the agent"></textarea>
+        <div class="actions"><button class="primary" onclick="sendMessage()">Send</button></div>
+        <div id="messages"></div>
+      </section>
     </div>
   </main>
   <script>
@@ -345,6 +397,7 @@ def _dashboard_html(token: str) -> str:
       renderMetrics(data.summary || {{}});
       renderTasks(data.tasks || []);
       renderApprovals(data.approvals || []);
+      renderMessages(data.messages || []);
     }}
     async function post(path) {{
       await fetch(path + '?token=' + encodeURIComponent(token), {{
@@ -352,6 +405,18 @@ def _dashboard_html(token: str) -> str:
         headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{ reason: 'dashboard' }})
       }});
+      await load();
+    }}
+    async function sendMessage() {{
+      const box = document.getElementById('messageText');
+      const message = box.value.trim();
+      if (!message) return;
+      await fetch('/api/messages?token=' + encodeURIComponent(token), {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ message }})
+      }});
+      box.value = '';
       await load();
     }}
     function esc(value) {{
@@ -406,6 +471,17 @@ def _dashboard_html(token: str) -> str:
           <button class="primary" onclick="post('/api/approvals/${{esc(row.id)}}/approve')">Approve</button>
           <button class="danger" onclick="post('/api/approvals/${{esc(row.id)}}/reject')">Reject</button>
         </td></tr>`).join('')}}</tbody></table>`;
+    }}
+    function renderMessages(messages) {{
+      if (!messages.length) {{
+        document.getElementById('messages').innerHTML = '<div class="empty">No messages.</div>';
+        return;
+      }}
+      document.getElementById('messages').innerHTML = `<div>${{messages.map(row => `<div>
+        <strong>${{esc(row.status)}}</strong> <span class="timestamp">${{esc(row.updated_at || row.created_at || '')}}</span>
+        <div>${{esc(row.message || '')}}</div>
+        <div class="muted">${{esc(row.response || '')}}</div>
+      </div>`).join('')}}</div>`;
     }}
     load();
   </script>

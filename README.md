@@ -201,8 +201,10 @@ claude-bridge dashboard
 ```
 
 The dashboard binds to `127.0.0.1` by default, uses a per-session token in the URL, and can list
-tasks, list approvals, cancel tasks, approve actions, and reject actions without requiring a remote
-server.
+tasks, list approvals, list queued dashboard messages, cancel tasks, approve actions, reject
+actions, and enqueue text instructions for agents to pick up without requiring a remote server.
+Phone access requires an explicit tunnel URL plus the active dashboard token; the default loopback
+server is intentionally reachable only from the same machine.
 
 ## Feature Evaluation
 

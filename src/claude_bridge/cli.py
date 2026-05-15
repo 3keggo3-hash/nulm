@@ -18,6 +18,7 @@ from rich.text import Text
 
 from claude_bridge import __version__
 from claude_bridge._config_cli import config_app
+from claude_bridge._control_plane_cli import register_control_plane_cli
 from claude_bridge.audit import summarize_session
 from claude_bridge.config import APPROVAL_PRESETS, resolve_approval_mode
 from claude_bridge.doctor import build_doctor_report, build_security_doctor_report
@@ -38,6 +39,7 @@ console = Console()
 
 def _print_suggestion(command: str, description: str) -> None:
     console.print(f"  [dim]→[/dim] [cyan]{command}[/cyan]  {description}")
+
 
 app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
 policy_app = typer.Typer(help="Validate and simulate local guard policy files")
@@ -60,6 +62,12 @@ app.add_typer(config_app, name="config")
 control_plane_app.add_typer(tasks_app, name="tasks")
 control_plane_app.add_typer(approvals_app, name="approvals")
 console = Console()
+register_control_plane_cli(
+    app=app,
+    tasks_app=tasks_app,
+    approvals_app=approvals_app,
+    console=console,
+)
 
 COMMAND_GROUPS = {
     "Core": ["start", "init", "update"],
@@ -78,14 +86,28 @@ def _version_option(value: bool) -> None:
 
 
 def _print_grouped_help(ctx: typer.Context) -> None:
-    console.print(Panel.fit("[bold cyan]Claude Bridge[/bold cyan] command line interface", title="Help", border_style="cyan"))
+    console.print(
+        Panel.fit(
+            "[bold cyan]Claude Bridge[/bold cyan] command line interface",
+            title="Help",
+            border_style="cyan",
+        )
+    )
     console.print()
 
     all_cmds: dict[str, Any] = {}
     for cmd_info in app.registered_commands:
         if cmd_info.name is not None:
             all_cmds[cmd_info.name] = cmd_info
-    for subapp in [policy_app, anomaly_app, audit_app, doctor_app, skill_app, control_plane_app, config_app]:
+    for subapp in [
+        policy_app,
+        anomaly_app,
+        audit_app,
+        doctor_app,
+        skill_app,
+        control_plane_app,
+        config_app,
+    ]:
         for cmd_info in subapp.registered_commands:
             if cmd_info.name is not None:
                 all_cmds[cmd_info.name] = cmd_info
@@ -902,289 +924,6 @@ def version() -> None:
     console.print(f"[bold cyan]Claude Bridge[/bold cyan] version [green]{__version__}[/green]")
 
 
-@app.command("dashboard")
-def control_plane_dashboard(
-    host: str = typer.Option("127.0.0.1", "--host", help="Loopback host to bind"),
-    port: int = typer.Option(8765, "--port", help="Local dashboard port"),
-    token: str | None = typer.Option(None, "--token", help="Optional dashboard token"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable startup info"),
-    tunnel: bool = typer.Option(False, "--tunnel", help="Expose dashboard via Cloudflare tunnel"),
-) -> None:
-    """Serve the local control-plane dashboard on a loopback address."""
-    from claude_bridge._tunnel_manager import TunnelManager
-    from claude_bridge.control_plane_dashboard import create_dashboard_server
-
-    try:
-        server, resolved_token = create_dashboard_server(host=host, port=port, token=token)
-    except ValueError as exc:
-        if json_output:
-            console.print_json(data={"error": str(exc)})
-        else:
-            console.print(f"[red]{escape(str(exc))}[/red]")
-        raise typer.Exit(code=1) from exc
-    actual_port = server.server_address[1]
-    local_url = f"http://{host}:{actual_port}/?token={resolved_token}"
-    tunnel_url: str | None = None
-    if tunnel:
-        try:
-            with TunnelManager() as tm:
-                tunnel_url = tm.start(actual_port)
-                display_url = tunnel_url
-        except RuntimeError as exc:
-            if json_output:
-                console.print_json(data={"error": str(exc)})
-            else:
-                console.print(f"[red]Tunnel error:[/red] {exc}")
-            raise typer.Exit(code=1) from exc
-    else:
-        display_url = local_url
-    if json_output:
-        console.print_json(
-            data={
-                "schema_version": "control_plane.dashboard_start.v1",
-                "host": host,
-                "port": actual_port,
-                "url": display_url,
-                "local_url": local_url,
-                "tunnel_url": tunnel_url,
-            }
-        )
-    else:
-        if tunnel and tunnel_url:
-            console.print(Panel.fit(
-                f"[bold link={tunnel_url}]Tunnel URL:[/bold link] [cyan]{tunnel_url}[/cyan]\n\n"
-                f"[dim]Local URL:[/dim] {local_url}\n\n"
-                f"Press Ctrl-C to stop.",
-                title="Tunnel Active",
-                border_style="green",
-            ))
-        else:
-            console.print(f"Control-plane dashboard: [cyan]{escape(display_url)}[/cyan]")
-            console.print("Press Ctrl-C to stop.")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
-
-
-@tasks_app.command("list")
-def control_plane_tasks_list(
-    status: str | None = typer.Option(None, "--status", help="Filter by task status"),
-    limit: int = typer.Option(20, "--limit", help="Maximum tasks to show; 0 means all"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """List durable local control-plane tasks."""
-    from claude_bridge.control_plane import control_plane_dir, list_tasks
-
-    tasks = list_tasks(status=status, limit=limit)
-    payload = {
-        "schema_version": "control_plane.tasks.v1",
-        "state_dir": str(control_plane_dir()),
-        "tasks": tasks,
-    }
-    if json_output:
-        console.print_json(data=payload)
-        return
-    if not tasks:
-        console.print("No control-plane tasks found.")
-        return
-    for task in tasks:
-        console.print(
-            f"[bold]{escape(task['id'])}[/bold] "
-            f"{escape(task.get('status', 'pending'))} {escape(task['title'])}"
-        )
-        summary = task.get("summary", "")
-        if summary:
-            console.print(f"  {escape(summary)}")
-
-
-@tasks_app.command("show")
-def control_plane_tasks_show(
-    task_id: str,
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Show one durable local control-plane task."""
-    from claude_bridge.control_plane import get_task
-
-    task = get_task(task_id)
-    if task is None:
-        error_payload = {"error": f"Task '{task_id}' not found"}
-        if json_output:
-            console.print_json(data=error_payload)
-        else:
-            console.print(f"[red]{escape(error_payload['error'])}[/red]")
-        raise typer.Exit(code=1)
-    payload: dict[str, Any] = {"schema_version": "control_plane.task.v1", "task": task}
-    if json_output:
-        console.print_json(data=payload)
-        return
-    console.print(Panel.fit(json.dumps(task, indent=2), title=task_id))
-
-
-@tasks_app.command("summary")
-def control_plane_tasks_summary(
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Summarize durable local control-plane tasks."""
-    from claude_bridge.control_plane import control_plane_dir, summarize_tasks
-
-    summary = summarize_tasks()
-    payload = {
-        "schema_version": "control_plane.task_summary.v1",
-        "state_dir": str(control_plane_dir()),
-        "summary": summary,
-    }
-    if json_output:
-        console.print_json(data=payload)
-        return
-    console.print(Panel.fit(f"Tasks: {summary['total']}", title="Control Plane"))
-    for status, count in summary["by_status"].items():
-        console.print(f"{escape(status)}: {count}")
-
-
-@tasks_app.command("cancel")
-def control_plane_tasks_cancel(
-    task_id: str,
-    reason: str = typer.Option("", "--reason", help="Optional cancellation reason"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Mark one durable local control-plane task as cancelled."""
-    from claude_bridge.control_plane import update_task_status
-
-    task = update_task_status(
-        task_id,
-        "cancelled",
-        summary=reason or None,
-        metadata={"cancel_reason": reason} if reason else None,
-    )
-    if task is None:
-        error_payload = {"error": f"Task '{task_id}' not found"}
-        if json_output:
-            console.print_json(data=error_payload)
-        else:
-            console.print(f"[red]{escape(error_payload['error'])}[/red]")
-        raise typer.Exit(code=1)
-    payload: dict[str, Any] = {"schema_version": "control_plane.task.v1", "task": task}
-    if json_output:
-        console.print_json(data=payload)
-        return
-    console.print(f"[green]Cancelled[/green] {escape(task['id'])}")
-
-
-@approvals_app.command("list")
-def control_plane_approvals_list(
-    status: str | None = typer.Option(None, "--status", help="Filter by approval status"),
-    limit: int = typer.Option(20, "--limit", help="Maximum approvals to show; 0 means all"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """List durable local control-plane approval requests."""
-    from claude_bridge.control_plane import control_plane_dir, list_approvals
-
-    approvals = list_approvals(status=status, limit=limit)
-    payload = {
-        "schema_version": "control_plane.approvals.v1",
-        "state_dir": str(control_plane_dir()),
-        "approvals": approvals,
-    }
-    if json_output:
-        console.print_json(data=payload)
-        return
-    if not approvals:
-        console.print("No control-plane approvals found.")
-        return
-    for approval in approvals:
-        console.print(
-            f"[bold]{escape(approval['id'])}[/bold] "
-            f"{escape(approval.get('status', 'pending'))} {escape(approval['title'])}"
-        )
-        tool = approval.get("tool", "")
-        reason = approval.get("reason", "")
-        details = " ".join(part for part in (tool, reason) if part)
-        if details:
-            console.print(f"  {escape(details)}")
-
-
-@approvals_app.command("show")
-def control_plane_approvals_show(
-    approval_id: str,
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Show one durable local control-plane approval request."""
-    from claude_bridge.control_plane import get_approval
-
-    approval = get_approval(approval_id)
-    if approval is None:
-        error_payload = {"error": f"Approval '{approval_id}' not found"}
-        if json_output:
-            console.print_json(data=error_payload)
-        else:
-            console.print(f"[red]{escape(error_payload['error'])}[/red]")
-        raise typer.Exit(code=1)
-    payload: dict[str, Any] = {
-        "schema_version": "control_plane.approval.v1",
-        "approval": approval,
-    }
-    if json_output:
-        console.print_json(data=payload)
-        return
-    console.print(Panel.fit(json.dumps(approval, indent=2), title=approval_id))
-
-
-@approvals_app.command("approve")
-def control_plane_approvals_approve(
-    approval_id: str,
-    reason: str = typer.Option("", "--reason", help="Optional approval reason"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Mark one durable local control-plane approval request as approved."""
-    _resolve_control_plane_approval(approval_id, "approved", reason, json_output)
-
-
-@approvals_app.command("reject")
-def control_plane_approvals_reject(
-    approval_id: str,
-    reason: str = typer.Option("", "--reason", help="Optional rejection reason"),
-    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
-) -> None:
-    """Mark one durable local control-plane approval request as denied."""
-    _resolve_control_plane_approval(approval_id, "denied", reason, json_output)
-
-
-def _resolve_control_plane_approval(
-    approval_id: str,
-    status: str,
-    reason: str,
-    json_output: bool,
-) -> None:
-    from typing import Literal, cast
-
-    from claude_bridge.control_plane import resolve_approval
-
-    approval = resolve_approval(
-        approval_id,
-        cast(Literal["approved", "denied"], status),
-        reason=reason,
-        metadata={"decision_reason": reason} if reason else None,
-    )
-    if approval is None:
-        error_payload = {"error": f"Approval '{approval_id}' not found"}
-        if json_output:
-            console.print_json(data=error_payload)
-        else:
-            console.print(f"[red]{escape(error_payload['error'])}[/red]")
-        raise typer.Exit(code=1)
-    payload: dict[str, Any] = {
-        "schema_version": "control_plane.approval.v1",
-        "approval": approval,
-    }
-    if json_output:
-        console.print_json(data=payload)
-        return
-    console.print(f"[green]{escape(status)}[/green] {escape(approval['id'])}")
-
-
 @skill_app.command("list")
 def skill_list(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
@@ -1204,7 +943,9 @@ def skill_list(
         meta = item["meta"]
         trust = meta.get("trust_level", "unverified")
         trust_badge = f"[dim][{trust}][/dim]" if trust != "unverified" else ""
-        console.print(f"[bold]{escape(meta['name'])}[/bold] v{escape(meta['version'])} {trust_badge}")
+        console.print(
+            f"[bold]{escape(meta['name'])}[/bold] v{escape(meta['version'])} {trust_badge}"
+        )
 
 
 @skill_app.command("trust-levels")
@@ -1245,7 +986,9 @@ def skill_trust_levels(
 @skill_app.command("inspect")
 def skill_inspect(
     name: str,
-    manifest: bool = typer.Option(False, "--manifest", help="Show full manifest including trust metadata"),
+    manifest: bool = typer.Option(
+        False, "--manifest", help="Show full manifest including trust metadata"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
     """Inspect a registered skill without executing it."""
@@ -1275,13 +1018,17 @@ def skill_inspect(
         return
     if manifest:
         trust = loaded.meta.trust_level
-        trust_color = {"official": "green", "community": "yellow", "unverified": "red"}.get(trust, "dim")
+        trust_color = {"official": "green", "community": "yellow", "unverified": "red"}.get(
+            trust, "dim"
+        )
         trust_label = f"[{trust_color}]{trust}[/{trust_color}]"
-        console.print(Panel.fit(
-            json.dumps(loaded.meta.to_dict(), indent=2),
-            title=f"{name} {trust_label}",
-            border_style=trust_color if trust != "unverified" else "dim",
-        ))
+        console.print(
+            Panel.fit(
+                json.dumps(loaded.meta.to_dict(), indent=2),
+                title=f"{name} {trust_label}",
+                border_style=trust_color if trust != "unverified" else "dim",
+            )
+        )
     else:
         console.print(Panel.fit(json.dumps(loaded.meta.to_dict(), indent=2), title=name))
 

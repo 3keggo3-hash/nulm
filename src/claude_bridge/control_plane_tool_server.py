@@ -269,6 +269,76 @@ def register_control_plane_tools(
             destructive=True,
         )
 
+    if ctx.should_register("list_user_messages"):
+
+        async def list_user_messages(status: str | None = "queued", limit: int = 20) -> str:
+            from claude_bridge.control_plane import control_plane_dir, list_messages
+
+            started_at = ctx.now_ms()
+            messages = list_messages(status=status, limit=limit)
+            result = json_response(
+                True,
+                f"User messages loaded: {len(messages)}",
+                details={
+                    "schema_version": "control_plane.messages.v1",
+                    "state_dir": str(control_plane_dir()),
+                    "messages": messages,
+                },
+            )
+            return audit_tool_call(
+                "list_user_messages",
+                {"status": status, "limit": limit},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "list_user_messages",
+            "List dashboard user messages for the agent to acknowledge.",
+            list_user_messages,
+            read_only=True,
+        )
+
+    if ctx.should_register("ack_user_message"):
+
+        async def ack_user_message(message_id: str, response: str = "") -> str:
+            return await _resolve_message_tool(
+                ctx=ctx,
+                json_response=json_response,
+                audit_tool_call=audit_tool_call,
+                tool_name="ack_user_message",
+                message_id=message_id,
+                status="acknowledged",
+                response=response,
+            )
+
+        ctx.register(
+            "ack_user_message",
+            "Mark a dashboard user message as acknowledged.",
+            ack_user_message,
+            destructive=True,
+        )
+
+    if ctx.should_register("complete_user_message"):
+
+        async def complete_user_message(message_id: str, response: str = "") -> str:
+            return await _resolve_message_tool(
+                ctx=ctx,
+                json_response=json_response,
+                audit_tool_call=audit_tool_call,
+                tool_name="complete_user_message",
+                message_id=message_id,
+                status="completed",
+                response=response,
+            )
+
+        ctx.register(
+            "complete_user_message",
+            "Mark a dashboard user message as completed.",
+            complete_user_message,
+            destructive=True,
+        )
+
     return ctx.results
 
 
@@ -310,6 +380,41 @@ async def _resolve_approval_tool(
     return audit_tool_call(
         tool_name,
         {"approval_id": approval_id, "status": status, "reason": reason},
+        result,
+        started_at=started_at,
+    )
+
+
+async def _resolve_message_tool(
+    *,
+    ctx: ToolRegistrationContext,
+    json_response: Callable[..., str],
+    audit_tool_call: Callable[..., str],
+    tool_name: str,
+    message_id: str,
+    status: Literal["acknowledged", "completed"],
+    response: str,
+) -> str:
+    from claude_bridge.control_plane import update_message_status
+
+    started_at = ctx.now_ms()
+    message = update_message_status(message_id, status, response=response)
+    if message is None:
+        result = json_response(
+            False,
+            f"Message '{message_id}' not found",
+            code="message_not_found",
+            details={"message_id": message_id},
+        )
+    else:
+        result = json_response(
+            True,
+            f"Message {status}: {message_id}",
+            details={"schema_version": "control_plane.message.v1", "message": message},
+        )
+    return audit_tool_call(
+        tool_name,
+        {"message_id": message_id, "status": status, "response": response},
         result,
         started_at=started_at,
     )

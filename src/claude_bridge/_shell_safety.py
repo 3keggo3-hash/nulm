@@ -542,7 +542,12 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
             var_name = token.split("=", 1)[0].lower()
             if var_name in _DANGEROUS_ENV_VARS:
                 return f"env {var_name}"
-            if var_name.upper() in {"LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "PATH"}:
+            if var_name.upper() in {
+                "LD_PRELOAD",
+                "DYLD_INSERT_LIBRARIES",
+                "DYLD_LIBRARY_PATH",
+                "PATH",
+            }:
                 return f"env {var_name}"
 
     for matcher in _BLOCKED_MATCHERS:
@@ -663,10 +668,19 @@ def check_skill_metadata_blocked(skill_meta: dict) -> str | None:
             return f"skill tags[{i}] contains invalid characters"
 
     # Permissions: must be known safe set
-    allowed_permissions = frozenset({
-        "read", "write", "execute", "network", "filesystem",
-        "process", "env", "sudo", "admin",
-    })
+    allowed_permissions = frozenset(
+        {
+            "read",
+            "write",
+            "execute",
+            "network",
+            "filesystem",
+            "process",
+            "env",
+            "sudo",
+            "admin",
+        }
+    )
     for perm in skill_meta.get("permissions", []):
         if perm not in allowed_permissions:
             return f"skill permission {perm!r} is not in allowed set"

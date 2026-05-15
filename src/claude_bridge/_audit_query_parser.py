@@ -10,22 +10,26 @@ from typing import Any
 from claude_bridge.guard_policy import validate_regex_pattern
 
 # Supported query fields
-_VALID_QUERY_FIELDS = frozenset({
-    "tool_name",
-    "ok",
-    "decision_action",
-    "decision_source",
-    "decision_risk_level",
-    "timestamp",
-    "duration_ms",
-    "session_id",
-})
+_VALID_QUERY_FIELDS = frozenset(
+    {
+        "tool_name",
+        "ok",
+        "decision_action",
+        "decision_source",
+        "decision_risk_level",
+        "timestamp",
+        "duration_ms",
+        "session_id",
+    }
+)
 
 # Operators supported in WHERE clause
 _VALID_OPERATORS = frozenset({"=", "!=", ">", "<", ">=", "<=", "LIKE", "LIKE%", "%LIKE", "%LIKE%"})
 
 # Reserved words
-_RESERVED_WORDS = frozenset({"SELECT", "WHERE", "ORDER", "BY", "LIMIT", "ASC", "DESC", "AND", "OR", "FROM"})
+_RESERVED_WORDS = frozenset(
+    {"SELECT", "WHERE", "ORDER", "BY", "LIMIT", "ASC", "DESC", "AND", "OR", "FROM"}
+)
 
 
 class QueryError(Exception):
@@ -132,8 +136,6 @@ class AuditQueryParser:
         if len(query) > self.max_query_length:
             raise QueryError(f"Query exceeds maximum length of {self.max_query_length}")
 
-        # Lower-case for keyword matching, preserve for field values
-        normalized = query
         ast = AuditQueryAST.default()
         tokens = list(self._tokenize(query))
         if not tokens:
@@ -193,9 +195,7 @@ class AuditQueryParser:
                 tokens.append(("PUNCT", value))
         return tokens
 
-    def _parse_select(
-        self, tokens: list[tuple], pos: int
-    ) -> tuple[int, list[str]]:
+    def _parse_select(self, tokens: list[tuple], pos: int) -> tuple[int, list[str]]:
         """Parse SELECT clause. Returns (new_pos, fields)."""
         pos += 1  # Skip SELECT keyword
         fields = []
@@ -214,9 +214,7 @@ class AuditQueryParser:
                 break
         return pos, fields if fields else []
 
-    def _parse_where(
-        self, tokens: list[tuple], pos: int
-    ) -> tuple[int, WhereClause | None]:
+    def _parse_where(self, tokens: list[tuple], pos: int) -> tuple[int, WhereClause | None]:
         """Parse WHERE clause. Returns (new_pos, WhereClause)."""
         pos += 1  # Skip WHERE keyword
         conditions = []
@@ -253,7 +251,9 @@ class AuditQueryParser:
             # Coerce value
             value: str | int | float | bool = tok_val
             if tok_type == "NUMBER":
-                value = int(tok_val) if isinstance(tok_val, float) and tok_val.is_integer() else tok_val
+                value = (
+                    int(tok_val) if isinstance(tok_val, float) and tok_val.is_integer() else tok_val
+                )
             elif tok_type == "IDENTIFIER":
                 if tok_val.lower() in ("true", "false"):
                     value = tok_val.lower() == "true"
@@ -272,16 +272,16 @@ class AuditQueryParser:
             pos += 1
 
             # Check if we're done
-            if pos >= len(tokens) or (tokens[pos][0] == "KEYWORD" and tokens[pos][1] in ("ORDER BY", "LIMIT")):
+            if pos >= len(tokens) or (
+                tokens[pos][0] == "KEYWORD" and tokens[pos][1] in ("ORDER BY", "LIMIT")
+            ):
                 break
 
         if not conditions:
             return pos, None
         return pos, WhereClause(conditions=conditions, logic=logic)
 
-    def _parse_order_by(
-        self, tokens: list[tuple], pos: int
-    ) -> tuple[int, OrderByClause | None]:
+    def _parse_order_by(self, tokens: list[tuple], pos: int) -> tuple[int, OrderByClause | None]:
         """Parse ORDER BY clause. Returns (new_pos, OrderByClause)."""
         # tokens[pos] is ORDER, tokens[pos+1] should be BY
         if pos + 1 >= len(tokens) or tokens[pos][1] != "ORDER BY":
@@ -361,9 +361,7 @@ class AuditQueryParser:
                 filtered.append(record)
         return filtered
 
-    def _evaluate_condition(
-        self, record: dict[str, Any], cond: WhereCondition
-    ) -> bool:
+    def _evaluate_condition(self, record: dict[str, Any], cond: WhereCondition) -> bool:
         """Evaluate a single condition against a record."""
         field = cond.field
         op = cond.operator
@@ -409,7 +407,15 @@ class AuditQueryParser:
             return actual_str.lower() != expected_str.lower()
         elif op in (">", "<", ">=", "<="):
             # For strings, use lexicographic comparison
-            return self._compare_numeric(float(actual), op, float(expected)) if field == "duration_ms" else (actual_str > expected_str if op == ">" else (actual_str < expected_str if op == "<" else False))
+            return (
+                self._compare_numeric(float(actual), op, float(expected))
+                if field == "duration_ms"
+                else (
+                    actual_str > expected_str
+                    if op == ">"
+                    else (actual_str < expected_str if op == "<" else False)
+                )
+            )
 
         return False
 

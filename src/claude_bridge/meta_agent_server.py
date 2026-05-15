@@ -395,13 +395,17 @@ def register_meta_agent_tools(
 
             unique_tools = summary.get("unique_tools", 0)
             if unique_tools < 3 and safe_limit > 5:
-                suggestions.append("Low tool diversity - using same tools repeatedly may indicate inefficiency")
+                suggestions.append(
+                    "Low tool diversity - using same tools repeatedly may indicate inefficiency"
+                )
 
             top_tool = max(
                 summary.get("tool_counts", {}).items(), key=lambda x: x[1], default=(None, 0)
             )
             if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.6:
-                suggestions.append(f"Heavy reliance on {top_tool[0]} (>{top_tool[1]/safe_limit:.0%}) - consider if alternatives exist")
+                suggestions.append(
+                    f"Heavy reliance on {top_tool[0]} (>{top_tool[1]/safe_limit:.0%}) - consider if alternatives exist"
+                )
             result = json_response(
                 True,
                 "Reflection complete",

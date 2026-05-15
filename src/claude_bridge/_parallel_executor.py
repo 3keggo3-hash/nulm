@@ -269,7 +269,10 @@ def check_atomic_permissions(
 
             normalized_path = os.path.normpath(file_path).replace("\\", "/")
             normalized_root = os.path.normpath(root).replace("\\", "/")
-            if normalized_path.startswith(normalized_root + "/") or normalized_path == normalized_root:
+            if (
+                normalized_path.startswith(normalized_root + "/")
+                or normalized_path == normalized_root
+            ):
                 is_outside = False
                 break
         if is_outside:

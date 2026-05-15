@@ -206,8 +206,12 @@ class TestComputeAnomalyScoresMedium:
     def test_sensitive_path_burst(self):
         base_time = "2024-06-15T10:00:00Z"
         records = [
-            _make_record(f"r{i}", "read_file", _offset_time(base_time, i * 20),
-                         paths=["/home/user/.ssh/id_rsa"])
+            _make_record(
+                f"r{i}",
+                "read_file",
+                _offset_time(base_time, i * 20),
+                paths=["/home/user/.ssh/id_rsa"],
+            )
             for i in range(4)
         ]
         result = compute_anomaly_scores(records)

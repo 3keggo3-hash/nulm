@@ -37,7 +37,9 @@ class TestParallelWorkflowExecutor:
 
 class TestExecuteParallelValidation:
     @pytest.mark.asyncio
-    async def test_two_async_tasks_succeed_result_ok_is_true(self, executor: ParallelWorkflowExecutor) -> None:
+    async def test_two_async_tasks_succeed_result_ok_is_true(
+        self, executor: ParallelWorkflowExecutor
+    ) -> None:
         async def task_lint() -> dict[str, Any]:
             return {"ok": True, "output": "lint passed"}
 
@@ -53,7 +55,9 @@ class TestExecuteParallelValidation:
         assert result.errors == {}
 
     @pytest.mark.asyncio
-    async def test_one_task_raises_exception_errors_contains_task_name_ok_is_false(self, executor: ParallelWorkflowExecutor) -> None:
+    async def test_one_task_raises_exception_errors_contains_task_name_ok_is_false(
+        self, executor: ParallelWorkflowExecutor
+    ) -> None:
         async def task_lint() -> dict[str, Any]:
             return {"ok": True}
 
@@ -68,7 +72,9 @@ class TestExecuteParallelValidation:
         assert "test" not in result.results
 
     @pytest.mark.asyncio
-    async def test_one_task_returns_ok_false_ok_is_false(self, executor: ParallelWorkflowExecutor) -> None:
+    async def test_one_task_returns_ok_false_ok_is_false(
+        self, executor: ParallelWorkflowExecutor
+    ) -> None:
         async def task_lint() -> dict[str, Any]:
             return {"ok": True}
 
@@ -221,11 +227,10 @@ class TestExecuteParallelSteps:
         assert len(result["failed"]) == 0
 
     @pytest.mark.asyncio
-    async def test_execute_parallel_steps_respects_max_workers(self, engine: WorkflowEngine) -> None:
-        steps = [
-            WorkflowStep(action=f"Step {i}", risk_score=10)
-            for i in range(8)
-        ]
+    async def test_execute_parallel_steps_respects_max_workers(
+        self, engine: WorkflowEngine
+    ) -> None:
+        steps = [WorkflowStep(action=f"Step {i}", risk_score=10) for i in range(8)]
         mock_fn = AsyncMock(return_value={"ok": True})
 
         result = await engine.execute_parallel_steps(steps, execute_fn=mock_fn, max_workers=4)

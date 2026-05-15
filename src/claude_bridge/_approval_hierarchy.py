@@ -140,7 +140,14 @@ class ApprovalChain:
         levels_data = data.get("levels", [])
         if not isinstance(levels_data, list):
             levels_data = []
-        levels = [ApprovalLevel.from_dict(lvl) if isinstance(lvl, dict) else ApprovalLevel(name="", threshold_risk="low") for lvl in levels_data]
+        levels = [
+            (
+                ApprovalLevel.from_dict(lvl)
+                if isinstance(lvl, dict)
+                else ApprovalLevel(name="", threshold_risk="low")
+            )
+            for lvl in levels_data
+        ]
         return cls(
             name=str(data.get("name", "")),
             levels=levels,
@@ -213,6 +220,7 @@ DEFAULT_APPROVAL_CHAIN = ApprovalChain(
 # -----------------------------------------------------------------------------
 # Core Functions
 # -----------------------------------------------------------------------------
+
 
 def get_required_approval_level(
     risk_level: str,
@@ -343,7 +351,9 @@ def record_approval(
 def get_approval_record(approval_id: str) -> dict[str, Any] | None:
     """Retrieve a previously recorded approval by ID."""
     with _approval_records_lock:
-        return dict(_approval_records.get(approval_id)) if approval_id in _approval_records else None
+        return (
+            dict(_approval_records.get(approval_id)) if approval_id in _approval_records else None
+        )
 
 
 def list_approvals(

@@ -1151,7 +1151,7 @@ class TestHashChainIntegrity:
     """Tests for audit hash chain verification."""
 
     def test_verify_valid_chain(self, temp_audit_project, monkeypatch):
-        from claude_bridge._audit_core import verify_audit_integrity, _compute_record_hash, _GENESIS_HASH
+        from claude_bridge._audit_core import verify_audit_integrity
         from claude_bridge._audit_core import (
             _LAST_RECORD_HASH,
             _append_audit_record,
