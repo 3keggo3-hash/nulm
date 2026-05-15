@@ -156,6 +156,7 @@ from claude_bridge.workflow_presets import (
 )
 from claude_bridge.shell_tool_server import register_shell_tools
 from claude_bridge.url_tool_server import register_url_tools
+from claude_bridge.notification_tool_server import register_notification_tools
 
 mcp = FastMCP("Claude Bridge")
 _DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
@@ -892,6 +893,19 @@ _GIT_TOOLS = register_git_tools(
     enabled_names=_ENABLED_TOOL_NAMES,
 )
 commit_changes = _tool_or_disabled(_GIT_TOOLS, "commit_changes")
+
+
+_NOTIFICATION_TOOLS = register_notification_tools(
+    mcp=mcp,
+    tool_options=_tool_options,
+    audit_tool_call=_audit_tool_call,
+    json_response=_json_response,
+    enabled_names=_ENABLED_TOOL_NAMES,
+)
+stream_subscribe = _tool_or_disabled(_NOTIFICATION_TOOLS, "stream_subscribe")
+get_recent_events = _tool_or_disabled(_NOTIFICATION_TOOLS, "get_recent_events")
+get_stream_capabilities = _tool_or_disabled(_NOTIFICATION_TOOLS, "get_stream_capabilities")
+emit_progress_event = _tool_or_disabled(_NOTIFICATION_TOOLS, "emit_progress_event")
 
 
 def run_mcp_server() -> None:
