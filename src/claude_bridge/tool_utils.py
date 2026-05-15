@@ -9,7 +9,10 @@ import re
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Awaitable, Callable, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
+
+if TYPE_CHECKING:
+    from claude_bridge._approval_hierarchy import ApprovalChain
 
 from claude_bridge.config import (
     allowed_roots,
@@ -392,12 +395,54 @@ async def request_approval(
     tool_name: str,
     params: dict[str, Any],
     *,
-    card: PermissionCard | None = None,
+    card: "PermissionCard | None" = None,
+    approval_chain: "ApprovalChain | None" = None,  # type: ignore[name-defined]
 ) -> bool:
+    """Request user approval for a tool operation.
+
+    Args:
+        tool_name: Name of the tool being invoked.
+        params: Parameters passed to the tool.
+        card: Optional PermissionCard for formatted display.
+        approval_chain: Optional custom approval chain to use.
+
+    Returns:
+        True if approved, False otherwise.
+    """
     auto_approve, client_managed_approval = approval_mode()
     if auto_approve or client_managed_approval:
         return True
 
+    # Import ApprovalChain here to avoid circular dependency
+    from claude_bridge._approval_hierarchy import (
+        DEFAULT_APPROVAL_CHAIN,
+        evaluate_approval_chain,
+    )
+
+    # Use hierarchical approval system if available
+    chain = approval_chain or DEFAULT_APPROVAL_CHAIN
+
+    # Build context for approval evaluation
+    risk_level_str = "low"
+    if card is not None:
+        risk_level_str = _risk_from_card(card)
+
+    context = {
+        "tool_name": tool_name,
+        "params": params,
+        "risk_level": risk_level_str,
+    }
+
+    # Evaluate the approval chain to determine the required level
+    outcome = evaluate_approval_chain(context, chain)
+
+    if outcome == "approved":
+        return True
+
+    if outcome == "denied":
+        return False
+
+    # For pending outcomes, fall through to user prompt
     if card is not None:
         print(card.format_card(), file=sys.stderr)
     else:
@@ -412,6 +457,19 @@ async def request_approval(
             safe_value = _mask_secrets(value)
             print(f"  {key}: {safe_value}", file=sys.stderr)
     return False
+
+
+def _risk_from_card(card: "PermissionCard") -> str:
+    """Convert a PermissionCard risk value to a risk level string."""
+    if card.risk <= 20:
+        return "low"
+    elif card.risk <= 40:
+        return "low"
+    elif card.risk <= 60:
+        return "medium"
+    elif card.risk <= 80:
+        return "high"
+    return "critical"
 
 
 async def require_approval(

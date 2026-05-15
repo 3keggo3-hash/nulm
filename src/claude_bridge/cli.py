@@ -1653,6 +1653,7 @@ def workflow_preview(
     option: str | None = typer.Option(None, "--option", help="Workflow focus/option"),
     language: str = typer.Option("English", "--language", help="Response language"),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+    parallel: bool = typer.Option(False, "--parallel", help="Show parallel execution grouping"),
 ) -> None:
     """Preview a workflow prompt without executing it."""
     from claude_bridge.workflow_presets import preview_workflow
@@ -1673,6 +1674,24 @@ def workflow_preview(
     )
     console.print(f"\n[bold]Token estimate:[/bold] ~{result['token_estimate']} tokens")
     console.print(f"\n[bold]Steps:[/bold] {result['steps_summary']}")
+
+    if parallel:
+        console.print("\n[bold cyan]Parallel Execution Groups:[/bold cyan]")
+        # Build a workflow engine to plan parallel groups
+        from claude_bridge.workflow_engine import WorkflowEngine
+
+        engine = WorkflowEngine()
+        engine.create_plan(result["prompt"])
+        groups = engine.plan_parallel_groups()
+        if groups:
+            for i, group in enumerate(groups, 1):
+                agg_label = group.aggregation_mode.value
+                console.print(f"  [cyan]Group {i}[/cyan] ({agg_label}): {len(group.steps)} step(s)")
+                for step in group.steps:
+                    console.print(f"    - {step.action[:60]}")
+        else:
+            console.print("  No parallel groups available for this workflow.")
+
     console.print(f"\n[bold]Prompt:[/bold]\n{result['prompt']}")
 
 

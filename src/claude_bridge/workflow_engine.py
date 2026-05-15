@@ -45,6 +45,7 @@ class WorkflowStep:
         rollback_plan: Human-readable rollback instruction.
         status: Current status ("pending", "completed", "failed").
         result: Execution result from the step function, if any.
+        parallel_group_id: Optional group ID for parallel execution grouping.
     """
 
     action: str
@@ -53,6 +54,7 @@ class WorkflowStep:
     rollback_plan: str = ""
     status: str = "pending"
     result: Any = None
+    parallel_group_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +64,7 @@ class WorkflowStep:
             "rollback_plan": self.rollback_plan,
             "status": self.status,
             "result": self.result,
+            "parallel_group_id": self.parallel_group_id,
         }
 
 
@@ -362,7 +365,7 @@ class WorkflowEngine:
                     files_affected=[],
                     risk_score=10,
                     rollback_plan="Revert changes if validation fails",
-                )
+)
             )
 
         return steps
@@ -371,8 +374,21 @@ class WorkflowEngine:
         self,
         step: WorkflowStep,
         execute_fn: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+        allowed_roots: list[str] | None = None,
     ) -> bool:
         """Execute a single step with checkpoint before modifications."""
+        # Atomic permission check immediately before execution (not at planning time)
+        if allowed_roots is not None:
+            from claude_bridge._parallel_executor import check_atomic_permissions
+
+            project_dir = str(self.project_dir) if self.project_dir else "."
+            has_perm, perm_error = check_atomic_permissions(step, allowed_roots, project_dir)
+            if not has_perm:
+                step.status = "failed"
+                step.result = {"ok": False, "error": perm_error}
+                self._log_event("permission_denied", {"step": step.action, "error": perm_error})
+                return False
+
         if step.risk_score >= 60:
             checkpoint_name = f"pre_step_{uuid.uuid4().hex[:8]}"
             cp_result = create_checkpoint(checkpoint_name)
@@ -474,6 +490,28 @@ class WorkflowEngine:
             if has_validation_keyword and has_no_file_conflicts:
                 independent.append(step)
         return independent
+
+    def plan_parallel_groups(self) -> list["ParallelStepGroup"]:
+        """Analyze workflow steps and group those that can run in parallel.
+
+        Dependency analysis identifies independent steps (no shared files_affected)
+        and groups them for parallel execution. Validation-type steps without
+        file conflicts are prioritized for parallel grouping.
+
+        Returns:
+            List of ParallelStepGroup, each containing steps that can run together.
+        """
+        from claude_bridge._parallel_executor import (
+            plan_parallel_groups as _plan_groups,
+        )
+
+        groups = _plan_groups(self.steps)
+        # Assign parallel_group_id to each step
+        for group in groups:
+            if group.group_id:
+                for step in group.steps:
+                    step.parallel_group_id = group.group_id
+        return groups
 
     async def execute_parallel_steps(
         self,

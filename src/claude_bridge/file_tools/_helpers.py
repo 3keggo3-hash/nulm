@@ -221,7 +221,7 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
         try:
             fd = os.open(
                 str(target),
-                os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_WRONLY,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                 0o644,
             )
         except FileExistsError:
