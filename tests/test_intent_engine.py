@@ -70,9 +70,7 @@ class TestDetectUndecided:
             assert intent.confidence < 0.7 or intent.suggested_actions == []
 
     def test_clear_input_not_vague(self):
-        is_vague, intent = detect_undecided(
-            "optimize the calculate_total function in src/main.py"
-        )
+        is_vague, intent = detect_undecided("optimize the calculate_total function in src/main.py")
         assert is_vague is False or intent.confidence < 0.7
 
     def test_matched_patterns_populated(self):

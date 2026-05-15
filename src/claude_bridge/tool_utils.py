@@ -291,9 +291,7 @@ def resolve_path(user_path: str) -> Path:
 
     base = project_dir()
     combined = base / candidate
-    target = (
-        combined.resolve()
-    )
+    target = combined.resolve()
     if not any(is_within_root(target, root) for root in allowed_roots()):
         raise PermissionError("Access denied: path outside allowed roots")
     return target
@@ -413,34 +411,25 @@ async def request_approval(
     if auto_approve or client_managed_approval:
         return True
 
-    # Import ApprovalChain here to avoid circular dependency
-    from claude_bridge._approval_hierarchy import (
-        DEFAULT_APPROVAL_CHAIN,
-        evaluate_approval_chain,
-    )
+    if approval_chain is not None:
+        from claude_bridge._approval_hierarchy import evaluate_approval_chain
 
-    # Use hierarchical approval system if available
-    chain = approval_chain or DEFAULT_APPROVAL_CHAIN
+        risk_level_str = "low"
+        if card is not None:
+            risk_level_str = _risk_from_card(card)
 
-    # Build context for approval evaluation
-    risk_level_str = "low"
-    if card is not None:
-        risk_level_str = _risk_from_card(card)
-
-    context = {
-        "tool_name": tool_name,
-        "params": params,
-        "risk_level": risk_level_str,
-    }
-
-    # Evaluate the approval chain to determine the required level
-    outcome = evaluate_approval_chain(context, chain)
-
-    if outcome == "approved":
-        return True
-
-    if outcome == "denied":
-        return False
+        outcome = evaluate_approval_chain(
+            {
+                "tool_name": tool_name,
+                "params": params,
+                "risk_level": risk_level_str,
+            },
+            approval_chain,
+        )
+        if outcome == "approved":
+            return True
+        if outcome == "denied":
+            return False
 
     # For pending outcomes, fall through to user prompt
     if card is not None:

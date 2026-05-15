@@ -137,9 +137,11 @@ def summarize_audit_records(records: list[dict[str, Any]]) -> str:
 
         result = record.get("result", {})
         if isinstance(result, dict):
-            decision_action = result.get("decision", {}).get("action") if isinstance(
-                result.get("decision"), dict
-            ) else None
+            decision_action = (
+                result.get("decision", {}).get("action")
+                if isinstance(result.get("decision"), dict)
+                else None
+            )
             if decision_action:
                 decisions.append(decision_action)
             if not result.get("ok", False):

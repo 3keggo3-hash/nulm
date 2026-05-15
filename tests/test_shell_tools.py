@@ -269,9 +269,7 @@ class TestArgumentInjection:
         assert reason is not None
 
     def test_dollar_brace_injection_blocked(self):
-        reason = st.blocked_command_reason(
-            'echo "${PATH}"', ["echo", "${PATH}"]
-        )
+        reason = st.blocked_command_reason('echo "${PATH}"', ["echo", "${PATH}"])
         assert reason is not None
 
     def test_find_with_injection_blocked(self):
@@ -287,9 +285,7 @@ class TestArgumentInjection:
         assert reason is None
 
     def test_safe_quoted_find_allowed(self):
-        reason = st.blocked_command_reason(
-            'find . -name "*.txt"', ["find", ".", "-name", "*.txt"]
-        )
+        reason = st.blocked_command_reason('find . -name "*.txt"', ["find", ".", "-name", "*.txt"])
         assert reason is None
 
     def test_single_quoted_injection_allowed(self):
@@ -299,15 +295,11 @@ class TestArgumentInjection:
         assert reason is None
 
     def test_safe_echo_allowed(self):
-        reason = st.blocked_command_reason(
-            "echo hello world", ["echo", "hello", "world"]
-        )
+        reason = st.blocked_command_reason("echo hello world", ["echo", "hello", "world"])
         assert reason is None
 
     def test_dollar_ansi_c_quoting_blocked(self):
-        reason = st.blocked_command_reason(
-            "echo $'\\n'", ["echo", "$'\\n'"]
-        )
+        reason = st.blocked_command_reason("echo $'\\n'", ["echo", "$'\\n'"])
         assert reason is not None
 
 

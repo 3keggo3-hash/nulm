@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import tarfile
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -80,26 +81,6 @@ def _snapshot_index_path() -> Path:
     return _snapshots_dir() / "index.json"
 
 
-def _load_index() -> dict[str, Any]:
-    """Load the snapshot index from disk."""
-    idx_path = _snapshot_index_path()
-    if not idx_path.is_file():
-        return {"snapshots": []}
-    try:
-        payload = json.loads(idx_path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict):
-            return payload
-        return {"snapshots": []}
-    except (json.JSONDecodeError, OSError):
-        return {"snapshots": []}
-
-
-def _save_index(index: dict[str, Any]) -> None:
-    """Save the snapshot index to disk."""
-    idx_path = _snapshot_index_path()
-    idx_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
-
-
 def _relativize_path(path: Path) -> Path:
     """Return path relative to project directory."""
     try:
@@ -109,6 +90,7 @@ def _relativize_path(path: Path) -> Path:
 
 
 _INDEX_CACHE: OrderedDict[str, dict[str, Any]] | None = None
+_INDEX_CACHE_LOCK = threading.RLock()
 
 
 def _load_index() -> dict[str, Any]:
@@ -116,18 +98,20 @@ def _load_index() -> dict[str, Any]:
     global _INDEX_CACHE
     idx_path = _snapshot_index_path()
     cache_key = str(idx_path)
-    if _INDEX_CACHE is not None and cache_key in _INDEX_CACHE:
-        return _INDEX_CACHE[cache_key]
+    with _INDEX_CACHE_LOCK:
+        if _INDEX_CACHE is not None and cache_key in _INDEX_CACHE:
+            return _INDEX_CACHE[cache_key]
     if not idx_path.is_file():
         return {"snapshots": []}
     try:
         payload = json.loads(idx_path.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
-            if _INDEX_CACHE is None:
-                _INDEX_CACHE = OrderedDict()
-            _INDEX_CACHE[cache_key] = payload
-            if len(_INDEX_CACHE) > 10:
-                _INDEX_CACHE.popitem(last=False)
+            with _INDEX_CACHE_LOCK:
+                if _INDEX_CACHE is None:
+                    _INDEX_CACHE = OrderedDict()
+                _INDEX_CACHE[cache_key] = payload
+                if len(_INDEX_CACHE) > 10:
+                    _INDEX_CACHE.popitem(last=False)
             return payload
         return {"snapshots": []}
     except (json.JSONDecodeError, OSError):
@@ -140,8 +124,9 @@ def _save_index(index: dict[str, Any]) -> None:
     idx_path = _snapshot_index_path()
     idx_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
     cache_key = str(idx_path)
-    if _INDEX_CACHE is not None:
-        _INDEX_CACHE[cache_key] = index
+    with _INDEX_CACHE_LOCK:
+        if _INDEX_CACHE is not None:
+            _INDEX_CACHE[cache_key] = index
 
 
 def _file_content_hash(file_path: Path) -> str:

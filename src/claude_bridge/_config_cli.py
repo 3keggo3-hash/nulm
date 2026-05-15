@@ -122,7 +122,13 @@ def config_set(
     try:
         if key in {"shell_timeout", "ai_evaluator_timeout", "max_parallel"}:
             parsed_value = int(value)
-        elif key in {"auto_approve", "client_managed_approval", "onboarding_enabled", "intent_compaction_enabled", "ai_evaluator_enabled"}:
+        elif key in {
+            "auto_approve",
+            "client_managed_approval",
+            "onboarding_enabled",
+            "intent_compaction_enabled",
+            "ai_evaluator_enabled",
+        }:
             parsed_value = value.lower() in {"true", "1", "yes", "on"}
         validate_config_value(key, parsed_value)
     except ValueError as exc:
@@ -130,8 +136,12 @@ def config_set(
         console.print(f"  {exc}")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        console.print("  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values")
-        console.print(f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key")
+        console.print(
+            "  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values"
+        )
+        console.print(
+            f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key"
+        )
         raise typer.Exit(code=1)
     try:
         result = update_runtime_config(key, parsed_value)
@@ -142,8 +152,12 @@ def config_set(
         console.print(f"[red]Error:[/red] {exc}")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        console.print("  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values")
-        console.print(f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key")
+        console.print(
+            "  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values"
+        )
+        console.print(
+            f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key"
+        )
         raise typer.Exit(code=1)
 
 

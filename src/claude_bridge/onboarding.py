@@ -12,10 +12,13 @@ from pathlib import Path
 
 _ONBOARDING_LOCK = threading.RLock()
 _ONBOARDING_SHOWN_KEY = "onboarding_shown"
+_ONBOARDING_SHOWN_IN_MEMORY = False
 
 
 def reset_onboarding_state() -> None:
     """Reset onboarding state - called when user dismisses or on new session."""
+    global _ONBOARDING_SHOWN_IN_MEMORY
+    _ONBOARDING_SHOWN_IN_MEMORY = False
     config_path = Path.home() / ".claude-bridge" / "config.json"
     if config_path.exists():
         try:
@@ -29,6 +32,7 @@ def reset_onboarding_state() -> None:
 def _is_onboarding_enabled() -> bool:
     try:
         from claude_bridge.config import get_config_value
+
         val = get_config_value("onboarding_enabled")
         if val is not None:
             return bool(val)
@@ -38,8 +42,13 @@ def _is_onboarding_enabled() -> bool:
 
 
 def _mark_onboarding_shown() -> None:
+    global _ONBOARDING_SHOWN_IN_MEMORY
+    _ONBOARDING_SHOWN_IN_MEMORY = True
     config_path = Path.home() / ".claude-bridge" / "config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
     content = {}
     if config_path.exists():
         try:
@@ -47,10 +56,15 @@ def _mark_onboarding_shown() -> None:
         except (OSError, json.JSONDecodeError):
             pass
     content[_ONBOARDING_SHOWN_KEY] = True
-    config_path.write_text(json.dumps(content, indent=2))
+    try:
+        config_path.write_text(json.dumps(content, indent=2))
+    except OSError:
+        return
 
 
 def _was_onboarding_shown() -> bool:
+    if _ONBOARDING_SHOWN_IN_MEMORY:
+        return True
     config_path = Path.home() / ".claude-bridge" / "config.json"
     if not config_path.exists():
         return False

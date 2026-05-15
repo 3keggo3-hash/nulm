@@ -196,6 +196,9 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "list_pending_approvals",
         "approve_pending_action",
         "reject_pending_action",
+        "list_user_messages",
+        "ack_user_message",
+        "complete_user_message",
     },
     "meta_agent": {
         "create_plan",
@@ -335,9 +338,7 @@ def validate_config_value(key: str, value: Any) -> None:
             raise ValueError(f"Unknown approval preset: {value}")
     elif key == "auto_approve_risk_level":
         if value not in {"none", "low", "medium", "high"}:
-            raise ValueError(
-                "auto_approve_risk_level must be one of none, low, medium, high"
-            )
+            raise ValueError("auto_approve_risk_level must be one of none, low, medium, high")
     elif key == "max_parallel":
         if not isinstance(value, int) or value < 1 or value > 32:
             raise ValueError("max_parallel must be an integer between 1 and 32")
@@ -881,9 +882,7 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
         if key == "auto_approve_risk_level":
             level = str(value).lower()
             if level not in {"none", "low", "medium", "high"}:
-                raise ValueError(
-                    "auto_approve_risk_level must be one of none, low, medium, high"
-                )
+                raise ValueError("auto_approve_risk_level must be one of none, low, medium, high")
             _CONFIG["auto_approve_risk_level"] = level
             return current_config()
 

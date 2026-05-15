@@ -359,7 +359,12 @@ def verify_audit_integrity(
     """
     records = _load_records(session_id)
     if not records:
-        return {"valid": False, "error": "no records found", "record_index": -1, "expected_hash": None}
+        return {
+            "valid": False,
+            "error": "no records found",
+            "record_index": -1,
+            "expected_hash": None,
+        }
 
     expected_prev_hash = _GENESIS_HASH
     for i, record in enumerate(records):

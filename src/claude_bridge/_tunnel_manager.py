@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 import shutil
 import subprocess
 import threading
@@ -42,8 +43,18 @@ class TunnelManager:
                     "Or download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
                 )
 
+            command = [
+                "cloudflared",
+                "tunnel",
+                "--url",
+                f"http://localhost:{port}",
+                "--logfile",
+                "STDOUT",
+                "--metrics",
+                "localhost:0",
+            ]
             self._process = subprocess.Popen(
-                ["cloudflared", "tunnel", "--url", f"http://localhost:{port}", "--logfile", "STDOUT", "--metrics", "localhost:0"],
+                command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -57,12 +68,27 @@ class TunnelManager:
         """Wait for cloudflared to output the tunnel URL."""
         start_time = time.monotonic()
         url: str | None = None
+        lines: queue.Queue[str] = queue.Queue()
+
+        def read_stdout() -> None:
+            stdout = process.stdout
+            if stdout is None:
+                return
+            while True:
+                line = stdout.readline()
+                if not line:
+                    return
+                lines.put(line)
+
+        reader = threading.Thread(target=read_stdout, daemon=True)
+        reader.start()
 
         while time.monotonic() - start_time < _TUNNEL_STARTUP_TIMEOUT:
             if process.poll() is not None:
                 raise RuntimeError(f"cloudflared exited unexpectedly: {process.returncode}")
-            line = process.stdout.readline()  # type: ignore[union-attr]
-            if not line:
+            try:
+                line = lines.get(timeout=0.1)
+            except queue.Empty:
                 time.sleep(0.1)
                 continue
             if "trycloudflare.com" in line or "cloudflared tunnel" in line.lower():
@@ -93,7 +119,7 @@ class TunnelManager:
             try:
                 self._process.terminate()
                 self._process.wait(timeout=5)
-            except ( subprocess.TimeoutExpired, OSError):
+            except (subprocess.TimeoutExpired, OSError):
                 try:
                     self._process.kill()
                 except OSError:

@@ -270,13 +270,17 @@ def _smart_context_fit_check(
     return context_fit_check(text, model=model, context_limit=context_limit)
 
 
-def _smart_get_tool_recommendation(query: str, available_tools: list[str], context_budget: int) -> dict[str, Any]:
+def _smart_get_tool_recommendation(
+    query: str, available_tools: list[str], context_budget: int
+) -> dict[str, Any]:
     from claude_bridge.smart import get_tool_recommendation
 
     return get_tool_recommendation(query, available_tools, context_budget)
 
 
-def _smart_estimate_context_savings(original_tokens: int, compact_tokens: int, overhead_tokens: int) -> dict[str, Any]:
+def _smart_estimate_context_savings(
+    original_tokens: int, compact_tokens: int, overhead_tokens: int
+) -> dict[str, Any]:
     from claude_bridge.smart import estimate_context_savings
 
     return estimate_context_savings(original_tokens, compact_tokens, overhead_tokens)
@@ -702,6 +706,9 @@ task_summary = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "task_summary")
 list_pending_approvals = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "list_pending_approvals")
 approve_pending_action = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "approve_pending_action")
 reject_pending_action = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "reject_pending_action")
+list_user_messages = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "list_user_messages")
+ack_user_message = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "ack_user_message")
+complete_user_message = _tool_or_disabled(_CONTROL_PLANE_TOOLS, "complete_user_message")
 autocomplete = _tool_or_disabled(_META_TOOLS, "autocomplete")
 
 if any(

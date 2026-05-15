@@ -203,7 +203,7 @@ def summarize_session(
             "total_input_chars": total_input_chars,
             "total_output_chars": total_output_chars,
             "total_estimated_tokens": total_estimated_tokens,
-"truncated_results": truncated_results,
+            "truncated_results": truncated_results,
             "tool_estimated_tokens": tool_token_totals,
         },
     }
@@ -293,9 +293,7 @@ def query_audit(
                     decision_risk_level = str(cond.value)
 
         # Check if we can use index (simple equality filters only)
-        if ast.where and all(
-            c.operator == "=" for c in ast.where.conditions
-        ):
+        if ast.where and all(c.operator == "=" for c in ast.where.conditions):
             filtered_entries = _filter_index_entries(
                 index_entries,
                 tool_name=tool_name,
@@ -316,7 +314,7 @@ def query_audit(
                 )
 
             actual_limit = ast.limit if ast.limit is not None else limit
-            limited_entries = list(reversed(filtered_entries))[: actual_limit]
+            limited_entries = list(reversed(filtered_entries))[:actual_limit]
 
             records = _load_records_at_offsets(
                 selected_session_id,
@@ -332,11 +330,11 @@ def query_audit(
                     "select_fields": ast.select_fields if ast.select_fields else ["*"],
                     "where": (
                         [(c.field, c.operator, c.value) for c in ast.where.conditions]
-                        if ast.where else []
+                        if ast.where
+                        else []
                     ),
                     "order_by": (
-                        (ast.order_by.field, ast.order_by.direction.value)
-                        if ast.order_by else None
+                        (ast.order_by.field, ast.order_by.direction.value) if ast.order_by else None
                     ),
                     "limit": actual_limit,
                 },
@@ -360,12 +358,10 @@ def query_audit(
         "parsed_query": {
             "select_fields": ast.select_fields if ast.select_fields else ["*"],
             "where": (
-                [(c.field, c.operator, c.value) for c in ast.where.conditions]
-                if ast.where else []
+                [(c.field, c.operator, c.value) for c in ast.where.conditions] if ast.where else []
             ),
             "order_by": (
-                (ast.order_by.field, ast.order_by.direction.value)
-                if ast.order_by else None
+                (ast.order_by.field, ast.order_by.direction.value) if ast.order_by else None
             ),
             "limit": actual_limit,
         },
