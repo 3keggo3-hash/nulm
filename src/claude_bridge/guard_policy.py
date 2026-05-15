@@ -1,4 +1,18 @@
-"""User-configurable guard policy loading and decision model for Claude Bridge."""
+"""User-configurable guard policy loading and decision model for Claude Bridge.
+
+Implements a fail-closed security layer: tool calls are denied by default unless
+explicitly allowed. Supports JSON (`.claude-bridge-guard.json`) and YAML
+(`.claude-bridge/rules.yaml`) rule files with glob, regex, and extension conditions.
+
+Key functions:
+- `load_policy()`: parse and validate guard rule file
+- `evaluate()`: run a tool call through builtin denies then user rules
+- `validate_rule()`: check a single rule definition for correctness
+
+Builtin hardcoded denies cover: `sudo`, `rm -rf`, `chmod 777`, pipe-to-shell
+(`| bash`, `curl|bash`, `wget|bash`), and sensitive file extensions (`.env`, `.pem`,
+`.key`, `id_rsa`). These cannot be overridden by user rules.
+"""""
 
 from __future__ import annotations
 

@@ -2,10 +2,41 @@
 
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
 from typing import Any
 
 from claude_bridge._audit_core import _load_records, current_session_id
 from claude_bridge.anomaly import compute_anomaly_scores
+
+
+class _LRUCache:
+    """Simple in-memory LRU cache with TTL."""
+
+    def __init__(self, max_size: int = 50, ttl_seconds: float = 60.0) -> None:
+        self._cache: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+
+    def get(self, key: str) -> Any | None:
+        if key not in self._cache:
+            return None
+        value, timestamp = self._cache[key]
+        if time.monotonic() - timestamp > self._ttl:
+            del self._cache[key]
+            return None
+        self._cache.move_to_end(key)
+        return value
+
+    def set(self, key: str, value: Any) -> None:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (value, time.monotonic())
+        if len(self._cache) > self._max_size:
+            self._cache.popitem(last=False)
+
+
+_compress_cache = _LRUCache(max_size=50, ttl_seconds=60.0)
 
 
 def compress_session(session_id: str) -> str:
@@ -20,9 +51,16 @@ def compress_session(session_id: str) -> str:
     """
     if not session_id:
         session_id = current_session_id()
+
+    cached = _compress_cache.get(session_id)
+    if cached is not None:
+        return cached
+
     records = _load_records(session_id)
     if not records:
-        return f"Session {session_id}: no records found."
+        result = f"Session {session_id}: no records found."
+        _compress_cache.set(session_id, result)
+        return result
 
     tool_counts: dict[str, int] = {}
     file_ops: list[str] = []
@@ -69,7 +107,9 @@ def compress_session(session_id: str) -> str:
     if anomaly_count > 0:
         lines.append(f"Anomalies: {anomaly_count}")
 
-    return " | ".join(lines)
+    final_result = " | ".join(lines)
+    _compress_cache.set(session_id, final_result)
+    return final_result
 
 
 def summarize_audit_records(records: list[dict[str, Any]]) -> str:

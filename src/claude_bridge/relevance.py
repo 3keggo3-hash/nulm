@@ -1,4 +1,17 @@
-"""Shared relevance scoring helpers for indexed code search."""
+"""Shared relevance scoring helpers for indexed code search.
+
+Implements a two-phase token-scoring algorithm over the file index built by
+`indexing`. Ranks files by matched path, function name, class name, import, and
+content terms with IDF weighting and position-based bonuses.
+
+Key functions:
+- `rank_indexed_files()`: score and order files for a given query
+- `query_terms()`: split user query into lowercase search terms
+- `clear_relevance_cache()`: invalidate in-memory ranking cache
+
+Result entries include `score`, `matched_terms`, `matched_fields`, and
+`selection_reason` (e.g. "function_match", "combined").
+"""""
 
 from __future__ import annotations
 
