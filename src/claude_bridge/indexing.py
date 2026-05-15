@@ -1,4 +1,18 @@
-"""Indexing and file-search helpers for Claude Bridge."""
+"""Indexing and file-search helpers for Claude Bridge.
+
+Provides symbolic source indexing for Python, JS/TS, Rust, Go, Java, Kotlin, C#,
+Ruby, PHP, and GDScript. Supports both AST-based (fallback) and Tree-sitter-based
+(extraction when available) symbol extraction. Also handles relevance-ranked file
+search via the companion `relevance` module.
+
+Key functions:
+- `build_index()`: crawl project root, extract symbols, build file metadata index
+- `iter_source_files()`: yield source files respecting gitignore and skip dirs
+- `iter_searchable_files()`: yield files matching optional glob pattern
+- `clear_index_cache()`: invalidate in-memory index cache
+
+The disk cache stores pickled index snapshots under `~/.claude-bridge/index-cache/`.
+"""""
 
 from __future__ import annotations
 

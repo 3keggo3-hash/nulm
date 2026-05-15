@@ -236,6 +236,9 @@ def _write_text_exact(target: Path, content: str, *, exclusive: bool = False) ->
         finally:
             os.close(fd)
     else:
+        # Refuse to write through symlinks to prevent arbitrary file overwrite
+        if target.is_symlink():
+            raise OSError(errno.ELOOP, "Refusing to write through symlink") from None
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(target.parent))
         try:
             os.write(tmp_fd, data)

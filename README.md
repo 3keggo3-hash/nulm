@@ -37,6 +37,12 @@ still ask for client approval when the client supports it.
 For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
 [`docs/ai-collaboration-token-budget.md`](docs/ai-collaboration-token-budget.md).
 
+## What's New
+
+- **Agent-43 refactor**: audit layer improvements, shell safety hardening, context compression, tunnel manager
+- **Agent-41 relevance**: position-based and IDF weighting for improved ranking accuracy
+- **Agent-37 detective**: weighted error patterns with reduced false positives
+
 ## First 5 Minutes
 
 Try a natural request first:
