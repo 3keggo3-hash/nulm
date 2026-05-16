@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ _GENESIS_HASH = sha256(b"GENESIS").hexdigest()
 _VALID_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
+@lru_cache(maxsize=1)
 def _audit_dir() -> Path:
     override = os.environ.get("CLAUDE_BRIDGE_AUDIT_DIR", "").strip()
     if override:
@@ -257,12 +259,21 @@ def _session_files_newest_first(*, limit: int | None = None) -> list[Path]:
     return [path for _, path in selected]
 
 
+@lru_cache(maxsize=8)
+def _cached_session_files(limit: int) -> tuple[str, ...]:
+    """Cache session file listing to avoid repeated glob+sort."""
+    return tuple(path.stem for path in _session_files_newest_first(limit=limit))
+
+
 def _iter_session_ids_newest_first() -> list[str]:
-    return [path.stem for path in _session_files_newest_first(limit=_MAX_AUDIT_SESSION_SCAN_FILES)]
+    return list(_cached_session_files(_MAX_AUDIT_SESSION_SCAN_FILES))
 
 
 def find_audit_record(record_id: str) -> dict[str, Any] | None:
-    for session_id in _iter_session_ids_newest_first():
+    session_ids = _cached_session_files(_MAX_AUDIT_SESSION_SCAN_FILES)
+    if not session_ids:
+        return None
+    for session_id in session_ids:
         for record in _load_records(session_id, max_lines=_MAX_AUDIT_RECORD_SCAN_LINES):
             if record.get("record_id") == record_id:
                 return record

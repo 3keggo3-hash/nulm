@@ -31,19 +31,29 @@ service or VPS is required for core operation.
 
 ```bash
 pipx install claude-bridge-mcp
-claude-bridge init
-claude-bridge doctor --project-dir .
-TARGET=claude-desktop  # or generic-stdio / vscode
-claude-bridge install --target "$TARGET" --project-dir .
+claude-bridge install
 ```
 
-Use `claude-bridge install --help` to see supported MCP targets. After installing the target
-configuration, restart or reload that MCP client and start a new conversation/session. A successful
-install gives the client access to `tools_overview` and `bridge_status`; mutating actions should
-still ask for client approval when the client supports it.
+Runs an interactive setup — choose detailed or simple, AI provider, approval mode, and more. Restart Claude Desktop and start a new conversation.
 
-For lower-token sessions, set `CLAUDE_BRIDGE_TOOL_PROFILE=essential`. See
-[`docs/ai-collaboration-token-budget.md`](docs/ai-collaboration-token-budget.md).
+For quick setup with defaults:
+
+```bash
+claude-bridge install --simple
+```
+
+For other MCP clients:
+
+```bash
+claude-bridge install --target vscode
+claude-bridge install --target generic-stdio
+```
+
+## What's New
+
+- **Agent-43 refactor**: audit layer improvements, shell safety hardening, context compression, tunnel manager
+- **Agent-41 relevance**: position-based and IDF weighting for improved ranking accuracy
+- **Agent-37 detective**: weighted error patterns with reduced false positives
 
 ## First 5 Minutes
 
@@ -88,10 +98,8 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 
 ```bash
 pipx install claude-bridge-mcp
-claude-bridge init
-claude-bridge doctor --project-dir .
-TARGET=claude-desktop  # or generic-stdio / vscode
-claude-bridge install --target "$TARGET" --project-dir .
+claude-bridge install         # interactive setup
+claude-bridge install --simple # quick setup with defaults
 ```
 
 `claude-bridge` is the installed CLI command. The package name is `claude-bridge-mcp`.

@@ -71,11 +71,14 @@ register_control_plane_cli(
 
 COMMAND_GROUPS = {
     "Core": ["start", "init", "update"],
-    "Tools": ["skill", "benchmark"],
+    "Tools": ["skill", "benchmark", "schedule"],
     "Audit": ["audit", "appeal", "anomaly", "replay", "appeal-history"],
     "Config": ["config"],
     "MCP": ["install", "setup"],
-    "Admin": ["doctor", "policy", "dashboard", "workflow-preview"],
+    "Admin": ["doctor", "envdoctor", "policy", "dashboard", "workflow-preview"],
+    "Sessions": ["sessions"],
+    "Worktree": ["worktree"],
+    "CI": ["audit-ci"],
 }
 
 
@@ -1569,6 +1572,7 @@ def install(
     target: str = typer.Option(
         "claude-desktop",
         "--target",
+        "-t",
         help="Install target: claude-desktop, generic-stdio, or vscode",
     ),
     config_path: Path = typer.Option(
@@ -1589,92 +1593,204 @@ def install(
         True,
         help="Write config assuming Claude Desktop handles approval prompts",
     ),
+    non_interactive: bool = typer.Option(False, "-y", help="Skip interactive prompts"),
+    simple: bool = typer.Option(False, "--simple", help="Quick setup with defaults"),
 ) -> None:
     """Install or write Claude Bridge config for a supported MCP target.
 
     Examples:
       claude-bridge install
-      claude-bridge install -d /path/to/project --target claude-desktop
+      claude-bridge install --simple
+      claude-bridge install -d /path/to/project -t vscode
       claude-bridge install --approval-preset dev-safe
     """
-    _, _, _, supported_targets = _prompt_runtime()
-    if target not in supported_targets:
-        raise typer.BadParameter(
-            f"Unsupported target: {target}. Choose one of: {', '.join(supported_targets)}"
-        )
-    display_target = _target_display_name(target)
-    resolved_project_dir = project_dir.resolve()
-    resolved_allowed_roots = [
-        resolved_project_dir,
-        *([path.resolve() for path in allow_root] if allow_root else []),
-    ]
-    resolved_config_path = (
-        config_path.resolve()
-        if config_path is not None
-        else (
-            _default_claude_desktop_config_path()
-            if target == "claude-desktop"
-            else _default_target_config_path(resolved_project_dir, target)
-        )
-    )
-    resolved_auto_approve, resolved_client_managed, resolved_preset = _resolve_cli_approval_mode(
-        approval_preset=approval_preset,
-        auto_approve=auto_approve,
-        client_managed_approval=client_managed_approval,
-    )
+    import signal
+    from claude_bridge.config import update_runtime_config
+
+    def _on_cancel(signum: int, frame: Any) -> None:
+        console.print("\n[yellow]Setup cancelled.[/yellow]")
+        raise typer.Exit(0)
+
+    original = signal.signal(signal.SIGINT, _on_cancel)
 
     try:
-        written_path = _write_target_config(
-            resolved_config_path,
-            target=target,
-            project_dir=resolved_project_dir,
-            allowed_roots=resolved_allowed_roots,
-            auto_approve=resolved_auto_approve,
-            client_managed_approval=resolved_client_managed,
-            approval_preset=resolved_preset,
-        )
-    except ValueError as exc:
-        console.print(f"[red]Install failed:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+        _, _, _, supported_targets = _prompt_runtime()
 
-    console.print(
-        Panel.fit(
-            Text.assemble(
-                ("Claude Bridge ", "bold cyan"),
-                (f"installed for {display_target}", "green"),
-            ),
-            title="Install",
-            border_style="green",
+        console.print(Panel.fit("[bold cyan]Claude Bridge Setup[/bold cyan]", title="Install"))
+
+        if simple:
+            resolved_project_dir = project_dir.resolve()
+            resolved_target = target
+            resolved_preset = approval_preset or "dev-safe"
+            resolved_provider = "local"
+            resolved_api_key = ""
+            resolved_roots = [resolved_project_dir]
+            resolved_tool_profile = "standard"
+        else:
+            console.print("\n[b]Setup type:[/b]")
+            console.print("  1. [cyan]Detailed[/cyan] - Configure everything")
+            console.print("  2. [cyan]Simple[/cyan] - Quick setup with defaults")
+            setup_choice = Prompt.ask("Choose", default="2", choices=["1", "2"])
+            is_detailed = setup_choice == "1"
+
+            project_path = project_dir.resolve()
+            if is_detailed:
+                console.print("\n[b]Project directory:[/b]")
+                project_path = Path(
+                    Prompt.ask("Directory", default=str(project_path))
+                ).resolve()
+            resolved_project_dir = project_path
+
+            target_options = {
+                "1": "claude-desktop",
+                "2": "vscode",
+                "3": "generic-stdio",
+            }
+            if is_detailed:
+                console.print("\n[b]Target MCP client:[/b]")
+                for k, v in target_options.items():
+                    console.print(f"  {k}. [cyan]{v}[/cyan]")
+                target_choice = Prompt.ask("Choose", default="1", choices=list(target_options.keys()))
+                resolved_target = target_options[target_choice]
+            else:
+                resolved_target = target
+
+            preset_options = {
+                "1": "read-only",
+                "2": "dev-safe",
+                "3": "ci-like",
+                "4": "power-user",
+            }
+            if is_detailed:
+                _print_preset_explanation_table()
+                console.print("\n[b]Approval mode:[/b]")
+                for k, v in preset_options.items():
+                    console.print(f"  {k}. [cyan]{v}[/]")
+                preset_choice = Prompt.ask("Choose", default="2", choices=list(preset_options.keys()))
+                resolved_preset = preset_options[preset_choice]
+            else:
+                resolved_preset = approval_preset or "dev-safe"
+
+            provider_options = {
+                "1": "local",
+                "2": "openai",
+                "3": "anthropic",
+                "4": "deepseek",
+            }
+            provider_names = {
+                "1": "Local (free, no API key)",
+                "2": "OpenAI",
+                "3": "Anthropic (Claude)",
+                "4": "DeepSeek",
+            }
+            if is_detailed:
+                console.print("\n[b]AI provider:[/b]")
+                for k, name in provider_names.items():
+                    console.print(f"  {k}. [cyan]{name}[/cyan]")
+                provider_choice = Prompt.ask("Choose", default="1", choices=list(provider_options.keys()))
+                resolved_provider = provider_options[provider_choice]
+            else:
+                resolved_provider = "local"
+
+            resolved_api_key = ""
+            if resolved_provider != "local" and resolved_provider != "ollama":
+                if is_detailed:
+                    provider_label = provider_names.get(list(provider_options.keys())[list(provider_options.values()).index(resolved_provider)] or "")
+                    console.print(f"\n[dim]Enter your {provider_label} API key:[/dim]")
+                    resolved_api_key = Prompt.ask("API key", password=True)
+
+            roots_str = str(resolved_project_dir)
+            if is_detailed:
+                console.print("\n[b]Allowed root directories:[/b]")
+                roots_str = Prompt.ask(
+                    "Allowed roots (comma-separated)",
+                    default=str(resolved_project_dir),
+                )
+            resolved_roots = [resolved_project_dir]
+            for r in roots_str.split(","):
+                r = r.strip()
+                if r and Path(r).resolve() not in resolved_roots:
+                    resolved_roots.append(Path(r).resolve())
+
+            if is_detailed:
+                console.print("\n[b]Tool profile:[/b]")
+                console.print("  1. [cyan]essential[/cyan] - Minimal tools for low token budget")
+                console.print("  2. [cyan]standard[/cyan] - Default set of tools")
+                console.print("  3. [cyan]full[/cyan] - All available tools")
+                profile_choice = Prompt.ask("Choose", default="2", choices=["1", "2", "3"])
+                profile_map = {"1": "essential", "2": "standard", "3": "full"}
+                resolved_tool_profile = profile_map[profile_choice]
+            else:
+                resolved_tool_profile = "standard"
+
+        resolved_auto_approve, resolved_client_managed, _ = _resolve_cli_approval_mode(
+            approval_preset=resolved_preset,
+            auto_approve=auto_approve,
+            client_managed_approval=client_managed_approval,
         )
-    )
-    console.print(f"Config updated: [green]{written_path}[/green]")
-    console.print(f"Project directory: [green]{resolved_project_dir}[/green]")
-    console.print(f"Target: [cyan]{target}[/cyan]")
-    if resolved_preset is not None:
+
+        if resolved_target not in supported_targets:
+            raise typer.BadParameter(
+                f"Unsupported target: {resolved_target}. Choose one of: {', '.join(supported_targets)}"
+            )
+
+        resolved_config_path = (
+            config_path.resolve()
+            if config_path is not None
+            else (
+                _default_claude_desktop_config_path()
+                if resolved_target == "claude-desktop"
+                else _default_target_config_path(resolved_project_dir, resolved_target)
+            )
+        )
+
+        try:
+            written_path = _write_target_config(
+                resolved_config_path,
+                target=resolved_target,
+                project_dir=resolved_project_dir,
+                allowed_roots=resolved_roots,
+                auto_approve=resolved_auto_approve,
+                client_managed_approval=resolved_client_managed,
+                approval_preset=resolved_preset,
+            )
+        except ValueError as exc:
+            console.print(f"[red]Install failed:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        if resolved_api_key:
+            update_runtime_config("ai_evaluator_api_key", resolved_api_key)
+        if resolved_provider != "local":
+            update_runtime_config("ai_evaluator_provider", resolved_provider)
+            update_runtime_config("ai_evaluator_enabled", True)
+        update_runtime_config("tool_profile", resolved_tool_profile)
+
+        console.print(
+            Panel.fit(
+                Text.assemble(
+                    ("Claude Bridge ", "bold cyan"),
+                    (f"installed for {_target_display_name(resolved_target)}", "green"),
+                ),
+                title="Install",
+                border_style="green",
+            )
+        )
+        console.print(f"Config updated: [green]{written_path}[/green]")
+        console.print(f"Project directory: [green]{resolved_project_dir}[/green]")
+        console.print(f"Target: [cyan]{resolved_target}[/cyan]")
         console.print(f"Approval preset: [cyan]{resolved_preset}[/cyan]")
-    if len(resolved_allowed_roots) > 1:
-        console.print(
-            "Allowed roots: "
-            + ", ".join(f"[green]{path}[/green]" for path in resolved_allowed_roots[1:])
-        )
-    if resolved_client_managed:
-        console.print(
-            "[yellow]Approval mode:[/yellow] Config expects the MCP client to manage approvals."
-        )
-    elif resolved_auto_approve:
-        console.print("[red]Approval mode:[/red] Auto-approve enabled for trusted local use.")
-    else:
-        console.print(
-            "[yellow]Approval mode:[/yellow] Fail-closed until approval handling is enabled."
-        )
-    if target == "claude-desktop":
-        console.print("Restart Claude Desktop completely, then start a new chat.")
-    elif target == "vscode":
-        console.print(
-            "Reload VS Code or restart the MCP extension host, then open a new MCP-enabled chat."
-        )
-    else:
-        console.print("Reload the target MCP client and verify the Claude Bridge tools appear.")
+        if resolved_provider != "local":
+            console.print(f"AI provider: [cyan]{resolved_provider}[/cyan]")
+
+        if resolved_target == "claude-desktop":
+            console.print("\nRestart Claude Desktop completely, then start a new chat.")
+        elif resolved_target == "vscode":
+            console.print("\nReload VS Code or restart the MCP extension host, then open a new chat.")
+        else:
+            console.print("\nReload the target MCP client and verify the Claude Bridge tools appear.")
+
+    finally:
+        signal.signal(signal.SIGINT, original)
 
 
 @app.command()
@@ -1793,6 +1909,222 @@ def benchmark(
             for failure in comparison["failures"]:
                 console.print(f"- {failure}")
             raise typer.Exit(code=1)
+
+
+@app.command("worktree")
+def worktree_cmd(
+    project_dir: Path = typer.Option(Path.cwd(), help="Project directory"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Show git worktree status for parallel development awareness."""
+    from claude_bridge._worktree import worktree_status
+
+    status = worktree_status(project_dir.resolve())
+    if json_output:
+        console.print_json(data=status)
+        return
+
+    console.print(Panel.fit("[bold cyan]Git Worktree Status[/bold cyan]", title="Worktree", border_style="cyan"))
+
+    if status["is_worktree"]:
+        console.print(f"[yellow]You are in a worktree[/yellow] — branch: [cyan]{status['current_branch']}[/cyan]")
+    else:
+        console.print("You are in the main repository")
+
+    if status["has_dirty_context"]:
+        console.print("[yellow]Warning:[/yellow] Other worktrees have uncommitted changes")
+
+    if status["worktrees"]:
+        console.print(f"\n[bold]Worktrees ({len(status['worktrees'])}):[/bold]")
+        for wt in status["worktrees"]:
+            path = wt.get("path", "unknown")
+            branch = wt.get("branch", "detached" if wt.get("detached") else "unknown")
+            console.print(f"  - {path} ([cyan]{branch}[/cyan])")
+
+
+@app.command("sessions")
+def sessions_cmd(
+    list_all: bool = typer.Option(False, "--list", "-l", help="List all saved sessions"),
+    show: str | None = typer.Option(None, "--show", help="Show session by ID"),
+    delete: str | None = typer.Option(None, "--delete", help="Delete session by ID"),
+    resume: str | None = typer.Option(None, "--resume", help="Resume session by ID"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Manage workflow sessions for long-running workflows."""
+    from claude_bridge._session_resume import (
+        delete_workflow_session,
+        list_workflow_sessions,
+        load_workflow_session,
+        session_summary,
+    )
+
+    if delete:
+        if delete_workflow_session(delete):
+            console.print(f"[green]Deleted session:[/green] {delete}")
+        else:
+            console.print(f"[red]Session not found:[/red] {delete}")
+        return
+
+    if show:
+        session = load_workflow_session(show)
+        if not session:
+            console.print(f"[red]Session not found:[/red] {show}")
+            raise typer.Exit(code=1)
+        if json_output:
+            console.print_json(data=session)
+        else:
+            console.print(Panel.fit(f"[bold cyan]Session:[/bold cyan] {show}", title="Session", border_style="cyan"))
+            console.print(f"State: [cyan]{session.get('state', 'unknown')}[/cyan]")
+            console.print(f"Task: {session.get('task', 'unknown')}")
+            console.print(f"Step: {session.get('current_step', 0)}/{len(session.get('steps', []))}")
+            console.print(f"Steps: {len(session.get('steps', []))}")
+        return
+
+    if resume:
+        session = load_workflow_session(resume)
+        if not session:
+            console.print(f"[red]Session not found:[/red] {resume}")
+            raise typer.Exit(code=1)
+        if json_output:
+            console.print_json(data=session)
+        else:
+            console.print(Panel.fit(f"[bold green]Resuming session:[/bold green] {resume}", title="Resume", border_style="green"))
+            console.print(f"Task: {session.get('task', 'unknown')}")
+            console.print(f"Current step: {session.get('current_step', 0)}/{len(session.get('steps', []))}")
+            console.print("[dim]Use this session data to restore workflow state[/dim]")
+        return
+
+    sessions = list_workflow_sessions()
+    if not sessions:
+        console.print("[yellow]No saved sessions[/yellow]")
+        return
+
+    if json_output:
+        console.print_json(data={"sessions": sessions})
+        return
+
+    console.print(Panel.fit(f"[bold cyan]Workflow Sessions ({len(sessions)})[/bold cyan]", title="Sessions", border_style="cyan"))
+    for sess in sessions:
+        console.print(f"  {session_summary(sess)}")
+
+
+@app.command("schedule")
+def schedule_cmd(
+    name: str = typer.Argument(..., help="Schedule name"),
+    cron_expr: str = typer.Option(..., "--cron", help="Cron expression (min hour day month weekday)"),
+    project_dir: Path = typer.Option(Path.cwd(), help="Project directory"),
+    query: str = typer.Option(..., "--query", help="Benchmark query"),
+    path: str = typer.Option(".", "--path", help="Subdirectory to benchmark"),
+    limit: int = typer.Option(5, "--limit", help="Number of results"),
+    repeats: int = typer.Option(3, "--repeats", help="Number of repeats"),
+    baseline_file: Path | None = typer.Option(None, "--baseline", help="Baseline file for regression"),
+    list_schedules: bool = typer.Option(False, "-l", "--list", help="List all schedules"),
+    delete_sched: str | None = typer.Option(None, "--delete", help="Delete a schedule"),
+    run_now: str | None = typer.Option(None, "--run", help="Run a schedule now"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Manage recurring benchmark schedules."""
+    from claude_bridge._benchmark_cron import (
+        delete_benchmark_schedule,
+        list_benchmark_schedules,
+        load_benchmark_schedule,
+        run_scheduled_benchmark,
+        save_benchmark_schedule,
+    )
+
+    if delete_sched:
+        if delete_benchmark_schedule(delete_sched):
+            console.print(f"[green]Deleted schedule:[/green] {delete_sched}")
+        else:
+            console.print(f"[red]Schedule not found:[/red] {delete_sched}")
+        return
+
+    if run_now:
+        sched = load_benchmark_schedule(run_now)
+        if not sched:
+            console.print(f"[red]Schedule not found:[/red] {run_now}")
+            raise typer.Exit(code=1)
+        result = run_scheduled_benchmark(sched)
+        if json_output:
+            console.print_json(data=result)
+        else:
+            if "error" in result:
+                console.print(f"[red]Error:[/red] {result['error']}")
+            else:
+                console.print(f"[green]Ran schedule:[/green] {run_now}")
+                console.print(f"Query timing: avg {result.get('query_avg_duration_ms', 'N/A')} ms")
+        return
+
+    if list_schedules:
+        schedules = list_benchmark_schedules()
+        if not schedules:
+            console.print("[yellow]No schedules defined[/yellow]")
+            return
+        if json_output:
+            console.print_json(data={"schedules": schedules})
+        else:
+            console.print(Panel.fit(f"[bold cyan]Schedules ({len(schedules)})[/bold cyan]", title="Schedules", border_style="cyan"))
+            for s in schedules:
+                cron = s.get("cron", {})
+                cron_str = f"{cron.get('minute','*')} {cron.get('hour','*')} {cron.get('day','*')} {cron.get('month','*')} {cron.get('weekday','*')}"
+                console.print(f"  [cyan]{s['name']}[/cyan] — {cron_str}")
+                console.print(f"    Query: {s.get('query', 'N/A')[:60]}")
+                console.print(f"    Last run: {s.get('last_run', 'never')}")
+        return
+
+    try:
+        schedule_file = save_benchmark_schedule(
+            name=name,
+            cron_expr=cron_expr,
+            project_dir=project_dir.resolve(),
+            query=query,
+            path=path,
+            limit=limit,
+            repeats=repeats,
+            baseline_file=baseline_file,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Invalid cron expression:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]Saved schedule:[/green] {name}")
+    console.print(f"  Cron: {cron_expr}")
+    console.print(f"  Query: {query}")
+    console.print(f"  File: {schedule_file}")
+
+
+@app.command("audit-ci")
+def audit_ci_cmd(
+    path: Path = typer.Option(Path.cwd(), help="Project directory to audit"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Run a one-shot CI audit (shell safety, guard policy, imports, syntax, security patterns)."""
+    from claude_bridge._ci_audit import print_audit_report, run_quick_audit
+
+    report = run_quick_audit(path.resolve())
+    if json_output:
+        console.print_json(data=report)
+        return
+    print_audit_report(report)
+    if not report["ok"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("envdoctor")
+def envdoctor_cmd(
+    project_dir: Path = typer.Option(Path.cwd(), help="Project directory"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Run parallel environment checks for .opencode/ and .claude-bridge/ directories."""
+    from claude_bridge._parallel_doctor import check_environment_consistency, print_parallel_doctor_report
+
+    report = check_environment_consistency(project_dir.resolve())
+    if json_output:
+        console.print_json(data=report)
+        return
+    print_parallel_doctor_report(report)
+    if not report["overall_ok"]:
+        raise typer.Exit(code=1)
 
 
 @audit_app.command("summary")

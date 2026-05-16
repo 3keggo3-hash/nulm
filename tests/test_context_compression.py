@@ -184,3 +184,45 @@ class TestCompressContextTool:
         assert payload["ok"] is True
         summary = payload["details"]["compact_summary"]
         assert "no records found" in summary
+
+
+class TestEdgeCases:
+    """Edge case tests for context compression."""
+
+    def test_compress_empty_session_no_crash(self):
+        """Empty session should not crash compress_session."""
+        reset_audit_session()
+        session_id = current_session_id()
+        result = compress_session(session_id)
+        assert "no records found" in result
+
+    def test_summarize_audit_records_large_session(self):
+        """Handles sessions with >10000 records without crashing."""
+        large_records = []
+        for i in range(10500):
+            large_records.append({
+                "tool_name": "read_file",
+                "params": {"path": f"src/file_{i % 100}.py"},
+                "result": {"ok": True},
+                "telemetry": {
+                    "input_chars": 100,
+                    "output_chars": 500,
+                    "estimated_total_tokens": 50,
+                },
+            })
+        result = summarize_audit_records(large_records)
+        assert "Records: 10500" in result
+        assert "Failures: 0" in result
+
+    def test_summarize_audit_records_malformed_records(self):
+        """Gracefully handles malformed/missing fields in records."""
+        malformed_records = [
+            {},  # empty record
+            {"tool_name": "test"},  # missing params/result/telemetry
+            {"params": {}, "result": {"ok": True}},  # missing tool_name
+            {"tool_name": 123, "params": "bad"},  # wrong types
+            {"tool_name": "run_shell", "params": {}, "result": {}, "telemetry": None},
+        ]
+        # Should not crash, should process valid fields
+        result = summarize_audit_records(malformed_records)
+        assert "Records:" in result

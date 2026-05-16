@@ -1,0 +1,7 @@
+{
+  "name": "Real-time Collaboration Mode",
+  "description": "Multiple users can observe and approve/reject operations in real-time",
+  "inspiration": "Complements approval system with multi-user support",
+  "difficulty": "hard",
+  "impact": "high"
+}

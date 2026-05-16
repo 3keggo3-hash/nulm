@@ -1,0 +1,7 @@
+{
+  "name": "Hierarchical Approval System",
+  "description": "Multi-level approval gates based on risk level - auto-approve low-risk, prompt medium, block high-risk operations",
+  "inspiration": "Claude Code approval flows + Permission Matrix pattern",
+  "difficulty": "medium",
+  "impact": "high"
+}
