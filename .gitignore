@@ -70,6 +70,9 @@ config.toml
 # Research
 .research/
 
+# Agent output
+output/
+
 # Internal planning (not for public distribution)
 archive/
 tasks/

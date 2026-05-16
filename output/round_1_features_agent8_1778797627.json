@@ -1,7 +1,0 @@
-{
-  "name": "Smart Code Suggestions",
-  "description": "AI-powered code suggestions that understand project context, coding style, and intent",
-  "inspiration": "Claude Code context awareness + Zed AI",
-  "difficulty": "hard",
-  "impact": "high"
-}

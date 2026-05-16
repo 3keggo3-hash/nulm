@@ -1,7 +1,0 @@
-{
-  "name": "Autonomous Skill Discovery",
-  "description": "System that monitors task patterns and suggests/auto-installs relevant skills from marketplace",
-  "inspiration": "Agent patterns + self-improvement concepts",
-  "difficulty": "hard",
-  "impact": "high"
-}
