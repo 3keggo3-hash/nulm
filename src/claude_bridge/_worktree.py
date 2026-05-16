@@ -106,3 +106,4 @@ def worktree_status(repo_root: Path | None = None) -> dict[str, Any]:
         "has_dirty_context": dirty,
         "repo_root": str(repo_root.resolve()),
     }
+

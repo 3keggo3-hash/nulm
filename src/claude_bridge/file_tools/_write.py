@@ -365,7 +365,7 @@ async def write_file(
     warning = None
     warnings: list[dict[str, Any]] = []
     if previous_exists:
-        warning = "Prefer patch_file for existing files when making targeted edits so the model can keep changes small and reviewable."
+        warning = "Prefer patch_file for existing files to keep changes small and reviewable."
         warnings.append(
             {
                 "code": "prefer_patch_file_for_overwrite",

@@ -205,16 +205,16 @@ def _risk_notes_for_project_type(project_type: str) -> list[str]:
             "Environment and test runner configuration may live in pyproject.toml or pytest.ini.",
         ],
         "django": [
-            "Entrypoint and settings interactions often matter as much as the target module itself.",
+            "Entrypoint and settings interactions often matter as much as the target module.",
         ],
         "node": [
-            "Scripts and tooling behavior may be driven by package.json rather than source files alone.",
+            "Scripts and tooling behavior may be driven by package.json over source files.",
         ],
         "vite": [
             "Frontend runtime and build behavior can depend on vite.config and tsconfig details.",
         ],
         "nextjs": [
-            "Routing, build output, and server/client boundaries may depend on next.config and app structure.",
+            "Routing, build output, boundaries may depend on next.config and structure.",
         ],
         "rust": [
             "Cargo.toml features and workspace layout can change build and test behavior.",

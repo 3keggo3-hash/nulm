@@ -166,8 +166,7 @@ def register_git_tools(
 
         ctx.register(
             "git_branch_create",
-            "Create a new git branch with optional base branch. "
-            "Branch names can contain alphanumeric characters, dots, underscores, hyphens, and slashes.",
+            "Create a new git branch with optional base branch.",
             git_branch_create,
             destructive=True,
         )

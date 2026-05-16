@@ -1051,7 +1051,7 @@ def register_meta_tools(
                     "recommended_starters": [
                         {
                             "intent": "public_ready_check",
-                            "prompt": "Use Claude Bridge to check whether this project is public-ready.",
+                            "prompt": "Use Claude Bridge to check project public-readiness.",
                             "use": 'run_workflow(mode="quality") plus review_result_quality.',
                         },
                         {
@@ -1069,8 +1069,8 @@ def register_meta_tools(
                         },
                         {
                             "intent": "review_finished_work",
-                            "prompt": "Review whether this completed change is actually good enough.",
-                            "use": "review_result_quality with changed files and validation evidence.",
+                            "prompt": "Review whether this completed change is good enough.",
+                            "use": "review_result_quality with changed files.",
                         },
                     ],
                     "groups": {

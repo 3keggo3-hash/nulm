@@ -29,7 +29,7 @@ PROMPT_SHORTCUTS = [
         "name": "compact",
         "category": "low-cost",
         "description": "Shrink the working context and continue with a tighter budget-aware plan.",
-        "token_strategy": "Use when the session is getting expensive and you want a smaller working set.",
+        "token_strategy": "Use when session is expensive and you want a smaller working set.",
         "chat_fallback": '/compact target="src/" goal="continue with lower token cost"',
     },
     {
@@ -42,8 +42,8 @@ PROMPT_SHORTCUTS = [
     {
         "name": "shadow",
         "category": "critical-review",
-        "description": "Re-review a target skeptically and challenge prior assumptions before accepting conclusions.",
-        "token_strategy": "Use as a prompt entrypoint when you want a fresh, critical pass with minimal chat overhead.",
+        "description": "Re-review a target skeptically and challenge prior assumptions.",
+        "token_strategy": "Use as prompt entrypoint for a fresh, critical pass.",
         "chat_fallback": '/shadow target="src/" focus="challenge prior assumptions"',
     },
     {
@@ -112,8 +112,8 @@ PROMPT_SHORTCUTS = [
     {
         "name": "benchmark",
         "category": "ops",
-        "description": "Ask for a benchmark-oriented investigation plan before running heavier checks.",
-        "token_strategy": "Use prompt entrypoint first, then run the benchmark tool only if needed.",
+        "description": "Ask for a benchmark-oriented investigation plan before running checks.",
+        "token_strategy": "Use prompt entrypoint first, then benchmark tool only if needed.",
         "chat_fallback": '/benchmark target="src/" focus="startup and relevance latency"',
     },
     {
@@ -127,7 +127,7 @@ PROMPT_SHORTCUTS = [
         "name": "refactor",
         "category": "workflow",
         "description": "Restructure code without changing external behavior.",
-        "token_strategy": "Keeps the refactoring scope disciplined and avoids mixing in feature changes.",
+        "token_strategy": "Keeps refactoring scope disciplined, avoids mixing in feature changes.",
         "chat_fallback": '/refactor target="src/" focus="improve structure and reduce duplication"',
     },
     {
@@ -148,15 +148,15 @@ PROMPT_SHORTCUTS = [
         "name": "security",
         "category": "workflow",
         "description": "Audit the target for security vulnerabilities and risky patterns.",
-        "token_strategy": "Pre-wires the security mindset so the model doesn't need to re-derive the checklist.",
-        "chat_fallback": '/security target="src/" focus="injection, path traversal, and secrets handling"',
+        "token_strategy": "Pre-wires security mindset so the model doesn't need to re-derive it.",
+        "chat_fallback": '/security target="src/" focus="injection, path traversal, secrets"',
     },
 ]
 
 CLIENT_SIDE_ONLY_SHORTCUTS = [
     {
         "name": "/model",
-        "reason": "Model switching belongs to the MCP client or host app, not the Claude Bridge server.",
+        "reason": "Model switching belongs to the MCP client or host app, not Claude Bridge.",
     },
     {
         "name": "/clear",
@@ -414,7 +414,7 @@ _PROMPT_CUSTOM_BUILDERS: dict[str, Any] = {
 
 _CUSTOM_PROMPT_DEFAULTS: dict[str, str] = {
     "compact": "continue the task with a smaller, cheaper working context",
-    "shadow": "challenge prior assumptions, verify from files, and be skeptical of earlier conclusions",
+    "shadow": "challenge prior assumptions, verify from files, be skeptical of earlier conclusions",
     "benchmark": "startup cost, relevance latency, token efficiency, and cache behavior",
     "platform": "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
 }

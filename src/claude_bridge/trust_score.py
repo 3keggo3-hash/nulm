@@ -60,7 +60,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
                 severity="high",
                 category="deny_rate",
                 message=f"High deny rate: {diagnostics.deny_rate:.1%} of requests denied",
-                recommendation="Review denied tool calls - consider adjusting guard policy rules or approval thresholds",
+                recommendation="Review denied calls - adjust guard policy or approval thresholds",
             )
         )
     elif diagnostics.deny_rate > 0.1:
@@ -69,7 +69,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
                 severity="medium",
                 category="deny_rate",
                 message=f"Moderate deny rate: {diagnostics.deny_rate:.1%} of requests denied",
-                recommendation="Some requests are being denied - check if tool usage patterns are clear to the agent",
+                recommendation="Some requests denied - check if tool patterns are clear to agent",
             )
         )
 
@@ -79,7 +79,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
                 severity="high",
                 category="consecutive_denies",
                 message=f"{diagnostics.max_consecutive_denies} consecutive denies detected",
-                recommendation="Investigate the denied pattern - agent may be stuck in a failing approach",
+                recommendation="Investigate denied pattern - agent may be stuck",
             )
         )
 
@@ -91,7 +91,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
                 category="tool_errors",
                 message=f"High error rate for tools: {', '.join(high_error_tools[:3])}",
                 affected_tools=high_error_tools,
-                recommendation="These tools frequently result in errors - verify tool parameters or check for permission issues",
+                recommendation="High error rate for these tools - verify params or check perms",
             )
         )
 
@@ -100,8 +100,11 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
             TrustInsight(
                 severity="medium",
                 category="performance",
-                message=f"Slow responses: {diagnostics.slow_response_rate:.1%} exceed {SLOW_RESPONSE_THRESHOLD_MS}ms",
-                recommendation="Consider enabling result caching or reducing batch sizes for slow operations",
+                message=(
+                    f"Slow: {diagnostics.slow_response_rate:.1%} "
+                    f"> {SLOW_RESPONSE_THRESHOLD_MS}ms"
+                ),
+                recommendation="Enable result caching or reduce batch sizes",
             )
         )
 
@@ -110,8 +113,8 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
             TrustInsight(
                 severity="medium",
                 category="anomaly",
-                message=f"Frequent anomalies: {diagnostics.anomaly_frequency:.1%} of requests flagged",
-                recommendation="Review anomaly patterns - may indicate unusual usage that needs policy adjustment",
+                message=f"Frequent anomalies: {diagnostics.anomaly_frequency:.1%} flagged",
+                recommendation="Review anomaly patterns - may indicate unusual usage",
             )
         )
 
@@ -126,7 +129,7 @@ def _generate_insights(diagnostics: TrustDiagnostics) -> list[TrustInsight]:
                         severity="high",
                         category="trend",
                         message="Deny rate trending upward significantly",
-                        recommendation="Recent activity shows increasing denials - investigate root cause",
+                        recommendation="Recent activity shows increasing denials - investigate",
                     )
                 )
 

@@ -159,7 +159,7 @@ def _check_complexity_python(path: Path, content: str, lines: list[str]) -> list
                 "line": start,
                 "severity": "warning",
                 "category": "complexity",
-                "description": f"{kind} '{node.name}' is {func_lines} lines (> {_COMPLEXITY_LINE_THRESHOLD})",
+                "description": f"{kind} '{node.name}' is {func_lines}L (limit {_COMPLEXITY_LINE_THRESHOLD})",
             }
         )
     return issues
@@ -201,7 +201,7 @@ def _check_complexity_generic(path: Path, lines: list[str]) -> list[dict[str, An
                     "line": start,
                     "severity": "warning",
                     "category": "complexity",
-                    "description": f"Function '{name}' is {func_lines} lines (> {_COMPLEXITY_LINE_THRESHOLD})",
+                    "description": f"Function '{name}' is {func_lines}L (limit {_COMPLEXITY_LINE_THRESHOLD})",
                 }
             )
         i = end + 1
@@ -357,7 +357,7 @@ def _check_naming_generic(path: Path, content: str, _lines: list[str]) -> list[d
                     "line": line_no,
                     "severity": "info",
                     "category": "naming",
-                    "description": f"Function '{match.group(1)}' starts with uppercase (use camelCase)",
+                    "description": f"Function '{match.group(1)}' starts with uppercase (camelCase)",
                 }
             )
     elif ext == ".rs":
@@ -369,7 +369,7 @@ def _check_naming_generic(path: Path, content: str, _lines: list[str]) -> list[d
                     "line": line_no,
                     "severity": "info",
                     "category": "naming",
-                    "description": f"Function '{match.group(1)}' starts with uppercase (use snake_case)",
+                    "description": f"Function '{match.group(1)}' starts with uppercase",
                 }
             )
 
@@ -409,14 +409,13 @@ def _check_duplication(
         if len(file_map) <= 1:
             continue
         preview = stripped if len(stripped) <= 60 else stripped[:57] + "..."
-        locations = sorted(f"{fname}:{sorted(lns)[0]}" for fname, lns in file_map.items())
         issues.append(
             {
                 "file": list(file_map.keys())[0],
                 "line": next(iter(file_map.values()))[0],
                 "severity": "info",
                 "category": "duplication",
-                "description": f"Line in {len(file_map)} files: '{preview}' ({', '.join(locations[:3])})",
+                "description": f"Duplicated in {len(file_map)} files: '{preview}'",
             }
         )
 
@@ -586,7 +585,7 @@ def _check_imports(path: Path, content: str, lines: list[str]) -> list[dict[str,
                         "line": i,
                         "severity": "info",
                         "category": "imports",
-                        "description": f"Duplicate import of '{module}' (also on line {seen_imports[module]})",
+                        "description": f"Duplicate import of '{module}'",
                     }
                 )
             else:

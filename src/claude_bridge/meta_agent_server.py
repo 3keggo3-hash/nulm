@@ -404,7 +404,8 @@ def register_meta_agent_tools(
             )
             if top_tool[1] and safe_limit > 0 and top_tool[1] / safe_limit > 0.6:
                 suggestions.append(
-                    f"Heavy reliance on {top_tool[0]} (>{top_tool[1]/safe_limit:.0%}) - consider if alternatives exist"
+                    f"Heavy reliance on {top_tool[0]} "
+                    f"(>{top_tool[1]/safe_limit:.0%}) - consider if alternatives exist"
                 )
             result = json_response(
                 True,

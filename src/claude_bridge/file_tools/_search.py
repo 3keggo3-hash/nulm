@@ -139,7 +139,7 @@ async def search_in_files(
                 **_budget_metadata(
                     estimated_tokens=estimated_tokens,
                     budget_tokens=budget_tokens,
-                    recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
+                    recommended_next_step="Use find_relevant_files or read_file on strongest match instead.",
                 ),
             },
         )
@@ -262,7 +262,7 @@ async def search_in_files(
                         )
                     ),
                     budget_tokens=budget_tokens,
-                    recommended_next_step="Use find_relevant_files or read_file on the strongest match instead of broad follow-up reads.",
+                    recommended_next_step="Use find_relevant_files or read_file on strongest match instead.",
                 ),
             },
         )

@@ -984,6 +984,6 @@ def build_anomaly_summary(
                 "high_risk_spike",
                 "suspicious_file_type",
             ],
-            "note": "Deterministic heuristics only. Scores are additive, capped at 100, and advisory by default.",
+            "note": "Heuristics only, scores are additive, capped at 100, advisory.",
         },
     }

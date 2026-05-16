@@ -444,13 +444,12 @@ async def request_approval(
     if card is not None:
         print(card.format_card(), file=sys.stderr)
     else:
-        print(
-            (
-                f"[{tool_name}] approval requested but no approval handler is configured for MCP stdio. "
-                "Enable client-managed approval in the MCP client, or run with auto-approve only in a trusted local environment."
-            ),
-            file=sys.stderr,
+        msg = (
+            f"[{tool_name}] approval requested but no approval handler configured "
+            "for MCP stdio. Enable client-managed approval in the MCP client, "
+            "or run with auto-approve in a trusted local environment."
         )
+        print(msg, file=sys.stderr)
         for key, value in params.items():
             safe_value = _mask_secrets(value)
             print(f"  {key}: {safe_value}", file=sys.stderr)

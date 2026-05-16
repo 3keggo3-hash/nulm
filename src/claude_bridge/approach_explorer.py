@@ -167,7 +167,7 @@ _KEYWORD_APPROACHES: dict[str, list[dict[str, Any]]] = {
         },
         {
             "name": "Parser Combinator",
-            "description": "Composable higher-order functions that build parsers from smaller parts.",
+            "description": "Composable higher-order functions that build parsers.",
             "pros": ["Highly composable", "Readable grammar", "Easy to extend"],
             "cons": ["Performance overhead", "Error messages tricky", "Learning curve"],
             "complexity": "medium",
@@ -351,7 +351,7 @@ _KEYWORD_APPROACHES: dict[str, list[dict[str, Any]]] = {
         },
         {
             "name": "Zero Trust Architecture",
-            "description": "Never trust, always verify — authenticate every request regardless of origin.",
+            "description": "Never trust — verify every request regardless of origin.",
             "pros": ["Strongest posture", "Lateral movement prevention", "Audit ready"],
             "cons": ["Significant overhead", "Every service must adapt", "Complex rollout"],
             "complexity": "high",

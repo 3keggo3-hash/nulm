@@ -328,7 +328,8 @@ def create_provider(
         key = (api_key or os.environ.get("ANTHROPIC_API_KEY", "")).strip()
         if not key:
             raise ValueError(
-                "Anthropic provider requires an API key (set ANTHROPIC_API_KEY or ai_evaluator_api_key)"
+                "Anthropic provider requires an API key "
+                "(set ANTHROPIC_API_KEY or ai_evaluator_api_key)"
             )
         return AnthropicProvider(
             api_key=key,
@@ -339,7 +340,8 @@ def create_provider(
         key = (api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
         if not key:
             raise ValueError(
-                "OpenAI provider requires an API key (set OPENAI_API_KEY or ai_evaluator_api_key)"
+                "OpenAI provider requires an API key "
+                "(set OPENAI_API_KEY or ai_evaluator_api_key)"
             )
         return OpenAIProvider(api_key=key, model=model or "gpt-4o-mini", timeout=timeout)
     if provider_name == "ollama":
@@ -352,7 +354,8 @@ def create_provider(
         key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
         if not key:
             raise ValueError(
-                "DeepSeek provider requires an API key (set DEEPSEEK_API_KEY or ai_evaluator_api_key)"
+                "DeepSeek provider requires an API key "
+                "(set DEEPSEEK_API_KEY or ai_evaluator_api_key)"
             )
         return DeepSeekProvider(api_key=key, model=model or "deepseek-chat", timeout=timeout)
     raise ValueError(f"Unknown provider: {provider_name!r}")

@@ -84,7 +84,7 @@ def _selected_file_budget(
         **budget_metadata(
             estimated_tokens=total_tokens,
             budget_tokens=budget_tokens,
-            recommended_next_step="Read only the highest-signal files first, or lower max_files to stay within budget.",
+            recommended_next_step="Read only highest-signal files, or lower max_files.",
         ),
     }
 
