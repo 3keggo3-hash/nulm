@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """User-configurable guard policy loading and decision model for Claude Bridge.
 
 Implements a fail-closed security layer: tool calls are denied by default unless

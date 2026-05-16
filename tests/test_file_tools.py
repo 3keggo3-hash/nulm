@@ -1,4 +1,7 @@
 """Direct unit tests for file_tools.py helper functions and edge cases."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

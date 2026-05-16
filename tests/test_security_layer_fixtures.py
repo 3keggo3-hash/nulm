@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Smoke tests for examples/security-layer/ fixture policies.
 
 Covers the four demo scenarios:

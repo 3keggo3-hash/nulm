@@ -1,4 +1,7 @@
 """Audit session management, file I/O, and directory scanning."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
 """Tests for security features: path traversal, shell restrictions, approval flow."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import json
 import os

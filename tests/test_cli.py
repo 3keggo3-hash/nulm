@@ -1,4 +1,7 @@
 """Tests for CLI setup and desktop integration helpers."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import json
 import os

@@ -1,4 +1,7 @@
 """Skill marketplace for import/export of skill packages."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

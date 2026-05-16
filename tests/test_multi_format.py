@@ -1,4 +1,7 @@
 """Tests for optional multi-format readers."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

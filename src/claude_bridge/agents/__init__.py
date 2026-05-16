@@ -1,4 +1,7 @@
 """Agent system for multi-agent orchestration."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge.agents.result import AgentResult
 from claude_bridge.agents.base import BaseAgent

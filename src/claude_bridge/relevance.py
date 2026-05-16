@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Shared relevance scoring helpers for indexed code search.
 
 Implements a two-phase token-scoring algorithm over the file index built by

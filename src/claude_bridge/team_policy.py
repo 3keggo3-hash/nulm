@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Team role and policy bundle models for Claude Bridge.
 
 This module implements role-based access control with inheritance:

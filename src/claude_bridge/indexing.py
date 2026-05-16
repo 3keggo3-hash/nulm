@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Indexing and file-search helpers for Claude Bridge.
 
 Provides symbolic source indexing for Python, JS/TS, Rust, Go, Java, Kotlin, C#,

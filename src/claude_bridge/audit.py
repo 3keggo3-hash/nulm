@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Structured audit logging for Claude Bridge tool calls.
 
 Backward-compatible re-export wrapper.  All symbols are now defined in the

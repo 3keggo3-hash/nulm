@@ -1,4 +1,7 @@
 """Parallel environment health checks for .opencode/ and .claude-bridge/."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

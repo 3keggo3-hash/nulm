@@ -1,4 +1,7 @@
 """File-oriented tool implementations for Claude Bridge."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge.file_tools._helpers import (
     _estimate_patch_risk,

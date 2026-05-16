@@ -1,4 +1,7 @@
 """Comprehensive tests for the condition matching engine (Package 2C)."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

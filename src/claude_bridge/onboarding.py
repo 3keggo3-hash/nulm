@@ -3,6 +3,9 @@
 Only shown once per session on the FIRST tool call to help users discover
 available capabilities. Never shown again after dismissal.
 """
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

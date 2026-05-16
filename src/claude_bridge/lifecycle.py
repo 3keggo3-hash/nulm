@@ -1,4 +1,7 @@
 """Lifecycle management for Claude Bridge: graceful shutdown and signal handling."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

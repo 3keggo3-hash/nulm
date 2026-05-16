@@ -1,4 +1,7 @@
 """Direct unit tests for tool_utils.py helper functions."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

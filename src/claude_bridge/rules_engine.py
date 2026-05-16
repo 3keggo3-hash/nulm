@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Condition matching engine and rule evaluation for Claude Bridge.
 
 This module implements Package 2C of the security layer: a condition-based

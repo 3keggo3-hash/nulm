@@ -1,4 +1,7 @@
 """Registration helpers for P6 meta-agent MCP tools."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

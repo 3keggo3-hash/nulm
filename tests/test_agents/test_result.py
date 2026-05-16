@@ -1,4 +1,7 @@
 """Tests for agent result dataclass."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge.agents.result import AgentResult, AgentStatus
 

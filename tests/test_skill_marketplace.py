@@ -1,4 +1,7 @@
 """Tests for skill marketplace package inspection and reviewed import."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

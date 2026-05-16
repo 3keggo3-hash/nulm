@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Snapshot/rollback guarantee for Claude Bridge.
 
 Every modification creates a checkpoint before changes. Snapshots can be:

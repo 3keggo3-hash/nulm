@@ -1,4 +1,7 @@
 """Integration tests for workflow engine and skill builder."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import pytest
 

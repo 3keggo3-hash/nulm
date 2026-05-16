@@ -1,4 +1,7 @@
 """Tests for research agent."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import pytest
 from unittest.mock import patch, MagicMock
