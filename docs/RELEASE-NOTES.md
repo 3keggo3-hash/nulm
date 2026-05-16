@@ -138,7 +138,7 @@ pip install -e ".[dev]"
 
 | Field | Value |
 |-------|-------|
-| Distribution name | claude-bridge-mcp |
+| Distribution name | nulm |
 | Version | 0.1.0 |
 | License | MIT |
 | Python | >=3.10 |

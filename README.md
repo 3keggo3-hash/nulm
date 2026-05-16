@@ -1,7 +1,7 @@
 # Claude Bridge
 
-[![PyPI version](https://img.shields.io/pypi/v/claude-bridge-mcp)](https://pypi.org/project/claude-bridge-mcp/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/claude-bridge-mcp)](https://pypi.org/project/claude-bridge-mcp/)
+[![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/nulm)](https://pypi.org/project/nulm/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/claude-bridge/test.yml?branch=main)](https://github.com/3keggo3-hash/claude-bridge/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
@@ -16,7 +16,7 @@
 - **Parallel Workflow Executor** — IMPLEMENTED (`_parallel_executor.py` + `workflow_engine.py` extension)
 
 <!-- GitHub Topics: mcp-server, claude-bridge, agent-quality, local-ai, developer-tools -->
-CI: GitHub Actions | PyPI package: `claude-bridge-mcp` | CLI: `claude-bridge` |
+CI: GitHub Actions | PyPI package: `nulm` | CLI: `claude-bridge` |
 Python: 3.10+ | License: MIT |
 Code style: Black
 
@@ -37,7 +37,7 @@ service or VPS is required for core operation.
 ## Quick Start
 
 ```bash
-pipx install claude-bridge-mcp
+pipx install nulm
 claude-bridge install
 ```
 
@@ -104,18 +104,18 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 ## Installation
 
 ```bash
-pipx install claude-bridge-mcp
+pipx install nulm
 claude-bridge install         # interactive setup
 claude-bridge install --simple # quick setup with defaults
 ```
 
-`claude-bridge` is the installed CLI command. The package name is `claude-bridge-mcp`.
+`nulm` is the installed CLI command. The package name is `nulm`.
 
 Optional extras are available when installing from an environment that supports extras:
 
 ```bash
-pip install "claude-bridge-mcp[treesitter]"    # optional Tree-sitter indexing
-pip install "claude-bridge-mcp[multi-format]"  # optional image/PDF reading
+pip install "nulm[treesitter]"    # optional Tree-sitter indexing
+pip install "nulm[multi-format]"  # optional image/PDF reading
 ```
 
 ### Add to an MCP client

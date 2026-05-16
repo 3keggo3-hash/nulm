@@ -38,7 +38,7 @@ def _get_key() -> bytes:
     if _Fernet is None:
         raise RuntimeError(
             "Memory encryption requires the optional 'cryptography' package. "
-            "Install claude-bridge-mcp with the memory extra before using memory."
+            "Install nulm with the memory extra before using memory."
         )
     env_key = os.environ.get(_ENV_KEY_VAR, "").strip()
     if env_key:
@@ -67,7 +67,7 @@ def _load_fernet() -> Any:
     if _Fernet is None:
         raise RuntimeError(
             "Memory encryption requires the optional 'cryptography' package. "
-            "Install claude-bridge-mcp with the memory extra before using memory."
+            "Install nulm with the memory extra before using memory."
         )
     return _Fernet(_get_key())
 
