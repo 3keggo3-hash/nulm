@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """MCP Protocol Stream Extensions: Server-initiated notification support.
 
 This module provides infrastructure for server-initiated events (notifications)

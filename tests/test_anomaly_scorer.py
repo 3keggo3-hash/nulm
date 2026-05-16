@@ -1,4 +1,7 @@
 """Tests for rule-based anomaly scorer."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge.anomaly import (
     AnomalyResult,

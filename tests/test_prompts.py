@@ -1,4 +1,7 @@
 """Tests for MCP prompt registration and rendering."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge import server as mcp_server
 

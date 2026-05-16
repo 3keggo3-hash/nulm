@@ -1,4 +1,7 @@
 """Tests for Package 3C (audit query/filtering) and 3D (replay engine)."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

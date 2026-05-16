@@ -1,4 +1,7 @@
 """Tests for anomaly_counts integration in audit session summary."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from claude_bridge import server as mcp_server
 from tests.helpers import parse_payload

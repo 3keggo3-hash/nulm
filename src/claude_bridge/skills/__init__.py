@@ -3,6 +3,9 @@
 Skill directory: .claude-bridge/skills/
 Format: skill_name.v1.json (metadata) + skill_name.py (code)
 """
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

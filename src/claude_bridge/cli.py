@@ -1,4 +1,7 @@
 """Command-line interface for Claude Bridge."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 
@@ -61,7 +64,6 @@ app.add_typer(control_plane_app, name="control-plane")
 app.add_typer(config_app, name="config")
 control_plane_app.add_typer(tasks_app, name="tasks")
 control_plane_app.add_typer(approvals_app, name="approvals")
-console = Console()
 register_control_plane_cli(
     app=app,
     tasks_app=tasks_app,

@@ -1,4 +1,7 @@
 """Log query and aggregation system for Claude Bridge audit logs."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

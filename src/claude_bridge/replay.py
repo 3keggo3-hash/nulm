@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Replay engine for Claude Bridge audit records (Package 3D).
 
 Re-evaluates past tool calls against the *current* rule set so that

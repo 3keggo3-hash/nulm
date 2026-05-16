@@ -1,4 +1,7 @@
 """Tests for skill_schema module."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import json
 from pathlib import Path

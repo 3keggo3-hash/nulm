@@ -2,6 +2,9 @@
 
 Provides tools for server-initiated notifications (Feature 1: MCP Protocol Stream Extensions).
 """
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

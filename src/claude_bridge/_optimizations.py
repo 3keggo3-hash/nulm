@@ -1,3 +1,7 @@
+
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 """Optimized versions of performance-critical Claude Bridge functions.
 
 This module provides drop-in replacements (with _optimized suffix) for hot paths

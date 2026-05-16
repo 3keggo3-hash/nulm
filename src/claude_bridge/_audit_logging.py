@@ -1,4 +1,7 @@
 """Audit tool call logging entry point."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 from __future__ import annotations
 

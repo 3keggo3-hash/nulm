@@ -1,4 +1,7 @@
 """Tests for context compression utilities."""
+# Copyright (c) 2026 Claude Bridge Contributors
+# SPDX-License-Identifier: MIT
+
 
 import json
 import os
