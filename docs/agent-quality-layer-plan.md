@@ -76,7 +76,7 @@ efficient, clear, and high-quality.
 Installation should stay simple:
 
 ```bash
-pipx install claude-bridge-mcp
+pipx install nulm
 claude-bridge install
 ```
 

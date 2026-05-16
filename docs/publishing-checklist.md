@@ -38,7 +38,7 @@ Quick pre-release verification before sharing publicly.
 ## Installation Experience
 
 - README covers installation in under 2 minutes.
-- `pipx install claude-bridge-mcp` is the primary public install path.
+- `pipx install nulm` is the primary public install path.
 - `claude-bridge init`, `claude-bridge doctor`, and `claude-bridge install ...` flow is visible in
   README.
 - The installed CLI is consistently documented as `claude-bridge`.

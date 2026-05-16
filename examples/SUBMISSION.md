@@ -82,6 +82,6 @@ optional provider-backed advisory calls that fail closed on errors.
 ## Links
 
 - [Documentation](https://github.com/3keggo3-hash/claude-bridge#readme)
-- [PyPI Package](https://pypi.org/project/claude-bridge-mcp/)
+- [PyPI Package](https://pypi.org/project/nulm/)
 - [Security Model](docs/security-model.md)
 - [Agent Quality Plan](docs/agent-quality-layer-plan.md)
