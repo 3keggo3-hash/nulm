@@ -1,0 +1,7 @@
+{
+  "name": "Session Risk Scoring",
+  "description": "Real-time risk score computation based on command patterns, tool usage frequency, and deviation from baseline",
+  "inspiration": "Anomaly detection patterns",
+  "difficulty": "hard",
+  "impact": "high"
+}

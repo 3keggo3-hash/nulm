@@ -1,0 +1,15 @@
+{
+  "name": "Context Compression Manager",
+  "description": "Smart context window management that summarizes and prunes conversation history intelligently",
+  "inspiration": "Memory approaches + context management",
+  "difficulty": "medium",
+  "impact": "high",
+  "refined": true,
+  "implementation_notes": "Refined implementation approach for Context Compression Manager: Smart context window management that summarizes an...",
+  "edge_cases": [
+    "Important vs routine",
+    "Context boundaries",
+    "Summarization triggers"
+  ],
+  "api_design": "class ContextManager: compress(), restore(), summarize()"
+}
