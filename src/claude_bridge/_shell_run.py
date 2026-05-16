@@ -1379,7 +1379,8 @@ async def send_to_process(
     if total_input > _MAX_INTERACTIVE_TOTAL_INPUT:
         return json_response(
             False,
-            f"Total input would exceed {_MAX_INTERACTIVE_TOTAL_INPUT} character limit for this session",
+            f"Total input would exceed {_MAX_INTERACTIVE_TOTAL_INPUT} "
+            f"character limit for this session",
             code="session_input_limit_exceeded",
             details={
                 "session_id": session_id,

@@ -106,7 +106,8 @@ async def retry_with_backoff(
             "or checking if the service is reachable."
         )
         raise RetryExhaustedError(
-            f"Retry exhausted after {config.max_retries} attempts. Last error: {last_exception}{hint}"
+            f"Retry exhausted after {config.max_retries} attempts. Last error: {last_exception}"
+                f"{hint}"
         ) from last_exception
     raise RetryExhaustedError(
         "Retry exhausted with no exception. "

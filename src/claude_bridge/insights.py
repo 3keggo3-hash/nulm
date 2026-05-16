@@ -1,4 +1,4 @@
-"""Project insight utilities: stats, TODO counter, recent files, git log, language detection, notes, diff."""
+"""Project insight utilities: stats, TODO counter, recent files, git log, language detection."""
 
 from __future__ import annotations
 

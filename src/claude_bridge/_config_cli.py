@@ -169,7 +169,7 @@ def config_describe(
     descriptions: dict[str, str] = {
         "shell_timeout": "Shell command timeout in seconds (positive integer, 1-120)",
         "ai_evaluator_timeout": "AI evaluator timeout in seconds (positive integer)",
-        "ai_evaluator_provider": f"AI provider: {', '.join(['local', 'openai', 'anthropic', 'ollama', 'deepseek'])}",
+        "ai_evaluator_provider": "AI provider: local, openai, anthropic, ollama, deepseek",
         "ai_evaluator_fallback_action": "Fallback action when evaluator fails: deny or ask",
         "context_budget_profile": f"Context budget: {', '.join(BUDGET_PROFILES)}",
         "tool_profile": f"Tool profile: {', '.join(TOOL_PROFILES)}",
@@ -183,7 +183,7 @@ def config_describe(
         "ai_evaluator_enabled": "Enable AI evaluator for tool calls",
         "ai_evaluator_model": "AI evaluator model name",
         "max_parallel": "Maximum parallel workflow/validation workers, integer 1-32.",
-        "auto_approve_risk_level": "Highest risk level auto-approved when auto_approve is enabled: none, low, medium, high.",
+        "auto_approve_risk_level": "Highest risk level auto-approved: none, low, medium, high.",
     }
     if key not in descriptions:
         console.print(f"[red]Unknown config key:[/red] {key}")

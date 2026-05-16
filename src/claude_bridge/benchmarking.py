@@ -233,7 +233,8 @@ def compare_benchmark_to_baseline(
     failures: list[str] = []
     if min_source_files is not None and current["index_summary"]["source_files"] < min_source_files:
         failures.append(
-            f"source_files {current['index_summary']['source_files']} < expected minimum {min_source_files}"
+            f"source_files {current['index_summary']['source_files']} "
+            f"< expected minimum {min_source_files}"
         )
     if max_index_duration_ms is not None and current["index_duration_ms"] > max_index_duration_ms:
         failures.append(

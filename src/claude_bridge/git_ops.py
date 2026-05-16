@@ -346,7 +346,7 @@ def git_branch_create(
     if not _BRANCE_NAME_RE.match(name):
         return {
             "ok": False,
-            "output": f"Invalid branch name '{name}'. Use alphanumeric, dots, underscores, hyphens, and slashes only.",
+            "output": f"Invalid branch name '{name}'. Use alphanumeric, dots, underscores, hyphens, slashes.",
         }
 
     repo_root = Path(root).resolve()

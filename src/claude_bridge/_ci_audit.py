@@ -31,7 +31,10 @@ def run_shell_safety_check(path: Path | None = None) -> dict[str, Any]:
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
 
-    blocked_patterns = re.findall(r'"(rm\s+-rf|password|sudo|chmod\s+777|curl\s*\|.*bash|wget.*\|.*bash)"', content)
+    blocked_patterns = re.findall(
+        r'"(rm\s+-rf|password|sudo|chmod\s+777|curl\s*\|.*bash|wget.*\|.*bash)"',
+        content,
+    )
     return {
         "ok": True,
         "blocked_patterns_count": len(blocked_patterns),
@@ -129,7 +132,13 @@ def print_audit_report(report: dict[str, Any]) -> None:
     console = Console()
     status = "[green]PASS[/green]" if report["ok"] else "[red]FAIL[/red]"
 
-    console.print(Panel.fit(f"One-Shot Audit Result: {status}", title="Audit", border_style="green" if report["ok"] else "red"))
+    console.print(
+        Panel.fit(
+            f"One-Shot Audit Result: {status}",
+            title="Audit",
+            border_style="green" if report["ok"] else "red",
+        )
+    )
 
     table = Table(title="Check Results")
     table.add_column("Check", style="cyan")

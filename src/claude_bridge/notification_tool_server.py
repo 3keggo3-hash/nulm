@@ -34,7 +34,7 @@ def register_notification_tools(
     )
 
     if ctx.should_register("stream_subscribe"):
-        from claude_bridge._stream_events import EventBroadcaster, get_broadcaster
+        from claude_bridge._stream_events import get_broadcaster
 
         async def stream_subscribe(event_type: str, include_history: bool = True) -> str:
             """Subscribe to server-initiated events of a specific type.
@@ -49,7 +49,11 @@ def register_notification_tools(
             """
             started_at = time.perf_counter()
             broadcaster = get_broadcaster()
-            history = broadcaster.get_history(event_type=event_type, limit=5) if include_history else []
+            history = (
+                broadcaster.get_history(event_type=event_type, limit=5)
+                if include_history
+                else []
+            )
             history_data = [e.to_dict() for e in history]
             result = json_response(
                 True,
@@ -62,7 +66,9 @@ def register_notification_tools(
                     "note": "Server-initiated events will be available via get_recent_events",
                 },
             )
-            return audit_tool_call("stream_subscribe", {"event_type": event_type}, result, started_at=started_at)
+            return audit_tool_call(
+                "stream_subscribe", {"event_type": event_type}, result, started_at=started_at
+            )
 
         ctx.register(
             "stream_subscribe",

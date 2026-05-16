@@ -1523,8 +1523,8 @@ def setup(
         )
     if not resolved_auto_approve and not resolved_client_managed:
         console.print(
-            "[yellow bold]NOTE:[/yellow bold] Approval-requiring tools will fail closed until you either enable "
-            "client-managed approval or explicitly turn on auto-approve in a trusted local environment."
+            "[yellow bold]NOTE:[/yellow bold] Approval-requiring tools will fail "
+            "closed until you enable client-managed approval or auto-approve."
         )
 
     heading = "Claude Desktop Setup" if target == "claude-desktop" else "MCP Setup"
@@ -1650,7 +1650,7 @@ def install(
                 console.print("\n[b]Target MCP client:[/b]")
                 for k, v in target_options.items():
                     console.print(f"  {k}. [cyan]{v}[/cyan]")
-                target_choice = Prompt.ask("Choose", default="1", choices=list(target_options.keys()))
+                target_choice = Prompt.ask("Choose", default="1", choices=list(target_options))
                 resolved_target = target_options[target_choice]
             else:
                 resolved_target = target
@@ -1666,7 +1666,7 @@ def install(
                 console.print("\n[b]Approval mode:[/b]")
                 for k, v in preset_options.items():
                     console.print(f"  {k}. [cyan]{v}[/]")
-                preset_choice = Prompt.ask("Choose", default="2", choices=list(preset_options.keys()))
+                preset_choice = Prompt.ask("Choose", default="2", choices=list(preset_options))
                 resolved_preset = preset_options[preset_choice]
             else:
                 resolved_preset = approval_preset or "dev-safe"
@@ -1687,7 +1687,7 @@ def install(
                 console.print("\n[b]AI provider:[/b]")
                 for k, name in provider_names.items():
                     console.print(f"  {k}. [cyan]{name}[/cyan]")
-                provider_choice = Prompt.ask("Choose", default="1", choices=list(provider_options.keys()))
+                provider_choice = Prompt.ask("Choose", default="1", choices=list(provider_options))
                 resolved_provider = provider_options[provider_choice]
             else:
                 resolved_provider = "local"
@@ -1695,7 +1695,9 @@ def install(
             resolved_api_key = ""
             if resolved_provider != "local" and resolved_provider != "ollama":
                 if is_detailed:
-                    provider_label = provider_names.get(list(provider_options.keys())[list(provider_options.values()).index(resolved_provider)] or "")
+                    keys = list(provider_options.keys())
+                    vals = list(provider_options.values())
+                    provider_label = provider_names.get(keys[vals.index(resolved_provider)] or "")
                     console.print(f"\n[dim]Enter your {provider_label} API key:[/dim]")
                     resolved_api_key = Prompt.ask("API key", password=True)
 
@@ -1731,7 +1733,8 @@ def install(
 
         if resolved_target not in supported_targets:
             raise typer.BadParameter(
-                f"Unsupported target: {resolved_target}. Choose one of: {', '.join(supported_targets)}"
+                f"Unsupported target: {resolved_target}. "
+                f"Choose one of: {', '.join(supported_targets)}"
             )
 
         resolved_config_path = (
@@ -1783,11 +1786,15 @@ def install(
             console.print(f"AI provider: [cyan]{resolved_provider}[/cyan]")
 
         if resolved_target == "claude-desktop":
-            console.print("\nRestart Claude Desktop completely, then start a new chat.")
+            console.print(
+            "\nRestart Claude Desktop completely, then start a new chat."
+        )
         elif resolved_target == "vscode":
-            console.print("\nReload VS Code or restart the MCP extension host, then open a new chat.")
+            console.print(
+            "\nReload VS Code or restart the MCP extension host, then open a new chat."
+        )
         else:
-            console.print("\nReload the target MCP client and verify the Claude Bridge tools appear.")
+            console.print("\nReload the target MCP client and verify tools appear.")
 
     finally:
         signal.signal(signal.SIGINT, original)
@@ -1924,10 +1931,19 @@ def worktree_cmd(
         console.print_json(data=status)
         return
 
-    console.print(Panel.fit("[bold cyan]Git Worktree Status[/bold cyan]", title="Worktree", border_style="cyan"))
+    console.print(
+        Panel.fit(
+            "[bold cyan]Git Worktree Status[/bold cyan]",
+            title="Worktree",
+            border_style="cyan",
+        )
+    )
 
     if status["is_worktree"]:
-        console.print(f"[yellow]You are in a worktree[/yellow] — branch: [cyan]{status['current_branch']}[/cyan]")
+        console.print(
+        f"[yellow]You are in a worktree[/yellow] "
+        f"— branch: [cyan]{status['current_branch']}[/cyan]"
+    )
     else:
         console.print("You are in the main repository")
 
@@ -1973,7 +1989,13 @@ def sessions_cmd(
         if json_output:
             console.print_json(data=session)
         else:
-            console.print(Panel.fit(f"[bold cyan]Session:[/bold cyan] {show}", title="Session", border_style="cyan"))
+            console.print(
+        Panel.fit(
+            f"[bold cyan]Session:[/bold cyan] {show}",
+            title="Session",
+            border_style="cyan",
+        )
+    )
             console.print(f"State: [cyan]{session.get('state', 'unknown')}[/cyan]")
             console.print(f"Task: {session.get('task', 'unknown')}")
             console.print(f"Step: {session.get('current_step', 0)}/{len(session.get('steps', []))}")
@@ -1988,10 +2010,18 @@ def sessions_cmd(
         if json_output:
             console.print_json(data=session)
         else:
-            console.print(Panel.fit(f"[bold green]Resuming session:[/bold green] {resume}", title="Resume", border_style="green"))
-            console.print(f"Task: {session.get('task', 'unknown')}")
-            console.print(f"Current step: {session.get('current_step', 0)}/{len(session.get('steps', []))}")
-            console.print("[dim]Use this session data to restore workflow state[/dim]")
+            console.print(
+            Panel.fit(
+                f"[bold green]Resuming session:[/bold green] {resume}",
+                title="Resume",
+                border_style="green",
+            )
+        )
+        console.print(f"Task: {session.get('task', 'unknown')}")
+        console.print(
+            f"Current step: {session.get('current_step', 0)}/{len(session.get('steps', []))}"
+        )
+        console.print("[dim]Use this session data to restore workflow state[/dim]")
         return
 
     sessions = list_workflow_sessions()
@@ -2003,7 +2033,13 @@ def sessions_cmd(
         console.print_json(data={"sessions": sessions})
         return
 
-    console.print(Panel.fit(f"[bold cyan]Workflow Sessions ({len(sessions)})[/bold cyan]", title="Sessions", border_style="cyan"))
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Workflow Sessions ({len(sessions)})[/bold cyan]",
+            title="Sessions",
+            border_style="cyan",
+        )
+    )
     for sess in sessions:
         console.print(f"  {session_summary(sess)}")
 
@@ -2011,13 +2047,17 @@ def sessions_cmd(
 @app.command("schedule")
 def schedule_cmd(
     name: str = typer.Argument(..., help="Schedule name"),
-    cron_expr: str = typer.Option(..., "--cron", help="Cron expression (min hour day month weekday)"),
+    cron_expr: str = typer.Option(
+        ..., "--cron", help="Cron expression (min hour day month weekday)"
+    ),
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory"),
     query: str = typer.Option(..., "--query", help="Benchmark query"),
     path: str = typer.Option(".", "--path", help="Subdirectory to benchmark"),
     limit: int = typer.Option(5, "--limit", help="Number of results"),
     repeats: int = typer.Option(3, "--repeats", help="Number of repeats"),
-    baseline_file: Path | None = typer.Option(None, "--baseline", help="Baseline file for regression"),
+    baseline_file: Path | None = typer.Option(
+        None, "--baseline", help="Baseline file for regression"
+    ),
     list_schedules: bool = typer.Option(False, "-l", "--list", help="List all schedules"),
     delete_sched: str | None = typer.Option(None, "--delete", help="Delete a schedule"),
     run_now: str | None = typer.Option(None, "--run", help="Run a schedule now"),
@@ -2063,10 +2103,20 @@ def schedule_cmd(
         if json_output:
             console.print_json(data={"schedules": schedules})
         else:
-            console.print(Panel.fit(f"[bold cyan]Schedules ({len(schedules)})[/bold cyan]", title="Schedules", border_style="cyan"))
+            console.print(
+                Panel.fit(
+                    f"[bold cyan]Schedules ({len(schedules)})[/bold cyan]",
+                    title="Schedules",
+                    border_style="cyan",
+                )
+            )
             for s in schedules:
                 cron = s.get("cron", {})
-                cron_str = f"{cron.get('minute','*')} {cron.get('hour','*')} {cron.get('day','*')} {cron.get('month','*')} {cron.get('weekday','*')}"
+                cron_str = (
+                    f"{cron.get('minute','*')} {cron.get('hour','*')} "
+                    f"{cron.get('day','*')} {cron.get('month','*')} "
+                    f"{cron.get('weekday','*')}"
+                )
                 console.print(f"  [cyan]{s['name']}[/cyan] — {cron_str}")
                 console.print(f"    Query: {s.get('query', 'N/A')[:60]}")
                 console.print(f"    Last run: {s.get('last_run', 'never')}")
@@ -2116,7 +2166,10 @@ def envdoctor_cmd(
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output"),
 ) -> None:
     """Run parallel environment checks for .opencode/ and .claude-bridge/ directories."""
-    from claude_bridge._parallel_doctor import check_environment_consistency, print_parallel_doctor_report
+    from claude_bridge._parallel_doctor import (
+        check_environment_consistency,
+        print_parallel_doctor_report,
+    )
 
     report = check_environment_consistency(project_dir.resolve())
     if json_output:
@@ -2393,7 +2446,8 @@ def audit_export(
         try:
             output.write_text(output_content, encoding="utf-8")
             console.print(
-                f"[green]Exported {len(records) if records else 'summary'} records to {output}[/green]"
+                f"[green]Exported {len(records) if records else 'summary'} "
+                f"records to {output}[/green]"
             )
         except OSError as exc:
             console.print(f"[red]Failed to write output file:[/red] {exc}")

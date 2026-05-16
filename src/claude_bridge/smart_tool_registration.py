@@ -60,9 +60,10 @@ def register_smart_tools(
                 )
             else:
                 status = "fits" if check["fit"] else "does NOT fit"
+                pct = check["usage_percent"]
                 result = json_response(
                     True,
-                    f"Text {status}: {check['tokens']}/{context_limit} tokens ({check['usage_percent']}%)",
+                    f"Text {status}: {check['tokens']}/{context_limit} tokens ({pct}%)",
                     details=check,
                 )
             return audit_tool_call(
@@ -147,7 +148,8 @@ def register_smart_tools(
             else:
                 result = json_response(
                     True,
-                    f"Context savings: {savings['savings_percent']}% ({savings['total_savings_tokens']} tokens saved)",
+                    f"Context savings: {savings['savings_percent']}% "
+                    f"({savings['total_savings_tokens']} tokens saved)",
                     details=savings,
                 )
             return audit_tool_call(

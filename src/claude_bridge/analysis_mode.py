@@ -194,7 +194,7 @@ class ProjectScanner:
                             "file": str(f),
                             "issue": "sql_injection",
                             "severity": "critical",
-                            "description": "SQL query with string formatting - potential SQL injection",
+                            "description": "SQL query with string formatting — SQL injection risk",
                         }
                     )
             except OSError:

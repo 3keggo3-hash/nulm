@@ -103,7 +103,7 @@ async def read_file(
         estimated_tokens=_estimate_token_count(preview["content"]),
         budget_tokens=budget_tokens,
         recommended_next_step=(
-            "Use read_file with a narrower offset/limit or switch to find_relevant_files before reading more."
+            "Use narrower offset/limit or find_relevant_files before reading more."
         ),
     )
     return json_response(
@@ -207,7 +207,7 @@ async def read_multiple_files(
             **_budget_metadata(
                 estimated_tokens=estimated_total_tokens,
                 budget_tokens=budget_tokens,
-                recommended_next_step="Prefer narrow_context or build_context_pack before reading more files.",
+                recommended_next_step="Prefer narrow_context or build_context_pack before reading.",
             ),
         },
     )

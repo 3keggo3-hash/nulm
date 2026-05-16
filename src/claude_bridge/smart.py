@@ -388,7 +388,8 @@ def compact_intent(
             "recommendation_reason": intelligence_metrics.recommendation_reason,
         },
         "recommended_usage": (
-            "Use the canonical intent object for internal routing and keep the original text only when nuance is needed."
+            "Use the canonical intent object for internal routing "
+            "and keep original text only when nuance is needed."
         ),
     }
 

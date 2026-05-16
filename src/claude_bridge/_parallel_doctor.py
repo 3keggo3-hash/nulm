@@ -140,11 +140,15 @@ def print_parallel_doctor_report(report: dict[str, Any]) -> None:
     console = Console()
     status = "[green]OK[/green]" if report["overall_ok"] else "[yellow]ISSUES[/yellow]"
 
+    style = "green" if report["overall_ok"] else "yellow"
     console.print(
-        Panel.fit(f"Environment Health: {status}", title="Doctor", border_style="green" if report["overall_ok"] else "yellow")
+        Panel.fit(f"Environment Health: {status}", title="Doctor", border_style=style)
     )
 
-    for label, section in [(".opencode/", report["opencode"]), (".claude-bridge/", report["claude_bridge"])]:
+    for label, section in [
+        (".opencode/", report["opencode"]),
+        (".claude-bridge/", report["claude_bridge"]),
+    ]:
         section_status = "[green]OK[/green]" if section.get("ok") else "[red]FAIL[/red]"
         console.print(f"\n[bold]{label}[/bold] {section_status}")
 

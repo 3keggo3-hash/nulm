@@ -29,8 +29,9 @@ def validate_compression_ratio(compressed_size: int, decompressed_size: int) -> 
         ratio = decompressed_size / compressed_size
         if ratio > _MAX_COMPRESSION_RATIO:
             raise ValueError(
-                f"Compression ratio {ratio:.1f}x (size {decompressed_size:,} bytes from "
-                f"{compressed_size:,} bytes) exceeds maximum allowed ratio {_MAX_COMPRESSION_RATIO}x"
+                f"Compression ratio {ratio:.1f}x "
+                f"(size {decompressed_size:,} bytes from {compressed_size:,} bytes) "
+                f"exceeds maximum allowed ratio {_MAX_COMPRESSION_RATIO}x"
             )
 
 

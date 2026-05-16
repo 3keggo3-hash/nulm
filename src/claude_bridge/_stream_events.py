@@ -125,7 +125,12 @@ class EventBroadcaster:
                     sinks.remove(sink)
         sink.close()
 
-    def publish(self, event_type: str, data: dict[str, Any], correlation_id: str | None = None) -> None:
+    def publish(
+        self,
+        event_type: str,
+        data: dict[str, Any],
+        correlation_id: str | None = None,
+    ) -> None:
         """Publish an event to all matching subscribers.
 
         Args:

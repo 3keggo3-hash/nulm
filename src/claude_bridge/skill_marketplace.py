@@ -263,7 +263,8 @@ def import_skill_reviewed(
     trust_level = inspection.get("trust_level", "unverified")
     if trust_level == "unverified" and not skip_unverified_approval:
         return False, [
-            "Unverified skill requires explicit approval; import with --skip-unverified-approval or inspect and approve first"
+            "Unverified skill requires explicit approval; "
+            "use --skip-unverified-approval or inspect and approve first"
         ]
     return import_skill(package_path)
 

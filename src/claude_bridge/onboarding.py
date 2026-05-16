@@ -100,7 +100,8 @@ def apply_onboarding(tool_name: str, result: str, *, enabled: bool) -> str:
 
     hint = {
         "title": "Getting Started",
-        "message": " claude-bridge doctor --project-dir .  to check your setup, or  claude-bridge anomaly --help  to review audit logs.",
+        "message": "Run  claude-bridge doctor --project-dir .  to check setup, "
+        "or  claude-bridge anomaly --help  to review logs.",
         "dismiss": "This hint will not repeat.",
     }
     details["onboarding"] = hint

@@ -158,7 +158,8 @@ def register_insights_tools(
             else:
                 result = json_response(
                     True,
-                    f"Diff: {diff['total_files']} files changed (+{diff['total_insertions']}/-{diff['total_deletions']})",
+                    f"Diff: {diff['total_files']} files changed "
+                    f"(+{diff['total_insertions']}/-{diff['total_deletions']})",
                     details=diff,
                 )
             return audit_tool_call(

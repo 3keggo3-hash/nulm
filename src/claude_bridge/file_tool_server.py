@@ -82,7 +82,7 @@ def register_file_tools(
 
         ctx.register(
             "read_file",
-            "Read a file inside the configured workspace. Prefer targeted reads over broad exploration.",
+            "Read a file inside the configured workspace. Prefer targeted reads over broad ones.",
             read_file,
             read_only=True,
         )
@@ -130,7 +130,7 @@ def register_file_tools(
 
         ctx.register(
             "list_directory",
-            "List a directory inside the configured workspace. Use this first to understand structure.",
+            "List a directory inside the configured workspace. Use first to understand structure.",
             list_directory,
             read_only=True,
         )

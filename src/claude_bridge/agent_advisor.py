@@ -1250,13 +1250,13 @@ def advise_next_step_optimized(request: AgentAdviceRequest) -> AgentAdviceRespon
             why_this_step="A missing goal would make context selection and validation arbitrary.",
             should_ask_user=True,
             question="What outcome should Claude Bridge help you achieve?",
-            next_prompt="State the product or code outcome you want, plus any important constraints.",
+            next_prompt="State the outcome you want, plus constraints.",
         )
 
     advice = AgentAdviceResponse(
         intent_summary=_intent_summary(compact_goal, compact_target),
         recommended_next_step="Create a scoped first slice before editing files.",
-        why_this_step="A small first slice keeps the work reviewable and avoids broad context reads.",
+        why_this_step="A small first slice stays reviewable and avoids broad context reads.",
         needed_context=_base_context(compact_target),
         risks=[
             "The request may be broader than one safe implementation slice.",
@@ -1297,7 +1297,7 @@ def improve_request_optimized(
             clarified_goal="No clear user goal was provided.",
             should_ask_user=True,
             question="What outcome should Claude Bridge help you achieve?",
-            improved_prompt="State the desired outcome, the target project area, and any constraints.",
+            improved_prompt="State desired outcome, target area, and constraints.",
         )
 
     response = ImprovedRequestResponse(
