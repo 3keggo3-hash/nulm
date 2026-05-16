@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
 from typing import Any
 
 from claude_bridge._audit_core import _load_records, current_session_id
@@ -32,6 +34,35 @@ def validate_compression_ratio(compressed_size: int, decompressed_size: int) -> 
             )
 
 
+class _LRUCache:
+    """Simple in-memory LRU cache with TTL."""
+
+    def __init__(self, max_size: int = 50, ttl_seconds: float = 60.0) -> None:
+        self._cache: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+
+    def get(self, key: str) -> Any | None:
+        if key not in self._cache:
+            return None
+        value, timestamp = self._cache[key]
+        if time.monotonic() - timestamp > self._ttl:
+            del self._cache[key]
+            return None
+        self._cache.move_to_end(key)
+        return value
+
+    def set(self, key: str, value: Any) -> None:
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (value, time.monotonic())
+        if len(self._cache) > self._max_size:
+            self._cache.popitem(last=False)
+
+
+_compress_cache = _LRUCache(max_size=50, ttl_seconds=60.0)
+
+
 def compress_session(session_id: str) -> str:
     """Return a compact text summary of a session for context window reduction.
 
@@ -44,9 +75,16 @@ def compress_session(session_id: str) -> str:
     """
     if not session_id:
         session_id = current_session_id()
+
+    cached = _compress_cache.get(session_id)
+    if cached is not None:
+        return cached
+
     records = _load_records(session_id)
     if not records:
-        return f"Session {session_id}: no records found."
+        result = f"Session {session_id}: no records found."
+        _compress_cache.set(session_id, result)
+        return result
 
     tool_counts: dict[str, int] = {}
     file_ops: list[str] = []
@@ -94,8 +132,8 @@ def compress_session(session_id: str) -> str:
         lines.append(f"Anomalies: {anomaly_count}")
 
     summary = " | ".join(lines)
-    # Validate output size to prevent decompression bomb attacks
     validate_compression_ratio(len(records), len(summary))
+    _compress_cache.set(session_id, summary)
     return summary
 
 

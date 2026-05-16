@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Agent-43 audit layer**: refactored audit tooling with shell safety, context compression, and tunnel manager improvements
+- **Agent-41 relevance**: position-based and IDF weighting for ranking algorithms
+- **Agent-37 detective**: improved error classification with weighted patterns and reduced false positives
+
+### Fixed
+
+- Resolved test failures from agent changes
+
+### Changed
+
+- Applied agent recommendations: fixed bugs and removed dead code
+
 ## [0.1.0] - 2026-05-10
 
 Public alpha candidate. The project is now positioned as a local-first agent quality and execution

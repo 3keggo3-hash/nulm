@@ -283,6 +283,8 @@ def is_within_root(target: Path, root: Path) -> bool:
 def resolve_path(user_path: str) -> Path:
     candidate = Path(user_path)
     if candidate.is_absolute():
+        if candidate.is_symlink():
+            raise PermissionError("Access denied: symlink is not allowed")
         target = candidate.resolve()
         allowed = any(is_within_root(target, root) for root in allowed_roots())
         if not allowed:
@@ -291,6 +293,13 @@ def resolve_path(user_path: str) -> Path:
 
     base = project_dir()
     combined = base / candidate
+    is_link = False
+    try:
+        is_link = combined.is_symlink()
+    except OSError:
+        pass
+    if is_link:
+        raise PermissionError("Access denied: symlink is not allowed")
     target = combined.resolve()
     if not any(is_within_root(target, root) for root in allowed_roots()):
         raise PermissionError("Access denied: path outside allowed roots")
