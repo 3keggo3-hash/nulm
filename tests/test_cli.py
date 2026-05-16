@@ -256,6 +256,7 @@ class TestCLI:
                 str(extra_root),
                 "--config-path",
                 str(config_path),
+                "--simple",
             ],
         )
 
@@ -285,6 +286,7 @@ class TestCLI:
                 "generic-stdio",
                 "--config-path",
                 str(config_path),
+                "--simple",
             ],
         )
 
@@ -300,7 +302,7 @@ class TestCLI:
 
         result = runner.invoke(
             cli.app,
-            ["install", "--project-dir", str(project_dir), "--target", "vscode"],
+            ["install", "--project-dir", str(project_dir), "--target", "vscode", "--simple"],
         )
 
         assert result.exit_code == 0
@@ -324,6 +326,7 @@ class TestCLI:
                 "dev-safe",
                 "--config-path",
                 str(config_path),
+                "--simple",
             ],
         )
 
@@ -354,7 +357,7 @@ class TestCLI:
 
         result = runner.invoke(
             cli.app,
-            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path)],
+            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path), "--simple"],
         )
 
         assert result.exit_code == 0
@@ -370,7 +373,7 @@ class TestCLI:
 
         result = runner.invoke(
             cli.app,
-            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path)],
+            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path), "--simple"],
         )
 
         assert result.exit_code == 1

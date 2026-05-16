@@ -1626,7 +1626,10 @@ def install(
             resolved_preset = approval_preset or "dev-safe"
             resolved_provider = "local"
             resolved_api_key = ""
-            resolved_roots = [resolved_project_dir]
+            resolved_roots = (
+                [resolved_project_dir]
+                + [r.resolve() for r in (allow_root or [])]
+            )
             resolved_tool_profile = "standard"
         else:
             console.print("\n[b]Setup type:[/b]")
