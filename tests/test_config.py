@@ -325,6 +325,11 @@ def test_tool_profile_union_covers_public_server_exports():
         "interactive_shell",
         "get_process_status",
         "update_runtime_config",
+        "emit_progress_event",
+        "get_recent_events",
+        "get_stream_capabilities",
+        "stream_subscribe",
+        "register_notification_tools",
     }
 
     assert sorted(public_tool_exports - profile_tools - ignored_exports) == []
