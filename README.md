@@ -1,5 +1,12 @@
 # Claude Bridge
 
+[![PyPI version](https://img.shields.io/pypi/v/claude-bridge-mcp)](https://pypi.org/project/claude-bridge-mcp/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/claude-bridge-mcp)](https://pypi.org/project/claude-bridge-mcp/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/claude-bridge/test.yml?branch=main)](https://github.com/3keggo3-hash/claude-bridge/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
+
 ## What's New
 
 - **Context Compression Manager** — IMPLEMENTED (decompression bomb protection added to `_context_compression.py`)
