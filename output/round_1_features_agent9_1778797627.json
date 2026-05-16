@@ -1,7 +1,0 @@
-{
-  "name": "Plugin Architecture v2",
-  "description": "Redesigned plugin system with standardized hooks, event system, and dependency management",
-  "inspiration": "Goose extensibility + Cline MCP",
-  "difficulty": "medium",
-  "impact": "high"
-}

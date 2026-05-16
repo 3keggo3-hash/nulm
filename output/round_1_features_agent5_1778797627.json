@@ -1,7 +1,0 @@
-{
-  "name": "Parallel Workflow Executor",
-  "description": "Execute multiple independent workflow steps concurrently with result aggregation",
-  "inspiration": "Agent orchestration models + parallelism",
-  "difficulty": "medium",
-  "impact": "medium"
-}

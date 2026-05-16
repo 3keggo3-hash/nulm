@@ -1,7 +1,0 @@
-{
-  "name": "Audit Trail Query Interface",
-  "description": "SQL-like query interface for searching and filtering audit logs with filtering by tool, time, user, risk level",
-  "inspiration": "Security audit approaches + competitor gaps",
-  "difficulty": "easy",
-  "impact": "medium"
-}
