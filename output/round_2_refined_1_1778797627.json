@@ -1,0 +1,15 @@
+{
+  "name": "Audit Trail Query Interface",
+  "description": "SQL-like query interface for searching and filtering audit logs with filtering by tool, time, user, risk level",
+  "inspiration": "Security audit approaches + competitor gaps",
+  "difficulty": "easy",
+  "impact": "medium",
+  "refined": true,
+  "implementation_notes": "Refined implementation approach for Audit Trail Query Interface: SQL-like query interface for searching and filteri...",
+  "edge_cases": [
+    "Large result sets",
+    "Timezone handling",
+    "Export formats"
+  ],
+  "api_design": "class AuditQueryBuilder: filter(), project(), order_by(), limit()"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Interactive Tutorial System",
+  "description": "Step-by-step interactive tutorials for new users with sandboxed practice environment",
+  "inspiration": "Zed's modern onboarding + competitor strengths",
+  "difficulty": "medium",
+  "impact": "medium"
+}
