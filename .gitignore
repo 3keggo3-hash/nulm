@@ -67,6 +67,11 @@ config.toml
 .ruff_cache/
 .aider*
 
+# Agent artifacts (internal development)
+agent_claims.json
+agent_discussion.json
+agent_prompts.py
+
 # Research
 .research/
 
