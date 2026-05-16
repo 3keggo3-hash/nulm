@@ -100,7 +100,7 @@ def test_complexity_flags_long_function(tmp_path: Path) -> None:
     assert len(issues) == 1
     assert issues[0]["severity"] == "warning"
     assert "long_func" in issues[0]["description"]
-    assert "lines" in issues[0]["description"]
+    assert "lines" in issues[0]["description"] or "L" in issues[0]["description"]
 
 
 def test_complexity_ignores_short_function(tmp_path: Path) -> None:

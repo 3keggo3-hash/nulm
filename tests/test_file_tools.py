@@ -64,10 +64,8 @@ class TestWriteTextExact:
         real.write_text("secret")
         link = temp_project / "link.txt"
         link.symlink_to(real)
-        ft._write_text_exact(link, "evil", exclusive=False)
-        assert not link.is_symlink()
-        assert link.read_text() == "evil"
-        assert real.read_text() == "secret"
+        with pytest.raises(OSError, match="symlink"):
+            ft._write_text_exact(link, "evil", exclusive=False)
 
     def test_atomic_write_no_partial(self, temp_project):
         target = temp_project / "partial.txt"
