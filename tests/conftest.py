@@ -104,8 +104,11 @@ def _make_reset(
     workflow_cache,
 ):
     def _reset():
+        from claude_bridge._audit_core import _audit_dir, _cached_session_files
         reset_process_sessions()
         audit.reset_audit_session()
+        _audit_dir.cache_clear()
+        _cached_session_files.cache_clear()
         ai_evaluator.reset_ai_evaluator_state()
         _reset_config(config_module)
         _reset_last_bridge_change(file_tools)
