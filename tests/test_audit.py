@@ -1,4 +1,5 @@
 """Tests for audit decision extraction (Paket 3A) and redaction (Paket 3B)."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

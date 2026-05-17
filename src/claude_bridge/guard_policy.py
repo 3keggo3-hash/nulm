@@ -1,4 +1,3 @@
-
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -16,7 +15,7 @@ Key functions:
 Builtin hardcoded denies cover: `sudo`, `rm -rf`, `chmod 777`, pipe-to-shell
 (`| bash`, `curl|bash`, `wget|bash`), and sensitive file extensions (`.env`, `.pem`,
 `.key`, `id_rsa`). These cannot be overridden by user rules.
-"""""
+""" ""
 
 from __future__ import annotations
 

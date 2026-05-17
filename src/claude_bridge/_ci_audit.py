@@ -1,4 +1,5 @@
 """One-shot CI analysis for quick security and quality checks."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -99,7 +100,7 @@ def run_security_pattern_check(path: Path | None = None) -> dict[str, Any]:
         return {"ok": False, "error": "src/claude_bridge not found"}
 
     findings = []
-    shell_false_pattern = re.compile(r'subprocess\.run\([^)]*shell\s*=\s*True')
+    shell_false_pattern = re.compile(r"subprocess\.run\([^)]*shell\s*=\s*True")
     for py_file in src_dir.rglob("*.py"):
         content = py_file.read_text(encoding="utf-8")
         matches = shell_false_pattern.findall(content)

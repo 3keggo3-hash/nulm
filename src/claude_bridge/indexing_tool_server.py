@@ -1,4 +1,5 @@
 """Registration helpers for indexing and relevance MCP tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

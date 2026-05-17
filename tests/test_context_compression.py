@@ -1,4 +1,5 @@
 """Tests for context compression utilities."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -203,16 +204,18 @@ class TestEdgeCases:
         """Handles sessions with >10000 records without crashing."""
         large_records = []
         for i in range(10500):
-            large_records.append({
-                "tool_name": "read_file",
-                "params": {"path": f"src/file_{i % 100}.py"},
-                "result": {"ok": True},
-                "telemetry": {
-                    "input_chars": 100,
-                    "output_chars": 500,
-                    "estimated_total_tokens": 50,
-                },
-            })
+            large_records.append(
+                {
+                    "tool_name": "read_file",
+                    "params": {"path": f"src/file_{i % 100}.py"},
+                    "result": {"ok": True},
+                    "telemetry": {
+                        "input_chars": 100,
+                        "output_chars": 500,
+                        "estimated_total_tokens": 50,
+                    },
+                }
+            )
         result = summarize_audit_records(large_records)
         assert "Records: 10500" in result
         assert "Failures: 0" in result

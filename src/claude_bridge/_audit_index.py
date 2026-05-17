@@ -1,4 +1,5 @@
 """Compact audit index helpers for faster recent-call queries."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

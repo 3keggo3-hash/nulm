@@ -571,10 +571,10 @@ def apply_config(
 
 def load_config_from_toml(config_path: Path | str) -> dict[str, Any]:
     try:
-        import tomllib
+        import tomllib  # type: ignore[import-untyped]
     except ImportError:
         try:
-            import tomli as tomllib
+            import tomli as tomllib  # type: ignore[import-not-found,no-redef]
         except ImportError:
             raise ImportError(
                 "tomllib or tomli is required for TOML config loading. "
@@ -880,6 +880,12 @@ def raw_ai_evaluator_config() -> dict[str, Any]:
             "model": str(_CONFIG.get("ai_evaluator_model", "")),
             "timeout": int(_CONFIG["ai_evaluator_timeout"]),
         }
+
+
+def get_config_value(key: str) -> Any:
+    """Return a runtime config value by key for internal feature gates."""
+    with _CONFIG_LOCK:
+        return _CONFIG.get(key)
 
 
 def active_role() -> str | None:

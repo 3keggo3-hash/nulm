@@ -1,7 +1,8 @@
-"""Proposal engine for memory-based best-option recommendations.
+"""Proposal engine for memory-based recommendation candidates.
 
-Provides task outcome analysis, alternative discovery, and proposal
-generation triggered by task completion events.
+Provides task outcome analysis and alternative discovery. It does not fabricate
+statistical recommendation proposals from heuristics; proposals require real
+comparison evidence from the skill-comparison layer.
 """
 
 # Copyright (c) 2026 Claude Bridge Contributors
@@ -14,10 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from claude_bridge.adaptive_council import (
-    ProposalStore,
-    propose_deactivation,
-)
+from claude_bridge.adaptive_council import ProposalStore
 from claude_bridge.mcp_discovery import MCPDiscovery
 from claude_bridge.memory import MemoryStore, get_memory_store
 
@@ -194,43 +192,21 @@ class ProposalEngine:
         if alternative is None:
             return
 
-        self._session_proposal_count += 1
-
         comparison_result = self._create_comparison_report(task_result, alternative)
         if comparison_result:
-            await propose_deactivation(comparison_result, self._proposals)
+            from claude_bridge.adaptive_council import propose_deactivation
+
+            proposal_id = await propose_deactivation(comparison_result, self._proposals)
+            if proposal_id is not None:
+                self._session_proposal_count += 1
 
     def _create_comparison_report(
         self,
         task_result: TaskResult,
         alternative: Alternative,
     ) -> Any | None:
-        from claude_bridge.skill_comparison import ComparisonReport
-        from claude_bridge.stats_engine import ComparisonResult
-
-        current_rate = 0.4 if not task_result.success else 0.6
-
-        comparison = ComparisonResult(
-            valid=True,
-            reason="proposal_triggered",
-            skill_a_rate=current_rate,
-            skill_b_rate=alternative.acceptance_rate,
-            significant=True,
-            p_value=0.01,
-            z_score=2.0,
-            rate_difference=alternative.acceptance_rate - current_rate,
-        )
-
-        winner = alternative.name
-        loser = task_result.skill_used or "unknown"
-
-        return ComparisonReport(
-            winner=winner,
-            loser=loser,
-            comparison=comparison,
-            deactivation_eligible=True,
-            reason=f"{alternative.source} alternative performs better: {alternative.acceptance_rate:.0%} vs {current_rate:.0%}",
-        )
+        _ = (task_result, alternative)
+        return None
 
     def reset_session(self) -> None:
         self._session_proposal_count = 0

@@ -1,4 +1,5 @@
 """Review agent for code quality review and self-critique."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

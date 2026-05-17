@@ -1,4 +1,5 @@
 """Registration helpers for local control-plane MCP tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

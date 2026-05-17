@@ -1,4 +1,5 @@
 """SQL-like query parser for audit trail records."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -11,6 +12,8 @@ from enum import Enum
 from typing import Any
 
 from claude_bridge.guard_policy import validate_regex_pattern
+
+Token = tuple[str, Any]
 
 # Supported query fields
 _VALID_QUERY_FIELDS = frozenset(
@@ -54,7 +57,7 @@ class WhereCondition:
 
     field: str
     operator: str
-    value: str | int | float | bool
+    value: str | int | float | bool | None
     case_sensitive: bool = False
 
 
@@ -165,12 +168,12 @@ class AuditQueryParser:
 
         return ast
 
-    def _keyword_matches(self, tok: tuple, keyword: str) -> bool:
-        return tok[0] == "KEYWORD" and tok[1].upper() == keyword
+    def _keyword_matches(self, tok: Token, keyword: str) -> bool:
+        return bool(tok[0] == "KEYWORD" and str(tok[1]).upper() == keyword)
 
-    def _tokenize(self, query: str) -> list[tuple]:
+    def _tokenize(self, query: str) -> list[Token]:
         """Convert query string into a list of (type, value) tokens."""
-        tokens = []
+        tokens: list[Token] = []
         for match in self._TOKEN_RE.finditer(query):
             kind = match.lastgroup
             value = match.group()
@@ -252,7 +255,7 @@ class AuditQueryParser:
             pos += 1
 
             # Coerce value
-            value: str | int | float | bool = tok_val
+            value: str | int | float | bool | None = tok_val
             if tok_type == "NUMBER":
                 value = (
                     int(tok_val) if isinstance(tok_val, float) and tok_val.is_integer() else tok_val
@@ -410,6 +413,8 @@ class AuditQueryParser:
             return actual_str.lower() != expected_str.lower()
         elif op in (">", "<", ">=", "<="):
             # For strings, use lexicographic comparison
+            if actual is None or expected is None:
+                return False
             return (
                 self._compare_numeric(float(actual), op, float(expected))
                 if field == "duration_ms"

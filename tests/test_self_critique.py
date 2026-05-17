@@ -1,4 +1,5 @@
 """Tests for deterministic self_critique code review."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

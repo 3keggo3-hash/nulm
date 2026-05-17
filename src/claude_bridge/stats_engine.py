@@ -63,8 +63,8 @@ def _calculate_proportion_z_test(
 
     z = (p_a - p_b) / se if se > 0 else 0.0
 
-    p_value = _normal_cdf(abs(z))
-    p_value = 1.0 - p_value
+    p_value = 2.0 * (1.0 - _normal_cdf(abs(z)))
+    p_value = max(0.0, min(1.0, p_value))
 
     return z, p_value
 

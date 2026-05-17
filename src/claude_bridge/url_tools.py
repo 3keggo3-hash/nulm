@@ -1,4 +1,5 @@
 """URL-fetch tool for Claude Bridge – security-constrained HTTP reader."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -118,7 +119,7 @@ def normalize_url(url: str) -> str:
     return normalized
 
 
-def validate_url(url: str) -> dict[str, Any]:
+def validate_url(url: str) -> str:
     valid, reason = _validate_url_syntax(url)
     if not valid:
         return json_response(False, reason, code="validation_failed", details={"url": url})

@@ -1,4 +1,5 @@
 """Resilience patterns for Claude Bridge: retry, circuit breaker, and error handling."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -110,7 +111,7 @@ async def retry_with_backoff(
         )
         raise RetryExhaustedError(
             f"Retry exhausted after {config.max_retries} attempts. Last error: {last_exception}"
-                f"{hint}"
+            f"{hint}"
         ) from last_exception
     raise RetryExhaustedError(
         "Retry exhausted with no exception. "

@@ -1,4 +1,5 @@
 """Parallel environment health checks for .opencode/ and .claude-bridge/."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -144,9 +145,7 @@ def print_parallel_doctor_report(report: dict[str, Any]) -> None:
     status = "[green]OK[/green]" if report["overall_ok"] else "[yellow]ISSUES[/yellow]"
 
     style = "green" if report["overall_ok"] else "yellow"
-    console.print(
-        Panel.fit(f"Environment Health: {status}", title="Doctor", border_style=style)
-    )
+    console.print(Panel.fit(f"Environment Health: {status}", title="Doctor", border_style=style))
 
     for label, section in [
         (".opencode/", report["opencode"]),

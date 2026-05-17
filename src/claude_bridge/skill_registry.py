@@ -1,4 +1,5 @@
 """Skill registry for indexing and managing skills."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

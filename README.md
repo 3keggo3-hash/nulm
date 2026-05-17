@@ -13,8 +13,8 @@
   debate sessions and return approval-gated implementation plans.
 - **Bridge-internal model routing** — optional provider/model profiles route council/advisory calls
   without changing the host chat model.
-- **Adaptive proposal tools** — optional skill comparison and MCP discovery helpers can surface
-  accept/reject proposals without silently changing active behavior.
+- **Adaptive proposal tools** — optional, approval-gated recommendation helpers can surface
+  accept/reject decisions without silently changing active behavior.
 - **Context Compression Manager** — decompression bomb protection added to `_context_compression.py`.
 - **Audit Trail Query Interface** — SQL-like parser in `_audit_query_parser.py`.
 
@@ -87,7 +87,7 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 - **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
   for Bridge advisory calls while keeping API keys in environment variables
 - **Adaptive proposals**: `list_pending_proposals`, `get_proposal_details`, `accept_proposal`, and
-  `reject_proposal` expose user-approved skill deactivation proposals
+  `reject_proposal` expose advisory skill recommendations and record user decisions
 - **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
   constrained text-only HTTP/HTTPS reading
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
@@ -223,14 +223,14 @@ private/internal hosts; Ollama routing is limited to localhost/loopback URLs.
 
 ## Adaptive Proposals
 
-The adaptive proposal layer compares recorded skill outcomes, checks whether a replacement has a
-statistically meaningful advantage, and stores pending deactivation proposals under
+The adaptive proposal layer stores approval-gated recommendations under
 `.claude-bridge/proposals`. Proposals are inert until explicitly accepted with `accept_proposal`;
-rejection is recorded with `reject_proposal`.
+accepting or rejecting a proposal records the user's decision, but does not directly disable or
+mutate skills.
 
-MCP peer discovery is observational. It can identify nearby MCP-like processes and validate exposed
-tool schemas, but untrusted or invalid tools are filtered from recommendations and are not executed
-by discovery itself.
+MCP peer discovery is metadata-only. It can identify nearby MCP-like processes and filter
+already-known tool schemas, but it does not launch peer commands, run package-manager probes, or
+execute discovered MCP tools. High-risk or invalid schemas are filtered out of recommendations.
 
 ## Agent Quality examples
 

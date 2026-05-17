@@ -1,4 +1,5 @@
 """Template-based approach explorer for programming problem alternatives."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -483,7 +484,7 @@ def explore_approaches(
     complexity_rank = {"low": 0, "medium": 1, "high": 2}
 
     def _weighted_score(a: dict[str, Any]) -> float:
-        relevance = a.get("relevance_score", 0.5)
+        relevance = float(a.get("relevance_score", 0.5))
         complexity = complexity_rank.get(a.get("complexity", "medium"), 1)
         return relevance * 0.7 + (1.0 - complexity / 2.0) * 0.3
 

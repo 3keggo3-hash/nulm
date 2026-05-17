@@ -1,7 +1,7 @@
-"""End-to-end integration tests for Adaptive Skill Router.
+"""End-to-end integration tests for adaptive recommendations.
 
 Tests the complete flow across multiple modules including
-role assignment, skill comparison, deactivation proposals,
+role assignment, skill comparison, recommendation proposals,
 and proposal engine behavior.
 """
 
@@ -68,7 +68,7 @@ class TestScenarioARoleAssignment:
 
 
 class TestScenarioBSkillComparisonDeactivation:
-    """Scenario B: Skill comparison → deactivation proposal → accept"""
+    """Scenario B: Skill comparison -> recommendation proposal -> accept decision"""
 
     def setup_method(self) -> None:
         self._tmpdir = tempfile.mkdtemp()
@@ -372,8 +372,8 @@ class TestFullFlowIntegration:
 
         assert "old_skill" in formatted
         assert "new_skill" in formatted
-        assert "Accept:" in formatted
-        assert "Reject:" in formatted
+        assert "Record accept:" in formatted
+        assert "Record reject:" in formatted
         assert "test_proposal_123" in formatted
 
     def test_proposal_store_path_sanitization(self):

@@ -1,4 +1,5 @@
 """Check for nulm updates from PyPI."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -24,7 +25,6 @@ except ImportError:  # pragma: no cover - packaging is available in dev/test env
     _parse_version = None  # type: ignore[assignment]
 
 from claude_bridge.tool_utils import json_response
-
 
 PACKAGE_NAME = "nulm"
 CLI_NAME = "claude-bridge"

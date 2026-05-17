@@ -1,4 +1,5 @@
 """Workflow session persistence and resume capability."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -8,11 +9,12 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _sessions_dir() -> Path:
     import os
+
     if os.environ.get("CLAUDE_BRIDGE_CACHE_DIR"):
         return Path(os.environ["CLAUDE_BRIDGE_CACHE_DIR"]) / "sessions"
     return Path.home() / ".cache" / "claude-bridge" / "sessions"
@@ -53,7 +55,8 @@ def load_workflow_session(session_id: str) -> dict[str, Any] | None:
     if not session_file.exists():
         return None
     try:
-        return json.loads(session_file.read_text(encoding="utf-8"))
+        data = json.loads(session_file.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], data) if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError):
         return None
 

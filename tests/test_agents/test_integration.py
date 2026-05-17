@@ -1,4 +1,5 @@
 """Integration tests for multi-agent system."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

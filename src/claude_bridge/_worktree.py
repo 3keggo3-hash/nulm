@@ -1,4 +1,5 @@
 """Git worktree awareness for parallel development workflows."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -109,4 +110,3 @@ def worktree_status(repo_root: Path | None = None) -> dict[str, Any]:
         "has_dirty_context": dirty,
         "repo_root": str(repo_root.resolve()),
     }
-

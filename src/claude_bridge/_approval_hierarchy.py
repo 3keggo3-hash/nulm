@@ -355,9 +355,8 @@ def record_approval(
 def get_approval_record(approval_id: str) -> dict[str, Any] | None:
     """Retrieve a previously recorded approval by ID."""
     with _approval_records_lock:
-        return (
-            dict(_approval_records.get(approval_id)) if approval_id in _approval_records else None
-        )
+        record = _approval_records.get(approval_id)
+        return dict(record) if record is not None else None
 
 
 def list_approvals(

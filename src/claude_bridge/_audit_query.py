@@ -1,4 +1,5 @@
 """Audit record querying and session summarization."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -308,11 +309,12 @@ def query_audit(
             total_after_filter = len(filtered_entries)
 
             # Apply ordering and limit from parsed AST
-            if ast.order_by:
-                reverse = ast.order_by.direction.value == "DESC"
+            order_by = ast.order_by
+            if order_by is not None:
+                reverse = order_by.direction.value == "DESC"
                 filtered_entries = sorted(
                     filtered_entries,
-                    key=lambda e: e.get(ast.order_by.field, ""),
+                    key=lambda e: e.get(order_by.field, ""),
                     reverse=reverse,
                 )
 

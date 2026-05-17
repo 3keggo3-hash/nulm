@@ -1256,14 +1256,14 @@ def _print_preset_explanation_table() -> None:
     table2.add_column("[green]Succeeds[/green]", width=26)
     table2.add_column("[red]Fails / Blocked[/red]", width=26)
 
-    examples = [
+    examples: list[tuple[str, str, str]] = [
         ("read-only", "ls, cat, git diff, grep", "write_file, run_shell, mv, rm"),
         ("dev-safe", "ls, cat, write to project", "sudo, curl|bash, rm -rf /"),
         ("ci-like", "ls, cat, git, npm test", "sudo, shutdown, rm -rf /"),
         ("power-user", "anything in project dir", "Only built-in hard denies apply"),
     ]
-    for row in examples:
-        table2.add_row(*row)
+    for example in examples:
+        table2.add_row(*example)
 
     console.print(table)
     console.print(table2)

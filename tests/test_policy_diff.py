@@ -1,4 +1,5 @@
 """Unit and E2E tests for policy diff, role-based simulation, and inheritance validation."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

@@ -230,6 +230,12 @@ class ToolSchemaValidator:
                 )
 
         risk_level = _assess_risk_level(name, description, schema)
+        if risk_level == "high":
+            return ValidationResult(
+                valid=False,
+                reason="high-risk discovered tool requires explicit manual integration",
+                risk_level=risk_level,
+            )
 
         return ValidationResult(
             valid=True,
