@@ -1,4 +1,5 @@
 """Tests for MCP prompt registration and rendering."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -30,6 +31,7 @@ class TestPrompts:
         assert "debug" in names
         assert "document" in names
         assert "security" in names
+        assert "council" in names
 
     async def test_review_prompt_renders_target_path(self):
         result = await mcp_server.mcp.get_prompt(
@@ -153,6 +155,17 @@ class TestPrompts:
         message_text = result.messages[0].content.text
         assert "Linux, Windows, WSL, VS Code" in message_text
         assert "path issues" in message_text
+
+    async def test_council_prompt_calls_council_tool(self):
+        result = await mcp_server.mcp.get_prompt(
+            "council",
+            {"target": "src/", "task": "add model routing"},
+        )
+
+        message_text = result.messages[0].content.text
+        assert "Target: src/" in message_text
+        assert "Task: add model routing" in message_text
+        assert "run_council_session" in message_text
 
     async def test_compact_prompt_targets_lower_cost_context(self):
         result = await mcp_server.mcp.get_prompt(

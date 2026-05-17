@@ -1626,7 +1626,6 @@ def install(
             resolved_target = target
             resolved_preset = approval_preset or "dev-safe"
             resolved_provider = "local"
-            resolved_api_key = ""
             resolved_roots = [resolved_project_dir] + [r.resolve() for r in (allow_root or [])]
             resolved_tool_profile = "standard"
         else:
@@ -1693,14 +1692,21 @@ def install(
             else:
                 resolved_provider = "local"
 
-            resolved_api_key = ""
             if resolved_provider != "local" and resolved_provider != "ollama":
                 if is_detailed:
                     keys = list(provider_options.keys())
                     vals = list(provider_options.values())
                     provider_label = provider_names.get(keys[vals.index(resolved_provider)] or "")
-                    console.print(f"\n[dim]Enter your {provider_label} API key:[/dim]")
-                    resolved_api_key = Prompt.ask("API key", password=True)
+                    env_names = {
+                        "openai": "OPENAI_API_KEY",
+                        "anthropic": "ANTHROPIC_API_KEY",
+                        "deepseek": "DEEPSEEK_API_KEY",
+                    }
+                    env_name = env_names.get(resolved_provider, "PROVIDER_API_KEY")
+                    console.print(
+                        f"\n[dim]{provider_label} uses {env_name}; Claude Bridge does not "
+                        "store API keys in config.[/dim]"
+                    )
 
             roots_str = str(resolved_project_dir)
             if is_detailed:
@@ -1767,8 +1773,6 @@ def install(
                 console.print("[dim]For Claude Desktop: fully quit the app, then retry.[/dim]")
             raise typer.Exit(code=1) from exc
 
-        if resolved_api_key:
-            update_runtime_config("ai_evaluator_api_key", resolved_api_key)
         if resolved_provider != "local":
             update_runtime_config("ai_evaluator_provider", resolved_provider)
             update_runtime_config("ai_evaluator_enabled", True)
@@ -1790,6 +1794,17 @@ def install(
         console.print(f"Approval preset: [cyan]{resolved_preset}[/cyan]")
         if resolved_provider != "local":
             console.print(f"AI provider: [cyan]{resolved_provider}[/cyan]")
+            env_names = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+                "deepseek": "DEEPSEEK_API_KEY",
+            }
+            env_name_optional = env_names.get(resolved_provider)
+            if env_name_optional:
+                console.print(
+                    f"Set [cyan]{env_name_optional}[/cyan] in your shell or MCP client environment "
+                    "before using provider-backed AI tools."
+                )
 
         if resolved_target == "claude-desktop":
             console.print("\nRestart Claude Desktop completely, then start a new chat.")

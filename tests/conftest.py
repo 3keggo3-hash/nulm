@@ -1,4 +1,5 @@
 """Pytest configuration – shared fixtures."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -36,8 +37,15 @@ _DEFAULT_CONFIG = {
     "intent_compaction_enabled": False,
     "ai_evaluator_enabled": False,
     "ai_evaluator_provider": "local",
+    "ai_evaluator_api_key": "",
+    "ai_evaluator_model": "",
     "ai_evaluator_timeout": 5,
     "ai_evaluator_fallback_action": "ask",
+    "ai_routing_enabled": False,
+    "ai_routing_mode": "auto",
+    "ai_default_model_profile": "local",
+    "ai_model_profiles": {},
+    "ai_routing_rules": [],
     "role": None,
     "user": None,
     "auto_approve_risk_level": "medium",
@@ -109,6 +117,7 @@ def _make_reset(
 ):
     def _reset():
         from claude_bridge._audit_core import _audit_dir, _cached_session_files
+
         reset_process_sessions()
         audit.reset_audit_session()
         _audit_dir.cache_clear()

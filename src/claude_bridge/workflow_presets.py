@@ -1,4 +1,5 @@
 """Static workflow presets and prompt helpers for Claude Bridge."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -82,6 +83,15 @@ PROMPT_SHORTCUTS = [
         "chat_fallback": (
             'run_workflow(mode="quality", target="src/", '
             'option="correctness and regression safety")'
+        ),
+    },
+    {
+        "name": "council",
+        "category": "ai-council",
+        "description": "Run a bounded AI council debate and synthesize an approval-gated plan.",
+        "token_strategy": "Use when a task benefits from multiple specialist viewpoints.",
+        "chat_fallback": (
+            'run_council_session(task="implement the feature", target="src/", agent_count=5)'
         ),
     },
     {
@@ -214,6 +224,17 @@ def _build_platform_message(target: str, focus: str, language: str = "Turkish") 
     )
 
 
+def _build_council_message(target: str, task: str, language: str = "Turkish") -> str:
+    return (
+        "Run an AI council before implementation.\n"
+        f"Target: {target}\n"
+        f"Task: {task}\n"
+        f"Response language: {language}\n"
+        "Call `run_council_session` with a bounded agent count and rounds. Treat the result as "
+        "read-only planning evidence, then apply implementation through normal approval gates."
+    )
+
+
 # Arguments for each registered prompt, keyed by PROMPT_SHORTCUTS name.
 PROMPT_ARGUMENTS: dict[str, list[dict[str, Any]]] = {
     "review": [
@@ -260,6 +281,15 @@ PROMPT_ARGUMENTS: dict[str, list[dict[str, Any]]] = {
     "quality": [
         {"name": "target", "description": "File or directory to evaluate", "required": False},
         {"name": "focus", "description": "Specific quality focus", "required": False},
+        {
+            "name": "language",
+            "description": "Response language (e.g. Turkish, English)",
+            "required": False,
+        },
+    ],
+    "council": [
+        {"name": "target", "description": "File or directory for the council", "required": False},
+        {"name": "task", "description": "Task for the AI council to debate", "required": False},
         {
             "name": "language",
             "description": "Response language (e.g. Turkish, English)",
@@ -406,13 +436,14 @@ _PROMPT_FOCUS_ARG: dict[str, str] = {
     "security": "focus",
 }
 
-# Maps prompt name to a custom message builder (compact/shadow/benchmark/platform).
+# Maps prompt name to a custom message builder.
 # Prompts not listed here use the standard workflow template path.
 _PROMPT_CUSTOM_BUILDERS: dict[str, Any] = {
     "compact": _build_compact_message,
     "shadow": _build_shadow_message,
     "benchmark": _build_benchmark_message,
     "platform": _build_platform_message,
+    "council": _build_council_message,
 }
 
 _CUSTOM_PROMPT_DEFAULTS: dict[str, str] = {
@@ -420,6 +451,7 @@ _CUSTOM_PROMPT_DEFAULTS: dict[str, str] = {
     "shadow": "challenge prior assumptions, verify from files, be skeptical of earlier conclusions",
     "benchmark": "startup cost, relevance latency, token efficiency, and cache behavior",
     "platform": "Linux, Windows, WSL, VS Code, and other MCP client compatibility",
+    "council": "debate the task and return an implementation plan",
 }
 
 

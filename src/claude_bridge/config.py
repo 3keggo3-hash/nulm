@@ -13,6 +13,8 @@ import threading
 from pathlib import Path
 from typing import Any, Sequence, cast
 
+from claude_bridge.ai_router import parse_model_profiles, parse_routing_rules
+
 _ENV_PREFIX = "CLAUDE_BRIDGE_"
 
 APPROVAL_PRESETS: dict[str, dict[str, Any]] = {
@@ -99,6 +101,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "smart",
             "insights_core",
             "git_read",
+            "ai_council",
         },
     },
     "full": {
@@ -123,6 +126,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "url",
             "git_read",
             "git_commit",
+            "ai_council",
         },
     },
 }
@@ -181,6 +185,9 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "run_workflow",
         "run_agent_loop_step",
         "run_agent_loop_session",
+    },
+    "ai_council": {
+        "run_council_session",
     },
     "meta_core": {
         "bridge_status",
@@ -276,6 +283,8 @@ SAFE_CHAT_CONFIG_KEYS: frozenset[str] = frozenset(
         "context_budget_profile",
         "intent_compaction_enabled",
         "ai_evaluator_timeout",
+        "ai_routing_mode",
+        "ai_default_model_profile",
         "onboarding_enabled",
         "shell_timeout",
     }
@@ -293,6 +302,9 @@ RESTRICTED_CHAT_CONFIG_KEYS: frozenset[str] = frozenset(
         "ai_evaluator_api_key",
         "ai_evaluator_model",
         "ai_evaluator_fallback_action",
+        "ai_routing_enabled",
+        "ai_model_profiles",
+        "ai_routing_rules",
         "role",
         "user",
         "auto_approve_risk_level",
@@ -316,6 +328,11 @@ _CONFIG: dict[str, Any] = {
     "ai_evaluator_model": "",
     "ai_evaluator_timeout": 5,
     "ai_evaluator_fallback_action": "ask",
+    "ai_routing_enabled": False,
+    "ai_routing_mode": "auto",
+    "ai_default_model_profile": "local",
+    "ai_model_profiles": {},
+    "ai_routing_rules": [],
     "role": None,
     "user": None,
     "auto_approve_risk_level": "medium",
@@ -339,6 +356,16 @@ def validate_config_value(key: str, value: Any) -> None:
     elif key == "ai_evaluator_fallback_action":
         if value not in {"deny", "ask"}:
             raise ValueError("ai_evaluator_fallback_action must be one of deny/ask")
+    elif key == "ai_routing_mode":
+        if value not in {"off", "rules", "auto", "manual"}:
+            raise ValueError("ai_routing_mode must be one of off/rules/auto/manual")
+    elif key == "ai_default_model_profile":
+        if not isinstance(value, str) or not value:
+            raise ValueError("ai_default_model_profile must be a non-empty string")
+    elif key == "ai_model_profiles":
+        parse_model_profiles(value)
+    elif key == "ai_routing_rules":
+        parse_routing_rules(value)
     elif key in {"role", "user"}:
         if value is not None and (
             not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
@@ -377,6 +404,10 @@ def _validate_all_config() -> None:
         validate_config_value(key, _CONFIG[key])
     validate_config_value("ai_evaluator_provider", _CONFIG["ai_evaluator_provider"])
     validate_config_value("ai_evaluator_fallback_action", _CONFIG["ai_evaluator_fallback_action"])
+    validate_config_value("ai_routing_mode", _CONFIG["ai_routing_mode"])
+    validate_config_value("ai_default_model_profile", _CONFIG["ai_default_model_profile"])
+    validate_config_value("ai_model_profiles", _CONFIG["ai_model_profiles"])
+    validate_config_value("ai_routing_rules", _CONFIG["ai_routing_rules"])
     validate_config_value("context_budget_profile", _CONFIG["context_budget_profile"])
     validate_config_value("tool_profile", _CONFIG["tool_profile"])
     if _CONFIG["approval_preset"] is not None:
@@ -418,6 +449,11 @@ def apply_config(
     ai_evaluator_model: str = "",
     ai_evaluator_timeout: int = 5,
     ai_evaluator_fallback_action: str = "ask",
+    ai_routing_enabled: bool = False,
+    ai_routing_mode: str = "auto",
+    ai_default_model_profile: str = "local",
+    ai_model_profiles: dict[str, Any] | None = None,
+    ai_routing_rules: list[dict[str, Any]] | None = None,
     role: str | None = None,
     user: str | None = None,
     auto_approve_risk_level: str = "medium",
@@ -466,6 +502,17 @@ def apply_config(
             f"ai_evaluator_fallback_action must be one of deny/ask, "
             f"got {ai_evaluator_fallback_action!r}"
         )
+    if ai_routing_mode not in {"off", "rules", "auto", "manual"}:
+        raise ValueError(
+            f"ai_routing_mode must be one of off/rules/auto/manual, got {ai_routing_mode!r}"
+        )
+    validate_config_value("ai_default_model_profile", ai_default_model_profile)
+    parsed_model_profiles = parse_model_profiles(dict(ai_model_profiles or {}))
+    model_profiles = {
+        name: profile.to_redacted_dict() for name, profile in parsed_model_profiles.items()
+    }
+    routing_rules = list(ai_routing_rules or [])
+    parse_routing_rules(routing_rules)
     if role is not None and (
         not isinstance(role, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", role)
     ):
@@ -499,12 +546,19 @@ def apply_config(
         _CONFIG["ai_evaluator_model"] = ai_evaluator_model
         _CONFIG["ai_evaluator_timeout"] = ai_evaluator_timeout
         _CONFIG["ai_evaluator_fallback_action"] = ai_evaluator_fallback_action
+        _CONFIG["ai_routing_enabled"] = bool(ai_routing_enabled)
+        _CONFIG["ai_routing_mode"] = ai_routing_mode
+        _CONFIG["ai_default_model_profile"] = ai_default_model_profile
+        _CONFIG["ai_model_profiles"] = model_profiles
+        _CONFIG["ai_routing_rules"] = routing_rules
         if role is not None:
             _CONFIG["role"] = role
         if user is not None:
             _CONFIG["user"] = user
         _CONFIG["auto_approve_risk_level"] = auto_approve_risk_level
-        _CONFIG["auto_approve_patterns"] = auto_approve_patterns if auto_approve_patterns is not None else {}
+        _CONFIG["auto_approve_patterns"] = (
+            auto_approve_patterns if auto_approve_patterns is not None else {}
+        )
         _CONFIG["max_parallel"] = max_parallel
 
 
@@ -641,6 +695,36 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     )
     if ai_evaluator_fallback_action == "allow":
         ai_evaluator_fallback_action = "ask"
+    raw_ai_routing_enabled = os.environ.get("CLAUDE_BRIDGE_AI_ROUTING_ENABLED", "0").strip().lower()
+    ai_routing_enabled = raw_ai_routing_enabled in {"1", "true", "yes", "on"}
+    ai_routing_mode = (
+        os.environ.get("CLAUDE_BRIDGE_AI_ROUTING_MODE", "auto").strip().lower() or "auto"
+    )
+    ai_default_model_profile = (
+        os.environ.get("CLAUDE_BRIDGE_AI_DEFAULT_PROFILE", "local").strip() or "local"
+    )
+    raw_ai_model_profiles = os.environ.get("CLAUDE_BRIDGE_AI_PROFILES_JSON", "").strip()
+    raw_ai_routing_rules = os.environ.get("CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON", "").strip()
+    ai_model_profiles: dict[str, Any] = {}
+    ai_routing_rules: list[dict[str, Any]] = []
+    if raw_ai_model_profiles:
+        try:
+            import json
+
+            loaded_profiles = json.loads(raw_ai_model_profiles)
+            if isinstance(loaded_profiles, dict):
+                ai_model_profiles = loaded_profiles
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if raw_ai_routing_rules:
+        try:
+            import json
+
+            loaded_rules = json.loads(raw_ai_routing_rules)
+            if isinstance(loaded_rules, list):
+                ai_routing_rules = loaded_rules
+        except (json.JSONDecodeError, TypeError):
+            pass
     raw_role = os.environ.get("CLAUDE_BRIDGE_ROLE", "").strip() or None
     raw_user = os.environ.get("CLAUDE_BRIDGE_USER", "").strip() or None
     raw_auto_approve_patterns = os.environ.get("CLAUDE_BRIDGE_AUTO_APPROVE_PATTERNS", "").strip()
@@ -648,6 +732,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
     if raw_auto_approve_patterns:
         try:
             import json
+
             auto_approve_patterns = json.loads(raw_auto_approve_patterns)
         except (json.JSONDecodeError, TypeError):
             pass
@@ -672,6 +757,11 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
         ai_evaluator_model=ai_evaluator_model,
         ai_evaluator_timeout=ai_evaluator_timeout,
         ai_evaluator_fallback_action=ai_evaluator_fallback_action,
+        ai_routing_enabled=ai_routing_enabled,
+        ai_routing_mode=ai_routing_mode,
+        ai_default_model_profile=ai_default_model_profile,
+        ai_model_profiles=ai_model_profiles,
+        ai_routing_rules=ai_routing_rules,
         role=raw_role,
         user=raw_user,
         auto_approve_patterns=auto_approve_patterns,
@@ -759,6 +849,11 @@ def current_config() -> dict[str, Any]:
                 "ai_evaluator_model": str(_CONFIG.get("ai_evaluator_model", "")),
                 "ai_evaluator_timeout": int(_CONFIG["ai_evaluator_timeout"]),
                 "ai_evaluator_fallback_action": str(_CONFIG["ai_evaluator_fallback_action"]),
+                "ai_routing_enabled": bool(_CONFIG["ai_routing_enabled"]),
+                "ai_routing_mode": str(_CONFIG["ai_routing_mode"]),
+                "ai_default_model_profile": str(_CONFIG["ai_default_model_profile"]),
+                "ai_model_profiles": copy.deepcopy(_CONFIG["ai_model_profiles"]),
+                "ai_routing_rules": copy.deepcopy(_CONFIG["ai_routing_rules"]),
                 "role": _CONFIG["role"],
                 "user": _CONFIG["user"],
                 "auto_approve_risk_level": str(_CONFIG["auto_approve_risk_level"]),
@@ -917,6 +1012,44 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             if action not in {"deny", "ask"}:
                 raise ValueError("ai_evaluator_fallback_action must be one of deny/ask")
             _CONFIG[key] = action
+            return current_config()
+
+        if key == "ai_routing_enabled":
+            if not isinstance(value, bool):
+                raise ValueError("ai_routing_enabled must be a boolean")
+            _CONFIG[key] = value
+            return current_config()
+
+        if key == "ai_routing_mode":
+            mode = str(value).lower()
+            if mode not in {"off", "rules", "auto", "manual"}:
+                raise ValueError("ai_routing_mode must be one of off/rules/auto/manual")
+            _CONFIG[key] = mode
+            return current_config()
+
+        if key == "ai_default_model_profile":
+            profile = str(value)
+            if not profile:
+                raise ValueError("ai_default_model_profile must be a non-empty string")
+            _CONFIG[key] = profile
+            return current_config()
+
+        if key == "ai_model_profiles":
+            profiles = parse_model_profiles(value)
+            _CONFIG[key] = {name: profile.to_redacted_dict() for name, profile in profiles.items()}
+            return current_config()
+
+        if key == "ai_routing_rules":
+            rules = parse_routing_rules(value)
+            _CONFIG[key] = [
+                {
+                    "name": rule.name,
+                    "profile": rule.profile,
+                    "keywords": list(rule.keywords),
+                    "task_types": list(rule.task_types),
+                }
+                for rule in rules
+            ]
             return current_config()
 
         if key == "role":

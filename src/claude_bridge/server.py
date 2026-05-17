@@ -396,6 +396,12 @@ def _get_ai_provider() -> Any | None:
         return None
 
 
+def _get_ai_router() -> Any:
+    from claude_bridge.ai_router import AIModelRouter
+
+    return AIModelRouter.from_config(current_config())
+
+
 def _build_index(path: str) -> dict[str, Any]:
     from claude_bridge.indexing import build_index
 
@@ -680,6 +686,24 @@ narrow_context = _tool_or_disabled(_WORKFLOW_TOOLS, "narrow_context")
 suggest_validation_commands = _tool_or_disabled(_WORKFLOW_TOOLS, "suggest_validation_commands")
 run_agent_loop_session = _tool_or_disabled(_WORKFLOW_TOOLS, "run_agent_loop_session")
 run_workflow = _tool_or_disabled(_WORKFLOW_TOOLS, "run_workflow")
+
+
+if _should_register_tool("run_council_session"):
+    from claude_bridge.council import run_council_session as _run_council_session_impl
+    from claude_bridge.council_tool_server import register_council_tools
+
+    _COUNCIL_TOOLS = register_council_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        json_response=_json_response,
+        run_council_session_impl=_run_council_session_impl,
+        router_getter=_get_ai_router,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _COUNCIL_TOOLS = {}
+run_council_session = _tool_or_disabled(_COUNCIL_TOOLS, "run_council_session")
 
 
 _META_TOOLS = register_meta_tools(
