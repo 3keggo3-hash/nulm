@@ -37,11 +37,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/3keggo3-hash/claude-bridge"
-Repository = "https://github.com/3keggo3-hash/claude-bridge"
-Documentation = "https://github.com/3keggo3-hash/claude-bridge#readme"
-"Bug Tracker" = "https://github.com/3keggo3-hash/claude-bridge/issues"
-Changelog = "https://github.com/3keggo3-hash/claude-bridge/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/3keggo3-hash/nulm"
+Repository = "https://github.com/3keggo3-hash/nulm"
+Documentation = "https://github.com/3keggo3-hash/nulm#readme"
+"Bug Tracker" = "https://github.com/3keggo3-hash/nulm/issues"
+Changelog = "https://github.com/3keggo3-hash/nulm/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 legacy = [
