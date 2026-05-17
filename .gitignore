@@ -71,6 +71,11 @@ config.toml
 agent_claims.json
 agent_discussion.json
 agent_prompts.py
+agents/autonomous/
+
+# Benchmarks
+benchmarks/baselines/
+benchmarks/profiles/
 
 # Research
 .research/
@@ -81,3 +86,4 @@ output/
 # Internal planning (not for public distribution)
 archive/
 tasks/
+docs/planning/
