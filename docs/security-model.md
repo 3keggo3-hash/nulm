@@ -100,6 +100,20 @@ deployments):
 - `CLAUDE_BRIDGE_ALLOWED_ROOTS` — colon-separated list of allowed root paths.
 - `CLAUDE_BRIDGE_APPROVAL_PRESET` — preset name for approval mode.
 
+### Provider Keys and AI Routing
+
+Bridge-internal AI routing is optional and disabled by default. It affects only Bridge advisory
+workflows such as `run_council_session`; it does not switch the MCP client's primary chat model and
+does not bypass file, shell, approval, or guard-policy checks.
+
+Model profiles store provider names, model names, and `api_key_env` references only. Raw provider
+keys must be supplied through environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+or `DEEPSEEK_API_KEY`. Config inspection redacts key presence and never returns secret values.
+
+Custom cloud provider `base_url` values must use HTTPS and must not point to private/internal hosts
+or hostnames resolving to private/internal addresses. Ollama routing is intentionally limited to
+localhost/loopback URLs because it is expected to run on the user's own machine.
+
 ---
 
 ## Mobile Dashboard and Tunnel Safety
