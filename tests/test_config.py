@@ -1,4 +1,5 @@
 """Tests for config module."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -160,6 +161,23 @@ class TestCurrentConfig:
         cfg = config_module.current_config()
         assert cfg["ai_evaluator_api_key"] == ""
 
+    async def test_ai_routing_config_has_no_secret_values(self, temp_project):
+        config_module.apply_config(
+            project_dir=temp_project,
+            ai_routing_enabled=True,
+            ai_model_profiles={
+                "fast": {
+                    "provider": "openai",
+                    "model": "gpt-test",
+                    "api_key_env": "OPENAI_API_KEY",
+                }
+            },
+        )
+        cfg = config_module.current_config()
+        assert cfg["ai_routing_enabled"] is True
+        assert cfg["ai_model_profiles"]["fast"]["api_key_env"] == "OPENAI_API_KEY"
+        assert "sk-" not in json.dumps(cfg["ai_model_profiles"])
+
 
 class TestUpdateRuntimeConfig:
     async def test_update_shell_timeout(self, temp_project):
@@ -210,6 +228,30 @@ class TestConfigureFromEnvState:
         assert cfg["auto_approve"] is True
         assert cfg["context_budget_profile"] == "deep"
 
+    async def test_ai_routing_env_var_reading(self, temp_project, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(temp_project.resolve()))
+        monkeypatch.setenv("CLAUDE_BRIDGE_AI_ROUTING_ENABLED", "1")
+        monkeypatch.setenv("CLAUDE_BRIDGE_AI_ROUTING_MODE", "rules")
+        monkeypatch.setenv("CLAUDE_BRIDGE_AI_DEFAULT_PROFILE", "fast")
+        monkeypatch.setenv(
+            "CLAUDE_BRIDGE_AI_PROFILES_JSON",
+            '{"fast": {"provider": "openai", "model": "gpt-test", '
+            '"api_key_env": "OPENAI_API_KEY"}}',
+        )
+        monkeypatch.setenv(
+            "CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON",
+            '[{"name": "review", "profile": "fast", "keywords": ["review"]}]',
+        )
+
+        config_module.configure_from_env_state()
+        cfg = config_module.current_config()
+
+        assert cfg["ai_routing_enabled"] is True
+        assert cfg["ai_routing_mode"] == "rules"
+        assert cfg["ai_default_model_profile"] == "fast"
+        assert cfg["ai_model_profiles"]["fast"]["model"] == "gpt-test"
+        assert cfg["ai_routing_rules"][0]["profile"] == "fast"
+
     async def test_auto_approve_requires_second_env_confirmation(self, temp_project, monkeypatch):
         monkeypatch.setenv("CLAUDE_BRIDGE_PROJECT_DIR", str(temp_project.resolve()))
         monkeypatch.setenv("CLAUDE_BRIDGE_AUTO_APPROVE", "1")
@@ -246,6 +288,7 @@ def test_tool_profile_filters_registered_mcp_tools(tmp_path):
     assert "run_shell" in tool_names
     assert "find_relevant_files" in tool_names
     assert "workspace_status" in tool_names
+    assert "run_council_session" not in tool_names
     assert "read_pdf" not in tool_names
     assert "create_plan" not in tool_names
     assert "commit_changes" not in tool_names
@@ -260,6 +303,7 @@ def test_standard_tool_profile_registers_documented_workflow_tools(tmp_path):
     assert "list_pending_approvals" in tool_names
     assert "recommend_skills" in tool_names
     assert "inspect_skill_package" in tool_names
+    assert "run_council_session" in tool_names
     assert "run_skill" not in tool_names
     assert "_run_workflow" not in tool_names
 
@@ -315,6 +359,7 @@ def test_tool_profile_union_covers_public_server_exports():
         "register_url_tools",
         "register_workflow_tools",
         "register_control_plane_tools",
+        "register_council_tools",
         "reset_audit_session",
         "reset_onboarding_state",
         "reset_process_sessions",

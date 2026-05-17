@@ -1,4 +1,5 @@
 """Shared helpers for Claude Bridge tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -371,6 +372,11 @@ def set_active_project_dir(next_project_dir: Path) -> None:
         ai_evaluator_model=str(config["ai_evaluator_model"]),
         ai_evaluator_timeout=int(config["ai_evaluator_timeout"]),
         ai_evaluator_fallback_action=str(config["ai_evaluator_fallback_action"]),
+        ai_routing_enabled=bool(config["ai_routing_enabled"]),
+        ai_routing_mode=str(config["ai_routing_mode"]),
+        ai_default_model_profile=str(config["ai_default_model_profile"]),
+        ai_model_profiles=cast(dict[str, Any], config["ai_model_profiles"]),
+        ai_routing_rules=cast(list[dict[str, Any]], config["ai_routing_rules"]),
         role=cast(str | None, config["role"]),
         user=cast(str | None, config["user"]),
     )

@@ -1,4 +1,5 @@
 """Registration helpers for meta/configuration MCP tools and prompt catalogue."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -992,6 +993,13 @@ def register_meta_tools(
                         "provider": config_snapshot.get("ai_evaluator_provider", "local"),
                         "timeout": config_snapshot.get("ai_evaluator_timeout", 5),
                         "latency": ai_latency_summary(),
+                    },
+                    "ai_routing": {
+                        "enabled": config_snapshot.get("ai_routing_enabled", False),
+                        "mode": config_snapshot.get("ai_routing_mode", "auto"),
+                        "default_profile": config_snapshot.get("ai_default_model_profile", "local"),
+                        "profile_count": len(config_snapshot.get("ai_model_profiles", {})),
+                        "rule_count": len(config_snapshot.get("ai_routing_rules", [])),
                     },
                     "agent_quality": {
                         "available_tools": {

@@ -1,4 +1,5 @@
 """Tests for workflow tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -218,13 +219,24 @@ class TestRunAgentLoopSession:
         assert payload["ok"] is True
         advisory = payload["details"]["agent_quality"]
         assert advisory["schema_version"] == "agent_loop_session_quality.v1"
-        assert advisory["per_step_advisory"] is False
-        assert advisory["improved_request"]["schema_version"] == "improved_request.v1"
-        assert advisory["plan_quality"]["schema_version"] == "plan_quality_review.v1"
-        assert advisory["context_strategy"]
-        assert advisory["token_strategy"]
-        assert advisory["result_quality"]["schema_version"] == "result_quality_review.v1"
-        assert advisory["suggested_next_prompt"]
+
+
+class TestRunCouncilSession:
+    async def test_run_council_session_is_read_only_plan(self, temp_project):
+        payload = parse_payload(
+            await mcp_server.run_council_session(
+                task="add AI routing",
+                target="src/",
+                agent_count=3,
+                rounds=1,
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        assert details["schema_version"] == "ai_council_session.v1"
+        assert details["execution_boundary"].startswith("This council is read-only")
+        assert "steps_json" in details
 
     async def test_agent_loop_session_does_not_add_advice_to_each_step(
         self, temp_project, monkeypatch

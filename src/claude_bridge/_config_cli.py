@@ -1,4 +1,5 @@
 """Config CLI commands."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -131,16 +132,16 @@ def config_set(
             "onboarding_enabled",
             "intent_compaction_enabled",
             "ai_evaluator_enabled",
+            "ai_routing_enabled",
         }:
             parsed_value = value.lower() in {"true", "1", "yes", "on"}
-        elif key == "auto_approve_patterns":
+        elif key in {"auto_approve_patterns", "ai_model_profiles", "ai_routing_rules"}:
             import json
 
             try:
                 parsed_value = json.loads(value)
             except json.JSONDecodeError:
-                console.print("[red]Invalid JSON for auto_approve_patterns[/red]")
-                console.print("  Example: {\"run_shell\": [\"cat\", \"head\", \"ls\"]}")
+                console.print(f"[red]Invalid JSON for {key}[/red]")
                 raise typer.Exit(code=1)
         validate_config_value(key, parsed_value)
     except ValueError as exc:
@@ -194,6 +195,11 @@ def config_describe(
         "intent_compaction_enabled": "Enable goal/intent compaction",
         "ai_evaluator_enabled": "Enable AI evaluator for tool calls",
         "ai_evaluator_model": "AI evaluator model name",
+        "ai_routing_enabled": "Enable Bridge-internal AI model routing",
+        "ai_routing_mode": "AI routing mode: off, rules, auto, or manual",
+        "ai_default_model_profile": "Default Bridge-internal AI model profile name",
+        "ai_model_profiles": "Dict of model profiles; use api_key_env names, never raw secrets",
+        "ai_routing_rules": "List of keyword/task-type routing rules",
         "max_parallel": "Maximum parallel workflow/validation workers, integer 1-32.",
         "auto_approve_risk_level": "Highest risk level auto-approved: none, low, medium, high.",
         "auto_approve_patterns": "Dict of tool->patterns for auto-approve. E.g. run_shell: [cat, head, ls]",
@@ -209,13 +215,13 @@ def config_describe(
 @config_app.command("add-pattern")
 def config_add_pattern(
     tool: str = typer.Argument(..., help="Tool name (e.g. run_shell, read_file)"),
-    patterns: str = typer.Argument(..., help="JSON array of patterns, e.g. '[\"cat\", \"head\"]'"),
+    patterns: str = typer.Argument(..., help='JSON array of patterns, e.g. \'["cat", "head"]\''),
 ) -> None:
     """Add command patterns for auto-approval without prompting.
 
     Examples:
       claude-bridge config add-pattern run_shell '["cat", "head", "ls"]'
-      claude-bridge config add-pattern read_file '["\.py", "\.md"]'
+      claude-bridge config add-pattern read_file '["\\.py", "\\.md"]'
     """
     import json
 
@@ -254,7 +260,7 @@ def config_remove_pattern(
 
     Examples:
       claude-bridge config remove-pattern run_shell '["cat"]'
-      claude-bridge config remove-pattern read_file '["\.py"]'
+      claude-bridge config remove-pattern read_file '["\\.py"]'
     """
     import json
 
