@@ -1,4 +1,5 @@
 """Benchmark scheduling and cron-like automation."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -9,7 +10,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _default_schedule_dir() -> Path:
@@ -46,9 +47,9 @@ def _matches_cron_part(value: int, part: str) -> bool:
         return any(_matches_cron_part(value, p.strip()) for p in part.split(","))
     if "/" in part:
         base, step = part.split("/")
-        base = int(base) if base != "*" else 0
-        step = int(step)
-        return (value - base) % step == 0
+        base_value = int(base) if base != "*" else 0
+        step_value = int(step)
+        return (value - base_value) % step_value == 0
     if "-" in part:
         start, end = part.split("-")
         return int(start) <= value <= int(end)
@@ -115,7 +116,8 @@ def load_benchmark_schedule(name: str) -> dict[str, Any] | None:
     if not schedule_file.exists():
         return None
     try:
-        return json.loads(schedule_file.read_text(encoding="utf-8"))
+        data = json.loads(schedule_file.read_text(encoding="utf-8"))
+        return cast(dict[str, Any], data) if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -167,7 +169,11 @@ def run_scheduled_benchmark(schedule: dict[str, Any]) -> dict[str, Any]:
         if baseline_file and baseline_file.exists():
             from claude_bridge.benchmarking import compare_benchmark_to_baseline
 
-            comparison = compare_benchmark_to_baseline(result, baseline_file)
+            baseline_data = json.loads(baseline_file.read_text(encoding="utf-8"))
+            baseline = (
+                cast(dict[str, Any], baseline_data) if isinstance(baseline_data, dict) else {}
+            )
+            comparison = compare_benchmark_to_baseline(result, baseline)
             result["comparison"] = comparison
 
         schedule["last_run"] = time.time()

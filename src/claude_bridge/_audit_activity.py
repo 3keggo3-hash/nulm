@@ -1,4 +1,5 @@
 """Activity summary building, validation tracking, filtering, and policy decision extraction."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

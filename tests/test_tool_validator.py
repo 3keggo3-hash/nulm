@@ -224,8 +224,9 @@ class TestToolSchemaValidator:
             },
         }
         result = self.validator.validate(schema)
-        assert result.valid is True
+        assert result.valid is False
         assert result.risk_level == "high"
+        assert "manual integration" in result.reason
 
     def test_shell_tool_high_risk(self):
         schema = {
@@ -239,8 +240,9 @@ class TestToolSchemaValidator:
             },
         }
         result = self.validator.validate(schema)
-        assert result.valid is True
+        assert result.valid is False
         assert result.risk_level == "high"
+        assert "manual integration" in result.reason
 
     def test_readonly_tool_low_risk(self):
         schema = {

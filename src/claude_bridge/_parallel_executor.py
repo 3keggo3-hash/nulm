@@ -1,4 +1,5 @@
 """Parallel workflow execution with aggregation modes and risk scoring."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -115,7 +116,10 @@ async def execute_parallel_steps(
         try:
             import asyncio
 
-            result = asyncio.run(execute_fn(step)) if execute_fn is not None else None
+            async def run_step() -> dict[str, Any] | None:
+                return await execute_fn(step) if execute_fn is not None else None
+
+            result = asyncio.run(run_step())
             if result is None:
                 step.status = "completed"
                 result = {"ok": True}

@@ -116,13 +116,15 @@ localhost/loopback URLs because it is expected to run on the user's own machine.
 
 ### Adaptive Proposals and MCP Discovery
 
-Adaptive proposals are approval-gated. Skill comparison can create pending deactivation proposals,
-but no skill is deactivated merely because a proposal exists; the user must call `accept_proposal`
-explicitly. Proposal state is written under the project-local `.claude-bridge/proposals` directory.
+Adaptive proposals are approval-gated recommendations. Skill comparison can create pending
+proposals, but no skill is deactivated merely because a proposal exists or because the user accepts
+it; `accept_proposal` records the user's decision for later, explicit configuration changes.
+Proposal state is written under the project-local `.claude-bridge/proposals` directory.
 
-MCP discovery is observational and validates discovered tool schemas before surfacing them. Tools
-with blocked patterns, unsupported schemas, or high-risk descriptions are treated as untrusted for
-recommendation purposes, and discovery does not execute discovered tools.
+MCP discovery is metadata-only. It records nearby MCP-like processes and filters already-known tool
+schemas, but it does not launch peer commands, run package-manager probes, or execute discovered
+tools. Schemas with blocked patterns, unsupported parameters, or high-risk descriptions are treated
+as invalid for recommendation purposes.
 
 ---
 

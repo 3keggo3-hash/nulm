@@ -1,4 +1,5 @@
 """Context compression utilities for reducing context window usage."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -7,7 +8,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Any
+from typing import Any, cast
 
 from claude_bridge._audit_core import _load_records, current_session_id
 from claude_bridge.anomaly import compute_anomaly_scores
@@ -82,7 +83,7 @@ def compress_session(session_id: str) -> str:
 
     cached = _compress_cache.get(session_id)
     if cached is not None:
-        return cached
+        return cast(str, cached)
 
     records = _load_records(session_id)
     if not records:

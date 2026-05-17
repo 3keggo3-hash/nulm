@@ -1,4 +1,5 @@
 """Workflow state machine for Plan -> Approve -> Apply -> Test -> Report flow."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -135,7 +136,10 @@ class ParallelWorkflowExecutor:
             try:
                 import asyncio
 
-                result = asyncio.run(task_fn())
+                async def run_task() -> dict[str, Any]:
+                    return await task_fn()
+
+                result: dict[str, Any] = asyncio.run(run_task())
                 return ("", result, None)
             except Exception as e:
                 return ("", None, str(e))
@@ -545,7 +549,10 @@ class WorkflowEngine:
             try:
                 import asyncio
 
-                result = asyncio.run(execute_fn(step)) if execute_fn is not None else None
+                async def run_step() -> dict[str, Any] | None:
+                    return await execute_fn(step) if execute_fn is not None else None
+
+                result = asyncio.run(run_step())
                 if result is None:
                     step.status = "completed"
                     result = {"ok": True}

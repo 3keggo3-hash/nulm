@@ -1,7 +1,7 @@
-"""MCP Discovery Engine for detecting and observing other MCP servers.
+"""MCP Discovery Engine for observing nearby MCP-like processes.
 
-Provides automatic discovery of MCP peers in the environment,
-capability probing, and observation for the learning system.
+Discovery is intentionally observational: it records peer metadata and filters
+already-known tool schemas, but it does not execute peer commands to probe them.
 """
 
 # Copyright (c) 2026 Claude Bridge Contributors
@@ -11,9 +11,7 @@ capability probing, and observation for the learning system.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -138,45 +136,24 @@ class MCPDiscovery:
         return peers
 
     async def probe_mcp_capabilities(self, peer: MCPPeer) -> list[ToolSchema]:
-        if peer.transport != "stdio":
-            return []
+        """Filter schemas that were already attached to a discovered peer.
 
-        try:
-            result = subprocess.run(
-                ["npx", "mcp", "tools", "--stdio"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=self._root,
-            )
-
-            if result.returncode != 0:
-                return []
-
-            try:
-                tools_data = json.loads(result.stdout)
-                if isinstance(tools_data, dict) and "tools" in tools_data:
-                    tools_data = tools_data["tools"]
-            except json.JSONDecodeError:
-                return []
-
-            validated_tools: list[ToolSchema] = []
-            for tool_raw in tools_data:
-                if not isinstance(tool_raw, dict):
-                    continue
-
-                validation = self._validator.validate(tool_raw)
-                tool = ToolSchema.from_raw_schema(tool_raw, validation)
-
-                if not validation.valid:
-                    continue
-
-                validated_tools.append(tool)
-
-            return validated_tools
-
-        except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
-            return []
+        This method deliberately avoids launching peer processes or package-manager
+        commands. Active capability probing needs an explicit transport adapter and
+        approval model; until then, discovery remains metadata-only.
+        """
+        validated_tools: list[ToolSchema] = []
+        for tool in peer.tools:
+            raw_schema = {
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.input_schema,
+            }
+            validation = self._validator.validate(raw_schema)
+            if not validation.valid or validation.risk_level == "high":
+                continue
+            validated_tools.append(ToolSchema.from_raw_schema(raw_schema, validation))
+        return validated_tools
 
     async def observe_peer(self, peer: MCPPeer) -> MCPPeer:
         async with self._lock:
@@ -186,19 +163,12 @@ class MCPDiscovery:
                 existing.update_last_seen()
                 existing.last_seen = datetime.now(timezone.utc).isoformat()
 
-                if existing.status == "active":
-                    tools = await self.probe_mcp_capabilities(existing)
-                    existing.tools = tools
+                existing.tools = await self.probe_mcp_capabilities(existing)
 
                 self._registry.save(existing)
                 return existing
 
-            tools = await self.probe_mcp_capabilities(peer)
-            peer.tools = tools
-
-            if not tools:
-                peer.status = "untrusted"
-                peer.trust_level = "unverified"
+            peer.tools = await self.probe_mcp_capabilities(peer)
 
             self._registry.save(peer)
             return peer
@@ -245,7 +215,7 @@ class MCPDiscovery:
                 continue
 
             for tool in peer.tools:
-                if tool.validation_valid:
+                if tool.validation_valid and tool.risk_level != "high":
                     all_tools.append(tool)
 
         return all_tools

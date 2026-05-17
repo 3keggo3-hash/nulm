@@ -1,4 +1,3 @@
-
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -16,7 +15,7 @@ Key functions:
 - `clear_index_cache()`: invalidate in-memory index cache
 
 The disk cache stores pickled index snapshots under `~/.claude-bridge/index-cache/`.
-"""""
+""" ""
 
 from __future__ import annotations
 

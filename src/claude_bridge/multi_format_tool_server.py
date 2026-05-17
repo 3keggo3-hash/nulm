@@ -1,4 +1,5 @@
 """Registration helpers for optional multi-format MCP tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

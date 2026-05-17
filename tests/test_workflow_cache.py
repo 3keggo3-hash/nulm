@@ -1,4 +1,5 @@
 """Tests for workflow_cache.py."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

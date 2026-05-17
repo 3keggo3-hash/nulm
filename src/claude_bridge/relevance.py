@@ -1,4 +1,3 @@
-
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -15,7 +14,7 @@ Key functions:
 
 Result entries include `score`, `matched_terms`, `matched_fields`, and
 `selection_reason` (e.g. "function_match", "combined").
-"""""
+""" ""
 
 from __future__ import annotations
 
@@ -150,14 +149,14 @@ def rank_indexed_files(
             "classes": " ".join(name.lower() for name in classes),
             "imports": " ".join(name.lower() for name in imports),
         }
-        phase_one_score = 0
+        phase_one_score = 0.0
         phase_one_fields: set[str] = set()
         phase_one_matched_terms: set[str] = set()
         content_term_hits = 0
         content_matched_terms: set[str] = set()
 
         for term in terms:
-            term_score = 0
+            term_score = 0.0
             idf = _document_frequency(index_payload, term)
             if term in haystacks["path"]:
                 term_score += 5

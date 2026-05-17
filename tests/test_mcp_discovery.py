@@ -6,11 +6,9 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 from claude_bridge.mcp_discovery import (
@@ -19,7 +17,7 @@ from claude_bridge.mcp_discovery import (
     _get_stdio_endpoint_from_cmdline,
     DISCOVERY_INTERVAL_SECONDS,
 )
-from claude_bridge.mcp_peer import MCPPeer
+from claude_bridge.mcp_peer import MCPPeer, ToolSchema
 
 
 class TestIsMcpProcessName:
@@ -137,65 +135,46 @@ class TestMCPDiscovery:
         peers = await self._discovery.discover_stdio_mcps()
         assert len(peers) == 0
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_probe_mcp_capabilities_success(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "tools": [
-                        {
-                            "name": "test_tool",
-                            "description": "A test tool",
-                            "inputSchema": {"type": "object", "properties": {}},
-                        }
-                    ]
-                }
-            ),
-        )
-
+    async def test_probe_mcp_capabilities_filters_attached_tools(self):
         peer = MCPPeer(
             peer_id="test_peer",
             name="Test MCP",
             transport="stdio",
             endpoint="test",
             discovered_at="2026-01-01T00:00:00Z",
+            tools=[
+                ToolSchema(
+                    name="test_tool",
+                    description="A test tool",
+                    input_schema={"type": "object", "properties": {}},
+                )
+            ],
         )
 
         tools = await self._discovery.probe_mcp_capabilities(peer)
         assert len(tools) == 1
         assert tools[0].name == "test_tool"
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_probe_mcp_capabilities_invalid_tool_blocked(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "tools": [
-                        {
-                            "name": "exec_tool",
-                            "description": "Execute eval() code",
-                            "inputSchema": {"type": "object", "properties": {}},
-                        }
-                    ]
-                }
-            ),
-        )
-
+    async def test_probe_mcp_capabilities_invalid_tool_blocked(self):
         peer = MCPPeer(
             peer_id="test_peer",
             name="Test MCP",
             transport="stdio",
             endpoint="test",
             discovered_at="2026-01-01T00:00:00Z",
+            tools=[
+                ToolSchema(
+                    name="exec_tool",
+                    description="Execute eval() code",
+                    input_schema={"type": "object", "properties": {}},
+                )
+            ],
         )
 
         tools = await self._discovery.probe_mcp_capabilities(peer)
         assert len(tools) == 0
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_probe_mcp_capabilities_http_transport(self, mock_run):
+    async def test_probe_mcp_capabilities_does_not_actively_probe_http_transport(self):
         peer = MCPPeer(
             peer_id="test_peer",
             name="Test MCP",
@@ -206,12 +185,8 @@ class TestMCPDiscovery:
 
         tools = await self._discovery.probe_mcp_capabilities(peer)
         assert len(tools) == 0
-        mock_run.assert_not_called
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_observe_peer_new(self, mock_run):
-        mock_run.side_effect = subprocess.TimeoutExpired("cmd", 5)
-
+    async def test_observe_peer_new_metadata_only(self):
         peer = MCPPeer(
             peer_id="observe_test_peer",
             name="Observe Test",
@@ -223,25 +198,9 @@ class TestMCPDiscovery:
         observed = await self._discovery.observe_peer(peer)
         assert observed.peer_id == "observe_test_peer"
         assert self._discovery._registry.exists("observe_test_peer") is True
-        assert observed.status == "untrusted"
+        assert observed.status == "active"
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_observe_peer_updates_tools(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "tools": [
-                        {
-                            "name": "new_tool",
-                            "description": "A new tool",
-                            "inputSchema": {"type": "object", "properties": {}},
-                        }
-                    ]
-                }
-            ),
-        )
-
+    async def test_observe_peer_filters_existing_tools(self):
         peer = MCPPeer(
             peer_id="update_tools_peer",
             name="Update Tools",
@@ -249,6 +208,18 @@ class TestMCPDiscovery:
             endpoint="update-tools",
             discovered_at="2026-01-01T00:00:00Z",
             status="active",
+            tools=[
+                ToolSchema(
+                    name="new_tool",
+                    description="A new tool",
+                    input_schema={"type": "object", "properties": {}},
+                ),
+                ToolSchema(
+                    name="run_shell",
+                    description="Execute shell command",
+                    input_schema={"type": "object", "properties": {}},
+                ),
+            ],
         )
 
         self._discovery._registry.save(peer)
@@ -285,13 +256,7 @@ class TestMCPDiscovery:
         result = await self._discovery.refresh_peer("nonexistent")
         assert result is None
 
-    @patch("claude_bridge.mcp_discovery.subprocess.run")
-    async def test_refresh_peer_existing(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"tools": []}),
-        )
-
+    async def test_refresh_peer_existing(self):
         peer = MCPPeer(
             peer_id="refresh_test_peer",
             name="Refresh Test",

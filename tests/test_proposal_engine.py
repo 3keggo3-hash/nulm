@@ -303,6 +303,33 @@ class TestProposalEngine:
 
         assert engine._session_proposal_count == 0
 
+    async def test_record_and_propose_does_not_fabricate_statistical_proposal(self):
+        mock_memory = MagicMock()
+        mock_memory.search_lessons.return_value = [
+            MagicMock(pattern="git_helper_v2", hits=90, solution="try git_helper_v2")
+        ]
+        mock_memory.add_lesson = MagicMock()
+
+        mock_proposals = MagicMock()
+        mock_proposals.save = MagicMock(return_value=(True, ""))
+
+        engine = ProposalEngine(
+            memory_store=mock_memory,
+            proposal_store=mock_proposals,
+        )
+
+        result = TaskResult(
+            task_type="git",
+            skill_used="git_helper",
+            success=False,
+            duration_ms=1000.0,
+        )
+
+        await engine.record_and_propose(result)
+
+        assert engine._session_proposal_count == 0
+        mock_proposals.save.assert_not_called()
+
     def test_create_proposal_engine(self):
         engine = create_proposal_engine(root=self._root)
         assert engine is not None

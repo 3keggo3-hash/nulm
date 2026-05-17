@@ -1,4 +1,5 @@
 """Deterministic self-critique / code review via AST, regex, and text analysis."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

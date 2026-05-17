@@ -1,4 +1,5 @@
 """Unit tests for shell_tools.py — command validation, safety guards, output handling."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

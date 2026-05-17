@@ -1,4 +1,5 @@
 """Orchestrator agent for task decomposition and result synthesis."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

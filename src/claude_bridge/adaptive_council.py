@@ -1,7 +1,8 @@
-"""Adaptive council module for deactivation proposals and skill recommendations.
+"""Approval-gated proposal store for skill recommendations.
 
-Provides proposal creation and management for skill deactivation based on
-comparison reports, with user notification and approval workflow.
+Provides proposal creation and management based on comparison reports.
+Accepting a proposal records the user's decision; it does not directly disable
+or mutate skills.
 """
 
 # Copyright (c) 2026 Claude Bridge Contributors
@@ -72,14 +73,14 @@ class DeactivationProposal:
 
         lines = [
             "---",
-            "Skill Comparison Result",
+            "Skill Recommendation",
             f"Current: {self.skill_to_deactivate} (acceptance: {skill_rate:.0%})",
-            f"Alternative: {self.replacement} (acceptance: {replacement_rate:.0%})",
+            f"Recommended: {self.replacement} (acceptance: {replacement_rate:.0%})",
             f"Reason: {self.reason}",
             f"Sample size: {sample_size} observations",
             "---",
-            f'Accept: accept_proposal("{self.id}")',
-            f'Reject: reject_proposal("{self.id}")',
+            f'Record accept: accept_proposal("{self.id}")',
+            f'Record reject: reject_proposal("{self.id}")',
         ]
         return "\n".join(lines)
 
@@ -177,15 +178,14 @@ async def propose_deactivation(
     proposal_id = f"deact_{uuid.uuid4().hex[:12]}"
 
     comparison = report.comparison
+    winner_rate = max(comparison.skill_a_rate, comparison.skill_b_rate) if comparison else 0
+    loser_rate = min(comparison.skill_a_rate, comparison.skill_b_rate) if comparison else 0
     stats = {
-        "winner_rate": comparison.skill_a_rate if comparison else 0,
-        "loser_rate": comparison.skill_b_rate if comparison else 0,
+        "winner_rate": winner_rate,
+        "loser_rate": loser_rate,
         "sample_size": 0,
         "significant": comparison.significant if comparison else False,
     }
-    if comparison and hasattr(comparison, "skill_a_rate") and hasattr(comparison, "skill_b_rate"):
-        stats["winner_rate"] = comparison.skill_a_rate
-        stats["loser_rate"] = comparison.skill_b_rate
 
     now = datetime.now(timezone.utc)
     expires = now + timedelta(hours=24)

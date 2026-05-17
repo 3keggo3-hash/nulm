@@ -1,4 +1,5 @@
 """Main workflow orchestration and prompt catalog."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

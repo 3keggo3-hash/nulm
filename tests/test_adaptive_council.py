@@ -91,8 +91,8 @@ class TestDeactivationProposal:
         formatted = self._proposal.format_for_user()
         assert "skill_a" in formatted
         assert "skill_b" in formatted
-        assert "Accept:" in formatted
-        assert "Reject:" in formatted
+        assert "Record accept:" in formatted
+        assert "Record reject:" in formatted
         assert "test_proposal_123" in formatted
 
 

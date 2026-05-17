@@ -2,6 +2,7 @@
 
 Provides tools for server-initiated notifications (Feature 1: MCP Protocol Stream Extensions).
 """
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -53,9 +54,7 @@ def register_notification_tools(
             started_at = time.perf_counter()
             broadcaster = get_broadcaster()
             history = (
-                broadcaster.get_history(event_type=event_type, limit=5)
-                if include_history
-                else []
+                broadcaster.get_history(event_type=event_type, limit=5) if include_history else []
             )
             history_data = [e.to_dict() for e in history]
             result = json_response(
@@ -119,6 +118,7 @@ def register_notification_tools(
         )
 
     if ctx.should_register("get_stream_capabilities"):
+
         async def get_stream_capabilities() -> str:
             """Get server capabilities for streaming and server-initiated notifications.
 

@@ -1,4 +1,5 @@
 """Audit session management, file I/O, and directory scanning."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -311,7 +312,7 @@ def log_policy_change(
     session_id = current_session_id()
     ensure_session_start_logged(session_id, agent_id)
 
-    params = {
+    params: dict[str, Any] = {
         "policy_name": policy_name,
         "action": action,
     }

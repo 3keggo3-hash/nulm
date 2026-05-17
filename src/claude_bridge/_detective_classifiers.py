@@ -1,4 +1,5 @@
 """Error classification patterns for Bridge Detective."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -88,7 +89,7 @@ def classify_error(error_output: str) -> str:
     if not scores:
         return "UNKNOWN"
 
-    best_type = max(scores, key=scores.get)
+    best_type = max(scores, key=lambda key: scores[key])
     if scores[best_type] < _CONFIDENCE_THRESHOLD:
         return "UNKNOWN"
 

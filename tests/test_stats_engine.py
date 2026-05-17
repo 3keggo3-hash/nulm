@@ -66,6 +66,7 @@ class TestStatisticalThreshold:
         assert result.skill_b_rate == pytest.approx(0.6, rel=0.01)
         assert result.significant is True
         assert result.rate_difference == pytest.approx(0.333, rel=0.01)
+        assert result.p_value == pytest.approx(0.00227, rel=0.1)
 
     def test_clear_winner_b_better(self):
         engine = StatisticalThreshold(min_sample_size=30, confidence_level=0.95)

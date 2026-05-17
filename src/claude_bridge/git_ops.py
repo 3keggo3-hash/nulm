@@ -396,7 +396,7 @@ def git_branch_list(project_dir: Path) -> dict[str, Any]:
     if result.returncode != 0:
         return {"ok": False, "branches": [], "output": result.stderr}
 
-    branches: list[dict[str, str]] = []
+    branches: list[dict[str, Any]] = []
     for line in result.stdout.splitlines():
         if not line.strip():
             continue

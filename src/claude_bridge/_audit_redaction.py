@@ -1,4 +1,5 @@
 """Value summarization, truncation, and sensitive data redaction for audit records."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 

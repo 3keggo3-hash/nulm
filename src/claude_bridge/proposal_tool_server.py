@@ -1,7 +1,6 @@
-"""Registration helpers for Adaptive Skill Router proposal MCP tools.
+"""Registration helpers for adaptive recommendation proposal MCP tools.
 
-Provides tools for managing skill deactivation proposals including
-accept/reject operations and proposal notifications.
+Provides tools for listing recommendations and recording accept/reject decisions.
 """
 
 # Copyright (c) 2026 Claude Bridge Contributors
@@ -29,7 +28,7 @@ def register_proposal_tools(
     json_response: Callable[..., str],
     enabled_names: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Register proposal management tools for Adaptive Skill Router."""
+    """Register proposal management tools for adaptive recommendations."""
     ctx = ToolRegistrationContext(
         mcp=mcp,
         tool_options=tool_options,
@@ -60,7 +59,7 @@ def register_proposal_tools(
                 )
                 result = json_response(
                     True,
-                    f"Proposal {proposal_id} accepted",
+                    f"Proposal {proposal_id} accept decision recorded",
                     details={"proposal_id": proposal_id, "action": "accepted"},
                 )
 
@@ -73,7 +72,7 @@ def register_proposal_tools(
 
         ctx.register(
             "accept_proposal",
-            "Accept a pending skill deactivation proposal.",
+            "Record acceptance of a pending skill recommendation proposal.",
             accept_proposal,
         )
 
@@ -100,7 +99,7 @@ def register_proposal_tools(
                 )
                 result = json_response(
                     True,
-                    f"Proposal {proposal_id} rejected",
+                    f"Proposal {proposal_id} reject decision recorded",
                     details={"proposal_id": proposal_id, "action": "rejected"},
                 )
 
@@ -113,7 +112,7 @@ def register_proposal_tools(
 
         ctx.register(
             "reject_proposal",
-            "Reject a pending skill deactivation proposal.",
+            "Record rejection of a pending skill recommendation proposal.",
             reject_proposal,
         )
 
@@ -142,7 +141,7 @@ def register_proposal_tools(
 
         ctx.register(
             "list_pending_proposals",
-            "List all pending skill deactivation proposals.",
+            "List all pending skill recommendation proposals.",
             list_pending_proposals,
             read_only=True,
         )
