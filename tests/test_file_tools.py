@@ -1,4 +1,5 @@
 """Direct unit tests for file_tools.py helper functions and edge cases."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -184,6 +185,67 @@ class TestBudgetAwareReadLimits:
         assert result["ok"] is True
         assert len(result["details"]["results"]) == 50
         assert result["details"]["truncated"] is True
+
+
+class TestMetaFileTools:
+    async def test_path_exists_and_stat_file(self, temp_project):
+        target = temp_project / "info.txt"
+        target.write_text("hello\n")
+
+        exists = parse_payload(await mcp_server.path_exists("info.txt"))
+        stat = parse_payload(await mcp_server.stat_file("info.txt"))
+
+        assert exists["ok"] is True
+        assert exists["details"]["exists"] is True
+        assert exists["details"]["type"] == "file"
+        assert stat["ok"] is True
+        assert stat["details"]["size"] == len("hello\n")
+
+    async def test_mkdir_creates_nested_directory(self, temp_project):
+        result = parse_payload(await mcp_server.mkdir("a/b", parents=True))
+
+        assert result["ok"] is True
+        assert (temp_project / "a" / "b").is_dir()
+
+    async def test_find_files_matches_glob(self, temp_project):
+        (temp_project / "src").mkdir()
+        (temp_project / "src" / "app.py").write_text("print('hi')\n")
+        (temp_project / "notes.txt").write_text("notes\n")
+
+        result = parse_payload(await mcp_server.find_files("*.py", path="src"))
+
+        assert result["ok"] is True
+        assert result["details"]["results"] == [
+            {"path": "app.py", "type": "file", "size": len("print('hi')\n")}
+        ]
+
+    async def test_diff_files_returns_unified_diff(self, temp_project):
+        (temp_project / "before.txt").write_text("one\ntwo\n")
+        (temp_project / "after.txt").write_text("one\nthree\n")
+
+        result = parse_payload(await mcp_server.diff_files("before.txt", "after.txt"))
+
+        assert result["ok"] is True
+        assert result["details"]["identical"] is False
+        assert "-two" in result["details"]["diff"]
+        assert "+three" in result["details"]["diff"]
+
+    async def test_append_to_file_appends_text(self, temp_project):
+        (temp_project / "log.txt").write_text("one\n")
+
+        result = parse_payload(await mcp_server.append_to_file("log.txt", "two\n"))
+
+        assert result["ok"] is True
+        assert (temp_project / "log.txt").read_text() == "one\ntwo\n"
+
+    async def test_append_to_file_blocks_secret_content(self, temp_project):
+        (temp_project / "log.txt").write_text("one\n")
+
+        result = parse_payload(await mcp_server.append_to_file("log.txt", "api_key='secret'"))
+
+        assert result["ok"] is False
+        assert result["code"] == "secret_pattern_detected"
+        assert (temp_project / "log.txt").read_text() == "one\n"
 
 
 # ---------------------------------------------------------------------------

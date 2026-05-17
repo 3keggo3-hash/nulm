@@ -1,4 +1,5 @@
 """Command-line interface for Claude Bridge."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -920,7 +921,7 @@ def start(
     try:
         run_mcp_server()
     except KeyboardInterrupt:
-        sys.exit(0)
+        raise typer.Exit(code=0)
 
 
 @app.command()
@@ -1211,7 +1212,7 @@ def update(
         console.print("[green]Status:[/green] Up to date")
     else:
         console.print("[yellow]Status:[/yellow] Update available")
-        console.print("Upgrade:   [cyan]pip install --upgrade claude-bridge[/cyan]")
+        console.print("Upgrade:   [cyan]pip install --upgrade nulm[/cyan]")
 
 
 def _print_preset_explanation_table() -> None:
@@ -1626,10 +1627,7 @@ def install(
             resolved_preset = approval_preset or "dev-safe"
             resolved_provider = "local"
             resolved_api_key = ""
-            resolved_roots = (
-                [resolved_project_dir]
-                + [r.resolve() for r in (allow_root or [])]
-            )
+            resolved_roots = [resolved_project_dir] + [r.resolve() for r in (allow_root or [])]
             resolved_tool_profile = "standard"
         else:
             console.print("\n[b]Setup type:[/b]")
@@ -1641,9 +1639,7 @@ def install(
             project_path = project_dir.resolve()
             if is_detailed:
                 console.print("\n[b]Project directory:[/b]")
-                project_path = Path(
-                    Prompt.ask("Directory", default=str(project_path))
-                ).resolve()
+                project_path = Path(Prompt.ask("Directory", default=str(project_path))).resolve()
             resolved_project_dir = project_path
 
             target_options = {
@@ -1721,9 +1717,9 @@ def install(
 
             if is_detailed:
                 console.print("\n[b]Tool profile:[/b]")
-                console.print("  1. [cyan]essential[/cyan] - Minimal tools for low token budget")
-                console.print("  2. [cyan]standard[/cyan] - Default set of tools")
-                console.print("  3. [cyan]full[/cyan] - All available tools")
+                console.print("  1. [cyan]essential[/cyan] - Minimal tools, lowest token use")
+                console.print("  2. [cyan]standard[/cyan] - Default tools, balanced token use")
+                console.print("  3. [cyan]full[/cyan] - All tools, highest token use")
                 profile_choice = Prompt.ask("Choose", default="2", choices=["1", "2", "3"])
                 profile_map = {"1": "essential", "2": "standard", "3": "full"}
                 resolved_tool_profile = profile_map[profile_choice]
@@ -1764,6 +1760,11 @@ def install(
             )
         except ValueError as exc:
             console.print(f"[red]Install failed:[/red] {exc}")
+            console.print()
+            console.print("[dim]Hint: check that the target config path is writable and")
+            console.print("the MCP client is fully closed before retrying.[/dim]")
+            if resolved_target == "claude-desktop":
+                console.print("[dim]For Claude Desktop: fully quit the app, then retry.[/dim]")
             raise typer.Exit(code=1) from exc
 
         if resolved_api_key:
@@ -1791,13 +1792,11 @@ def install(
             console.print(f"AI provider: [cyan]{resolved_provider}[/cyan]")
 
         if resolved_target == "claude-desktop":
-            console.print(
-            "\nRestart Claude Desktop completely, then start a new chat."
-        )
+            console.print("\nRestart Claude Desktop completely, then start a new chat.")
         elif resolved_target == "vscode":
             console.print(
-            "\nReload VS Code or restart the MCP extension host, then open a new chat."
-        )
+                "\nReload VS Code or restart the MCP extension host, then open a new chat."
+            )
         else:
             console.print("\nReload the target MCP client and verify tools appear.")
 
@@ -1946,9 +1945,9 @@ def worktree_cmd(
 
     if status["is_worktree"]:
         console.print(
-        f"[yellow]You are in a worktree[/yellow] "
-        f"— branch: [cyan]{status['current_branch']}[/cyan]"
-    )
+            f"[yellow]You are in a worktree[/yellow] "
+            f"— branch: [cyan]{status['current_branch']}[/cyan]"
+        )
     else:
         console.print("You are in the main repository")
 
@@ -1995,12 +1994,12 @@ def sessions_cmd(
             console.print_json(data=session)
         else:
             console.print(
-        Panel.fit(
-            f"[bold cyan]Session:[/bold cyan] {show}",
-            title="Session",
-            border_style="cyan",
-        )
-    )
+                Panel.fit(
+                    f"[bold cyan]Session:[/bold cyan] {show}",
+                    title="Session",
+                    border_style="cyan",
+                )
+            )
             console.print(f"State: [cyan]{session.get('state', 'unknown')}[/cyan]")
             console.print(f"Task: {session.get('task', 'unknown')}")
             console.print(f"Step: {session.get('current_step', 0)}/{len(session.get('steps', []))}")
@@ -2016,12 +2015,12 @@ def sessions_cmd(
             console.print_json(data=session)
         else:
             console.print(
-            Panel.fit(
-                f"[bold green]Resuming session:[/bold green] {resume}",
-                title="Resume",
-                border_style="green",
+                Panel.fit(
+                    f"[bold green]Resuming session:[/bold green] {resume}",
+                    title="Resume",
+                    border_style="green",
+                )
             )
-        )
         console.print(f"Task: {session.get('task', 'unknown')}")
         console.print(
             f"Current step: {session.get('current_step', 0)}/{len(session.get('steps', []))}"
@@ -2051,12 +2050,12 @@ def sessions_cmd(
 
 @app.command("schedule")
 def schedule_cmd(
-    name: str = typer.Argument(..., help="Schedule name"),
-    cron_expr: str = typer.Option(
-        ..., "--cron", help="Cron expression (min hour day month weekday)"
+    name: str | None = typer.Argument(None, help="Schedule name"),
+    cron_expr: str | None = typer.Option(
+        None, "--cron", help="Cron expression (min hour day month weekday)"
     ),
     project_dir: Path = typer.Option(Path.cwd(), help="Project directory"),
-    query: str = typer.Option(..., "--query", help="Benchmark query"),
+    query: str | None = typer.Option(None, "--query", help="Benchmark query"),
     path: str = typer.Option(".", "--path", help="Subdirectory to benchmark"),
     limit: int = typer.Option(5, "--limit", help="Number of results"),
     repeats: int = typer.Option(3, "--repeats", help="Number of repeats"),
@@ -2126,6 +2125,13 @@ def schedule_cmd(
                 console.print(f"    Query: {s.get('query', 'N/A')[:60]}")
                 console.print(f"    Last run: {s.get('last_run', 'never')}")
         return
+
+    if name is None:
+        console.print("[red]NAME is required when creating a schedule[/red]")
+        raise typer.Exit(code=1)
+    if cron_expr is None or query is None:
+        console.print("[red]--cron and --query are required when creating a schedule[/red]")
+        raise typer.Exit(code=1)
 
     try:
         schedule_file = save_benchmark_schedule(
@@ -2820,6 +2826,14 @@ def doctor(
     for check in report.checks:
         status = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
         console.print(f"{status} {check.label}: {check.detail}")
+        if not check.ok and check.fix_suggestion:
+            console.print(f"  [yellow]Fix:[/yellow] {check.fix_suggestion}")
+
+    if report.quick_fixes:
+        console.print()
+        console.print("[bold]Quick fixes:[/bold]")
+        for fix in report.quick_fixes:
+            console.print(f"  - {fix}")
 
 
 @doctor_app.command()
@@ -2855,6 +2869,14 @@ def security(
     for check in report.checks:
         status = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
         console.print(f"{status} {check.label}: {check.detail}")
+        if not check.ok and check.fix_suggestion:
+            console.print(f"  [yellow]Fix:[/yellow] {check.fix_suggestion}")
+
+    if report.quick_fixes:
+        console.print()
+        console.print("[bold]Quick fixes:[/bold]")
+        for fix in report.quick_fixes:
+            console.print(f"  - {fix}")
 
 
 def main() -> None:

@@ -117,7 +117,7 @@ class TestReadImage:
 
         assert payload["ok"] is False
         assert payload["code"] == "dependency_missing"
-        assert payload["details"]["install"] == "pip install claude-bridge[multi-format]"
+        assert payload["details"]["install"] == "pip install nulm[multi-format]"
 
     async def test_read_image_rejects_unsupported_extension(self, temp_project: Path) -> None:
         (temp_project / "sample.tga").write_bytes(b"TGA")

@@ -133,6 +133,15 @@ def config_set(
             "ai_evaluator_enabled",
         }:
             parsed_value = value.lower() in {"true", "1", "yes", "on"}
+        elif key == "auto_approve_patterns":
+            import json
+
+            try:
+                parsed_value = json.loads(value)
+            except json.JSONDecodeError:
+                console.print("[red]Invalid JSON for auto_approve_patterns[/red]")
+                console.print("  Example: {\"run_shell\": [\"cat\", \"head\", \"ls\"]}")
+                raise typer.Exit(code=1)
         validate_config_value(key, parsed_value)
     except ValueError as exc:
         console.print(f"[red]Invalid value for {key}[/red]")
@@ -187,6 +196,7 @@ def config_describe(
         "ai_evaluator_model": "AI evaluator model name",
         "max_parallel": "Maximum parallel workflow/validation workers, integer 1-32.",
         "auto_approve_risk_level": "Highest risk level auto-approved: none, low, medium, high.",
+        "auto_approve_patterns": "Dict of tool->patterns for auto-approve. E.g. run_shell: [cat, head, ls]",
     }
     if key not in descriptions:
         console.print(f"[red]Unknown config key:[/red] {key}")
@@ -194,3 +204,88 @@ def config_describe(
         raise typer.Exit(code=1)
     console.print(f"[bold]{key}[/bold]")
     console.print(descriptions[key])
+
+
+@config_app.command("add-pattern")
+def config_add_pattern(
+    tool: str = typer.Argument(..., help="Tool name (e.g. run_shell, read_file)"),
+    patterns: str = typer.Argument(..., help="JSON array of patterns, e.g. '[\"cat\", \"head\"]'"),
+) -> None:
+    """Add command patterns for auto-approval without prompting.
+
+    Examples:
+      claude-bridge config add-pattern run_shell '["cat", "head", "ls"]'
+      claude-bridge config add-pattern read_file '["\.py", "\.md"]'
+    """
+    import json
+
+    cfg = current_config()
+    current = dict(cfg.get("auto_approve_patterns", {}))
+    tool_patterns = list(current.get(tool, []))
+    try:
+        new_patterns = json.loads(patterns)
+        if not isinstance(new_patterns, list):
+            raise ValueError("Must be a JSON array")
+        for p in new_patterns:
+            if not isinstance(p, str):
+                raise ValueError("All patterns must be strings")
+            if p not in tool_patterns:
+                tool_patterns.append(p)
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Invalid JSON:[/red] {exc}")
+        raise typer.Exit(code=1)
+    current[tool] = tool_patterns
+    try:
+        result = update_runtime_config("auto_approve_patterns", current)
+        console.print(f"[green]✓[/green] Added patterns to {tool}")
+        if "_warning" in result:
+            console.print(f"[yellow]Warning:[/yellow] {result['_warning']}")
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+
+@config_app.command("remove-pattern")
+def config_remove_pattern(
+    tool: str = typer.Argument(..., help="Tool name (e.g. run_shell, read_file)"),
+    patterns: str = typer.Argument(..., help="JSON array of patterns to remove, e.g. '[\"cat\"]'"),
+) -> None:
+    """Remove command patterns from auto-approval list.
+
+    Examples:
+      claude-bridge config remove-pattern run_shell '["cat"]'
+      claude-bridge config remove-pattern read_file '["\.py"]'
+    """
+    import json
+
+    cfg = current_config()
+    current = dict(cfg.get("auto_approve_patterns", {}))
+    if tool not in current:
+        console.print(f"[yellow]No patterns found for tool:[/yellow] {tool}")
+        raise typer.Exit(code=0)
+    tool_patterns = list(current[tool])
+    try:
+        remove_patterns = json.loads(patterns)
+        if not isinstance(remove_patterns, list):
+            raise ValueError("Must be a JSON array")
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Invalid JSON:[/red] {exc}")
+        raise typer.Exit(code=1)
+    removed = []
+    for p in remove_patterns:
+        if p in tool_patterns:
+            tool_patterns.remove(p)
+            removed.append(p)
+    if removed:
+        current[tool] = tool_patterns
+        try:
+            result = update_runtime_config("auto_approve_patterns", current)
+            console.print(f"[green]✓[/green] Removed {removed} from {tool}")
+            if "_warning" in result:
+                console.print(f"[yellow]Warning:[/yellow] {result['_warning']}")
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(code=1)
+    else:
+        console.print(f"[yellow]None of the specified patterns found in {tool}[/yellow]")
+        raise typer.Exit(code=0)

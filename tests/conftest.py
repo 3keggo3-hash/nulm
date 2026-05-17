@@ -41,6 +41,7 @@ _DEFAULT_CONFIG = {
     "role": None,
     "user": None,
     "auto_approve_risk_level": "medium",
+    "auto_approve_patterns": {},
     "max_parallel": 4,
 }
 

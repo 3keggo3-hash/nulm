@@ -22,6 +22,7 @@ from claude_bridge.config import (
     apply_config,
     approval_mode,
     current_config,
+    matches_auto_approve_pattern,
     project_dir,
     shell_timeout,
     should_auto_approve_risk,
@@ -421,6 +422,10 @@ async def request_approval(
     """
     auto_approve, client_managed_approval = approval_mode()
     if auto_approve or client_managed_approval:
+        return True
+
+    command = params.get("command", "")
+    if tool_name == "run_shell" and matches_auto_approve_pattern(tool_name, command):
         return True
 
     if approval_chain is not None:

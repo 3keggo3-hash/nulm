@@ -37,7 +37,7 @@ def register_multi_format_tools(
             "read_image",
             "Read a supported image in the configured workspace. Returns MIME type, "
             "dimensions, byte size, and base64 content. Requires the optional "
-            "claude-bridge[multi-format] dependency set.",
+            "nulm[multi-format] dependency set.",
             read_image,
             read_only=True,
         )
@@ -59,7 +59,7 @@ def register_multi_format_tools(
         ctx.register(
             "read_pdf",
             "Extract text from a PDF in the configured workspace with page pagination. "
-            "Requires the optional claude-bridge[multi-format] dependency set.",
+            "Requires the optional nulm[multi-format] dependency set.",
             read_pdf,
             read_only=True,
         )

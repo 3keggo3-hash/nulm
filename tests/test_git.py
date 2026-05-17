@@ -1,4 +1,5 @@
 """Tests for git integration."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -72,6 +73,41 @@ def no_git_project():
 
 class TestGitIntegration:
     """Test git auto-commit functionality."""
+
+    async def test_git_diff_reports_working_tree_changes(self, git_project):
+        test_file = git_project / "tracked.txt"
+        test_file.write_text("old\n")
+        subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=git_project,
+            capture_output=True,
+            check=True,
+        )
+        test_file.write_text("new\n")
+
+        result = parse_payload(await mcp_server.git_diff(file_path="tracked.txt"))
+
+        assert result["ok"] is True
+        assert "-old" in result["details"]["output"]
+        assert "+new" in result["details"]["output"]
+
+    async def test_git_log_lists_recent_commits(self, git_project):
+        test_file = git_project / "tracked.txt"
+        test_file.write_text("hello\n")
+        subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=git_project,
+            capture_output=True,
+            check=True,
+        )
+
+        result = parse_payload(await mcp_server.git_log(max_count=1))
+
+        assert result["ok"] is True
+        assert result["details"]["count"] == 1
+        assert result["details"]["entries"][0]["message"] == "initial"
 
     async def test_git_commit_after_patch(self, git_project):
         test_file = git_project / "test.py"

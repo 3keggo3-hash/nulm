@@ -57,7 +57,7 @@ def register_smart_tools(
             if check["tokens"] is None:
                 result = json_response(
                     False,
-                    "tiktoken not available. Install with: pip install claude-bridge[smart]",
+                    "tiktoken not available. Install with: pip install nulm[smart]",
                     code="smart_not_available",
                     details=check,
                 )
