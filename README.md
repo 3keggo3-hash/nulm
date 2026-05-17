@@ -41,6 +41,7 @@ service or VPS is required for core operation.
 
 ```bash
 pipx install nulm
+nulm init
 nulm install
 ```
 
@@ -103,6 +104,8 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
   advice parsing telemetry
 - **Local control plane**: task and approval state exposed through CLI, MCP tools, and a
   localhost-only dashboard
+- **Multi-root workspace switching**: `workspace_status` and `switch_project_root` for working
+  across multiple project roots with path boundary enforcement
 
 ## Installation
 

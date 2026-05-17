@@ -25,6 +25,7 @@ from claude_bridge.control_plane import (
     summarize_tasks,
     update_task_status,
 )
+from claude_bridge.config import update_runtime_config
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
@@ -60,7 +61,7 @@ def apply_dashboard_action(
     record_id: str,
     *,
     reason: str = "",
-) -> ControlPlaneTask | ControlPlaneApproval:
+) -> ControlPlaneTask | ControlPlaneApproval | dict[str, Any]:
     """Apply a supported dashboard mutation to a task or approval."""
     if action == "cancel-task":
         task = update_task_status(
@@ -104,6 +105,41 @@ def apply_dashboard_action(
         if approval is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
         return approval
+    if action == "allow_always":
+        from claude_bridge.control_plane import get_approval
+        from claude_bridge.config import auto_approve_patterns
+
+        approval = get_approval(record_id)
+        if approval is None:
+            raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
+        tool = approval.get("tool", "")
+        command = approval.get("command", "")
+        if not tool or not command:
+            raise ControlPlaneDashboardError(
+                f"Approval '{record_id}' has no tool/command for pattern extraction"
+            )
+        pattern = command.split()[0] if command.split() else command
+        if not pattern:
+            raise ControlPlaneDashboardError(f"Could not extract pattern from command '{command}'")
+        current_patterns = dict(auto_approve_patterns())
+        tool_patterns = list(current_patterns.get(tool, []))
+        if pattern not in tool_patterns:
+            tool_patterns.append(pattern)
+        current_patterns[tool] = tool_patterns
+        update_runtime_config("auto_approve_patterns", current_patterns)
+        resolved = resolve_approval(
+            record_id,
+            "approved",
+            reason=reason,
+            metadata=(
+                {"dashboard_reason": reason, "decided_by": "dashboard", "allow_always_pattern": pattern}
+                if reason
+                else {"decided_by": "dashboard", "allow_always_pattern": pattern}
+            ),
+        )
+        if resolved is None:
+            raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
+        return {"approval": resolved, "pattern": {"tool": tool, "pattern": pattern}}
     raise ControlPlaneDashboardError(f"Unsupported dashboard action '{action}'")
 
 
@@ -184,6 +220,8 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     action_record = apply_dashboard_action("approve", record_id, reason=reason)
                 elif collection == "approvals" and action == "reject":
                     action_record = apply_dashboard_action("reject", record_id, reason=reason)
+                elif collection == "approvals" and action == "allow_always":
+                    action_record = apply_dashboard_action("allow_always", record_id, reason=reason)
                 else:
                     self._send_json({"error": "unsupported_action"}, status=400)
                     return
@@ -473,6 +511,7 @@ def _dashboard_html(token: str) -> str:
         <td>${{esc(row.title || '')}}</td>
         <td class="actions">
           <button class="primary" onclick="post('/api/approvals/${{esc(row.id)}}/approve')">Approve</button>
+          <button class="secondary" onclick="post('/api/approvals/${{esc(row.id)}}/allow_always')">Allow Always</button>
           <button class="danger" onclick="post('/api/approvals/${{esc(row.id)}}/reject')">Reject</button>
         </td></tr>`).join('')}}</tbody></table>`;
     }}

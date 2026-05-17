@@ -7,30 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-
-- Nulm public alpha polish plan under `docs/planning/`.
-- Primary `nulm` CLI entry point while keeping `claude-bridge` as a compatibility alias.
-- Optional dependency documentation for smart, memory, Redis, policy YAML, observability,
-  tracing, streaming, Tree-sitter, multi-format, and legacy extras.
-- Focused distributed cache tests covering Redis failures, invalid JSON, and prefix-scoped clears.
-- **Agent-43 audit layer**: refactored audit tooling with shell safety, context compression, and tunnel manager improvements
-- **Agent-41 relevance**: position-based and IDF weighting for ranking algorithms
-- **Agent-37 detective**: improved error classification with weighted patterns and reduced false positives
-
-### Fixed
-
-- Aligned runtime `__version__` with package metadata at `0.1.1`.
-- Resolved test failures from agent changes
-
-### Changed
-
-- Public-facing docs, CLI help, generated MCP config keys, examples, and release gate wording now
-  use Nulm as the project name.
-- Ruff excludes experimental `agents/autonomous/` scripts from the supported release surface.
-- Applied agent recommendations: fixed bugs and removed dead code
-
-## [0.1.0] - 2026-05-10
+## [0.1.1] - 2026-05-17
 
 Public alpha candidate. The project is now positioned as a local-first agent quality and execution
 layer, with deterministic Agent Quality tools implemented as the first advisory slice.
