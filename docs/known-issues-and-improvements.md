@@ -11,7 +11,7 @@ substrate.
 
 ### 1. Feature evaluation and public surface pruning
 
-**Current state:** Claude Bridge has accumulated implemented tools, advisory Agent Quality
+**Current state:** Nulm has accumulated implemented tools, advisory Agent Quality
 surfaces, optional extras, and planned product-direction language. Some features may be valuable
 only in niche profiles, need clearer naming, or read stronger in docs than they are in the current
 runtime.

@@ -1,6 +1,6 @@
 """Optional AI Evaluator — typed models, provider interface, and strict JSON response parser."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

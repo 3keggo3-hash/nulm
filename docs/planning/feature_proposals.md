@@ -1,4 +1,4 @@
-# Feature Proposals: claude-bridge
+# Feature Proposals: nulm
 
 > Local-first agent quality and execution layer for MCP clients.  
 > Branch: `feature/hybrid-self-improve-sprint2` | Python 3.10+ | MIT License
@@ -22,7 +22,7 @@
 **Priority: High | Risk: Low | Complexity: Medium**
 
 ### Problem Statement
-Claude Bridge lacks bidirectional streaming capabilities for long-running operations. Clients must poll for status on workflow execution, indexing, and benchmark operations, creating unnecessary latency and token overhead.
+Nulm lacks bidirectional streaming capabilities for long-running operations. Clients must poll for status on workflow execution, indexing, and benchmark operations, creating unnecessary latency and token overhead.
 
 ### Proposed Solution
 Extend the MCP protocol with server-initiated notifications and streaming responses for:
@@ -175,7 +175,7 @@ Defense-in-depth sandboxing:
 ### Security Boundaries
 ```
 ┌─────────────────────────────────────────────┐
-│ Claude Bridge Process                        │
+│ Nulm Process                        │
 │  ┌────────────────────────────────────────┐ │
 │  │ Shell Tool Server                      │ │
 │  │  ┌──────────────────────────────────┐  │ │

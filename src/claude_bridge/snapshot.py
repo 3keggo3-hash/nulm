@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Snapshot/rollback guarantee for Claude Bridge.
+"""Snapshot/rollback guarantee for Nulm.
 
 Every modification creates a checkpoint before changes. Snapshots can be:
 - pre_task: modified files only (retention: until task complete)

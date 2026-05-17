@@ -1,6 +1,6 @@
 """Tests for project insight tools: stats, todo scan, recent files, language distribution, git log."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

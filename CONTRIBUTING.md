@@ -1,12 +1,12 @@
-# Contributing to Claude Bridge
+# Contributing to Nulm
 
 Thank you for your interest in contributing! This guide covers everything you need to get started.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/3keggo3-hash/claude-bridge.git
-cd claude-bridge
+git clone https://github.com/3keggo3-hash/nulm.git
+cd nulm
 python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"

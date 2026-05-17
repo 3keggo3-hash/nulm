@@ -1,6 +1,6 @@
-"""Command-line interface for Claude Bridge."""
+"""Command-line interface for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -45,7 +45,7 @@ def _print_suggestion(command: str, description: str) -> None:
     console.print(f"  [dim]→[/dim] [cyan]{command}[/cyan]  {description}")
 
 
-app = typer.Typer(help="Claude Bridge — MCP server for local file and terminal access")
+app = typer.Typer(help="Nulm — local-first MCP agent quality and execution layer")
 policy_app = typer.Typer(help="Validate and simulate local guard policy files")
 anomaly_app = typer.Typer(help="Anomaly detection on audit sessions")
 audit_app = typer.Typer(help="Audit session management and export")
@@ -94,7 +94,7 @@ def _version_option(value: bool) -> None:
 def _print_grouped_help(ctx: typer.Context) -> None:
     console.print(
         Panel.fit(
-            "[bold cyan]Claude Bridge[/bold cyan] command line interface",
+            "[bold cyan]Nulm[/bold cyan] command line interface",
             title="Help",
             border_style="cyan",
         )
@@ -157,7 +157,7 @@ def root_options(
         help="Show version and exit.",
     ),
 ) -> None:
-    """Claude Bridge command line interface."""
+    """Nulm command line interface."""
     _ = version_option
     if ctx.invoked_subcommand is None:
         _print_grouped_help(ctx)
@@ -295,8 +295,8 @@ def policy_validate(
     """Validate a JSON or YAML guard policy file.
 
     Examples:
-      claude-bridge policy validate --path policy.json
-      claude-bridge policy validate -p policy.yaml
+      nulm policy validate --path policy.json
+      nulm policy validate -p policy.yaml
     """
     resolved_path = path.resolve()
     if not resolved_path.exists():
@@ -318,8 +318,8 @@ def policy_validate(
     if not policy.valid:
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        _print_suggestion("claude-bridge doctor", "Check environment and config for issues")
-        _print_suggestion("claude-bridge policy --help", "See policy subcommands")
+        _print_suggestion("nulm doctor", "Check environment and config for issues")
+        _print_suggestion("nulm policy --help", "See policy subcommands")
         raise typer.Exit(code=1)
 
 
@@ -371,9 +371,9 @@ def policy_simulate(
     """Evaluate a tool request against policy without running the tool.
 
     Examples:
-      claude-bridge policy simulate --path policy.json --tool run_shell --param command=ls
-      claude-bridge policy simulate -p policy.json -t file_read --param path=README.md
-      claude-bridge policy simulate -p policy.json -t run_shell --role junior --param command=cat
+      nulm policy simulate --path policy.json --tool run_shell --param command=ls
+      nulm policy simulate -p policy.json -t file_read --param path=README.md
+      nulm policy simulate -p policy.json -t run_shell --role junior --param command=cat
 
     When --role is provided, the full policy chain is evaluated including
     role-based restrictions (pre-rule and post-rule checks).
@@ -558,8 +558,8 @@ def policy_diff(
     """Compare two policy files and report semantic differences.
 
     Examples:
-      claude-bridge policy diff --base main.json --head pr.json
-      claude-bridge policy diff -b baseline.json -h updated.json
+      nulm policy diff --base main.json --head pr.json
+      nulm policy diff -b baseline.json -h updated.json
 
     Detects role additions, removals, permission changes, restriction
     changes, and inheritance issues. Exits with code 1 if validation
@@ -814,10 +814,10 @@ def _write_desktop_config(
     mcp_servers = generated_config.get("mcpServers")
     if not isinstance(mcp_servers, dict):
         raise ValueError("Generated desktop config is missing 'mcpServers'")
-    bridge_entry = mcp_servers.get("claude-bridge")
+    bridge_entry = mcp_servers.get("nulm")
     if not isinstance(bridge_entry, dict):
-        raise ValueError("Generated desktop config is missing the 'claude-bridge' entry")
-    servers["claude-bridge"] = bridge_entry
+        raise ValueError("Generated desktop config is missing the 'nulm' entry")
+    servers["nulm"] = bridge_entry
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -828,7 +828,7 @@ def _write_desktop_config(
 
 def _default_target_config_path(project_dir: Path, target: str) -> Path:
     safe_target = target.replace("-", "_")
-    return project_dir.resolve() / f".claude-bridge.{safe_target}.json"
+    return project_dir.resolve() / f".nulm.{safe_target}.json"
 
 
 def _target_display_name(target: str) -> str:
@@ -900,9 +900,9 @@ def start(
     """Start the MCP bridge server (stdio transport).
 
     Examples:
-      claude-bridge start
-      claude-bridge start -d /path/to/project
-      claude-bridge start --approval-preset read-only
+      nulm start
+      nulm start -d /path/to/project
+      nulm start --approval-preset read-only
     """
     _, _, set_config, run_mcp_server = _server_runtime()
     extra_roots = [path.resolve() for path in allow_root] if allow_root else []
@@ -927,7 +927,7 @@ def start(
 @app.command()
 def version() -> None:
     """Show version information."""
-    console.print(f"[bold cyan]Claude Bridge[/bold cyan] version [green]{__version__}[/green]")
+    console.print(f"[bold cyan]Nulm[/bold cyan] version [green]{__version__}[/green]")
 
 
 @skill_app.command("list")
@@ -1151,8 +1151,8 @@ def skill_import(
             console.print(f"[red]{escape(error)}[/red]")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        _print_suggestion("claude-bridge skill list", "List available skills to inspect")
-        _print_suggestion("claude-bridge skill inspect <name>", "Inspect a specific skill")
+        _print_suggestion("nulm skill list", "List available skills to inspect")
+        _print_suggestion("nulm skill inspect <name>", "Inspect a specific skill")
     if not success:
         raise typer.Exit(code=1)
 
@@ -1183,7 +1183,7 @@ def skill_export(
 def update(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON output"),
 ) -> None:
-    """Check for claude-bridge updates on PyPI and print the status."""
+    """Check for Nulm updates on PyPI and print the status."""
     result = json.loads(check_update())
     if json_output:
         console.print_json(data=result)
@@ -1197,7 +1197,7 @@ def update(
     console.print(
         Panel.fit(
             Text.assemble(
-                ("Claude Bridge ", "bold cyan"),
+                ("Nulm ", "bold cyan"),
                 ("Update Check", "green"),
             ),
             title="Update",
@@ -1285,7 +1285,7 @@ def init(
         False, "--non-interactive", "-y", help="Skip prompts, use defaults/options"
     ),
 ) -> None:
-    """Initialize claude-bridge guard policy interactively."""
+    """Initialize Nulm guard policy interactively."""
     import signal
 
     def _on_cancel(signum: int, frame: Any) -> None:
@@ -1295,7 +1295,7 @@ def init(
     original = signal.signal(signal.SIGINT, _on_cancel)
 
     try:
-        console.print(Panel.fit("Welcome to [bold cyan]Claude Bridge[/] setup!", title="Init"))
+        console.print(Panel.fit("Welcome to [bold cyan]Nulm[/] setup!", title="Init"))
 
         project_path = Path(project_dir).resolve()
         if not non_interactive:
@@ -1389,7 +1389,7 @@ def init(
                     (provider, "green"),
                     ("\nRoots: ", "dim"),
                     (roots_str, "cyan"),
-                    ("\n\nReady! Configure your MCP client to use claude-bridge.", "bold"),
+                    ("\n\nReady! Configure your MCP client to use nulm.", "bold"),
                 ),
                 title="Summary",
                 border_style="green",
@@ -1483,9 +1483,9 @@ def setup(
     """Print setup instructions and system prompt for a supported MCP target.
 
     Examples:
-      claude-bridge setup
-      claude-bridge setup -d /path/to/project --target claude-desktop
-      claude-bridge setup --approval-preset read-only
+      nulm setup
+      nulm setup -d /path/to/project --target claude-desktop
+      nulm setup --approval-preset read-only
     """
     system_prompt, _, generate_mcp_setup_guide, supported_targets = _prompt_runtime()
     if target not in supported_targets:
@@ -1501,7 +1501,7 @@ def setup(
     console.print(
         Panel.fit(
             Text.assemble(
-                ("Claude Bridge ", "bold cyan"),
+                ("Nulm ", "bold cyan"),
                 (f"MCP Server v{__version__}", "dim"),
             ),
             title=f"Setup ({target})",
@@ -1599,13 +1599,13 @@ def install(
     non_interactive: bool = typer.Option(False, "-y", help="Skip interactive prompts"),
     simple: bool = typer.Option(False, "--simple", help="Quick setup with defaults"),
 ) -> None:
-    """Install or write Claude Bridge config for a supported MCP target.
+    """Install or write Nulm config for a supported MCP target.
 
     Examples:
-      claude-bridge install
-      claude-bridge install --simple
-      claude-bridge install -d /path/to/project -t vscode
-      claude-bridge install --approval-preset dev-safe
+      nulm install
+      nulm install --simple
+      nulm install -d /path/to/project -t vscode
+      nulm install --approval-preset dev-safe
     """
     import signal
     from claude_bridge.config import update_runtime_config
@@ -1619,7 +1619,7 @@ def install(
     try:
         _, _, _, supported_targets = _prompt_runtime()
 
-        console.print(Panel.fit("[bold cyan]Claude Bridge Setup[/bold cyan]", title="Install"))
+        console.print(Panel.fit("[bold cyan]Nulm Setup[/bold cyan]", title="Install"))
 
         if simple:
             resolved_project_dir = project_dir.resolve()
@@ -1704,7 +1704,7 @@ def install(
                     }
                     env_name = env_names.get(resolved_provider, "PROVIDER_API_KEY")
                     console.print(
-                        f"\n[dim]{provider_label} uses {env_name}; Claude Bridge does not "
+                        f"\n[dim]{provider_label} uses {env_name}; Nulm does not "
                         "store API keys in config.[/dim]"
                     )
 
@@ -1781,7 +1781,7 @@ def install(
         console.print(
             Panel.fit(
                 Text.assemble(
-                    ("Claude Bridge ", "bold cyan"),
+                    ("Nulm ", "bold cyan"),
                     (f"installed for {_target_display_name(resolved_target)}", "green"),
                 ),
                 title="Install",
@@ -1902,7 +1902,7 @@ def benchmark(
     console.print(
         Panel.fit(
             Text.assemble(
-                ("Claude Bridge ", "bold cyan"),
+                ("Nulm ", "bold cyan"),
                 ("benchmark", "green"),
             ),
             title="Benchmark",
@@ -2228,7 +2228,7 @@ def audit_summary(
         help="Filter by decision source",
     ),
 ) -> None:
-    """Show the most recent Claude Bridge audit session summary."""
+    """Show the most recent Nulm audit session summary."""
     if not last:
         console.print("[yellow]Only --last is currently supported.[/yellow]")
     summary = summarize_session(
@@ -2821,7 +2821,7 @@ def doctor(
 
     console.print(
         Panel.fit(
-            Text.assemble(("Claude Bridge ", "bold cyan"), ("doctor", "green")),
+            Text.assemble(("Nulm ", "bold cyan"), ("doctor", "green")),
             title="Doctor",
             border_style="green",
         )
@@ -2864,7 +2864,7 @@ def security(
 
     console.print(
         Panel.fit(
-            Text.assemble(("Claude Bridge ", "bold cyan"), ("doctor security", "green")),
+            Text.assemble(("Nulm ", "bold cyan"), ("doctor security", "green")),
             title="Security Doctor",
             border_style="cyan",
         )

@@ -4,7 +4,7 @@ Provides structured representation of discovered MCP peers with their
 capabilities, security status, and metadata for the discovery system.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

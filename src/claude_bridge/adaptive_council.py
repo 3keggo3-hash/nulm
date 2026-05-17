@@ -5,7 +5,7 @@ Accepting a proposal records the user's decision; it does not directly disable
 or mutate skills.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 """Tests for appeal data models and audit logging."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

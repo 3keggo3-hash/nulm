@@ -4,7 +4,7 @@ Provides statistical validation for comparing skill performance metrics
 using two-proportion z-test with configurable confidence levels.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

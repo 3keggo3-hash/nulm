@@ -1,6 +1,6 @@
 """Direct unit tests for tool_utils.py helper functions."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

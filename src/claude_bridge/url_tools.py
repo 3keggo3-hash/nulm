@@ -1,6 +1,6 @@
-"""URL-fetch tool for Claude Bridge – security-constrained HTTP reader."""
+"""URL-fetch tool for Nulm – security-constrained HTTP reader."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

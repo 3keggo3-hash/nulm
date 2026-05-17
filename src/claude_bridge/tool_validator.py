@@ -4,7 +4,7 @@ Validates incoming tool schemas from discovered MCP peers to ensure
 they meet security requirements before being registered or used.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

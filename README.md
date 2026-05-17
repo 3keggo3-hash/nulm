@@ -1,8 +1,8 @@
-# Claude Bridge
+# Nulm
 
 [![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/nulm)](https://pypi.org/project/nulm/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/nulm/test.yml?branch=main)](https://github.com/3keggo3-hash/nulm/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/nulm/ci.yml?branch=main)](https://github.com/3keggo3-hash/nulm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
@@ -18,14 +18,14 @@
 - **Context Compression Manager** — decompression bomb protection added to `_context_compression.py`.
 - **Audit Trail Query Interface** — SQL-like parser in `_audit_query_parser.py`.
 
-<!-- GitHub Topics: mcp-server, claude-bridge, agent-quality, local-ai, developer-tools -->
-CI: GitHub Actions | PyPI package: `nulm` | CLI: `claude-bridge` |
+<!-- GitHub Topics: mcp-server, nulm, agent-quality, local-ai, developer-tools -->
+CI: GitHub Actions | PyPI package: `nulm` | CLI: `nulm` |
 Python: 3.10+ | License: MIT |
 Code style: Black
 
 > A local-first agent quality and execution layer for MCP clients.
 
-Claude Bridge is a lightweight Python MCP server for local development and agent workflows. It lets
+Nulm is a lightweight Python MCP server for local development and agent workflows. It lets
 an MCP client inspect project files, run guarded shell commands, apply controlled patches, build
 context packs, search/index source code, use bounded workflow helpers, and coordinate small
 meta-agent tasks without giving up path boundaries, auditability, or approval controls.
@@ -41,7 +41,7 @@ service or VPS is required for core operation.
 
 ```bash
 pipx install nulm
-claude-bridge install
+nulm install
 ```
 
 Runs an interactive setup — choose detailed or simple, AI provider, approval mode, and more. Restart Claude Desktop and start a new conversation.
@@ -49,14 +49,14 @@ Runs an interactive setup — choose detailed or simple, AI provider, approval m
 For quick setup with defaults:
 
 ```bash
-claude-bridge install --simple
+nulm install --simple
 ```
 
 For other MCP clients:
 
 ```bash
-claude-bridge install --target vscode
-claude-bridge install --target generic-stdio
+nulm install --target vscode
+nulm install --target generic-stdio
 ```
 
 ## First 5 Minutes
@@ -64,7 +64,7 @@ claude-bridge install --target generic-stdio
 Try a natural request first:
 
 ```text
-Use Claude Bridge to check whether this project is public-ready.
+Use Nulm to check whether this project is public-ready.
 ```
 
 The useful first path is `tools_overview`, `bridge_status`, then
@@ -108,28 +108,38 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
 
 ```bash
 pipx install nulm
-claude-bridge install         # interactive setup
-claude-bridge install --simple # quick setup with defaults
+nulm install         # interactive setup
+nulm install --simple # quick setup with defaults
 ```
 
-`nulm` is the installed CLI command. The package name is `nulm`.
+`nulm` is the installed CLI command. The package name is `nulm`. The older
+`claude-bridge` command remains as a compatibility alias for this alpha cycle.
 
 Optional extras are available when installing from an environment that supports extras:
 
 ```bash
 pip install "nulm[treesitter]"    # optional Tree-sitter indexing
 pip install "nulm[multi-format]"  # optional image/PDF reading
+pip install "nulm[smart]"         # token-aware helpers
+pip install "nulm[memory]"        # encrypted local memory support
+pip install "nulm[policy-yaml]"   # YAML policy files
+pip install "nulm[redis]"         # experimental Redis-backed cache
+pip install "nulm[observability]" # Prometheus metrics
+pip install "nulm[tracing]"       # OpenTelemetry tracing
+pip install "nulm[streaming]"     # SSE streaming helpers
 ```
+
+See [docs/optional-dependencies.md](docs/optional-dependencies.md) for the full extras matrix.
 
 ### Add to an MCP client
 
-`claude-bridge install` can write supported target configs, while `claude-bridge setup` prints a
+`nulm install` can write supported target configs, while `nulm setup` prints a
 copy-pasteable snippet:
 
 ```bash
-claude-bridge install --target claude-desktop --project-dir .
-claude-bridge setup --target generic-stdio --project-dir .
-claude-bridge setup --target vscode --project-dir .
+nulm install --target claude-desktop --project-dir .
+nulm setup --target generic-stdio --project-dir .
+nulm setup --target vscode --project-dir .
 ```
 
 Generic stdio server entry:
@@ -137,7 +147,7 @@ Generic stdio server entry:
 ```json
 {
   "servers": {
-    "claude-bridge": {
+    "nulm": {
       "command": "python3",
       "args": ["-m", "claude_bridge.mcp_server"],
       "env": {
@@ -153,24 +163,24 @@ Generic stdio server entry:
 }
 ```
 
-Some clients use a different top-level wrapper than `servers`; keep the inner `claude-bridge`
+Some clients use a different top-level wrapper than `servers`; keep the inner `nulm`
 entry and adapt the wrapper to the client's MCP configuration format.
 
 ### Claude Desktop example
 
 ```bash
-claude-bridge install --target claude-desktop --project-dir .
+nulm install --target claude-desktop --project-dir .
 ```
 
 Then fully quit and reopen Claude Desktop, and start a new conversation.
 
 ## Approval Model
 
-Claude Bridge starts fail-closed by default. Mutating tools and shell tools require either
+Nulm starts fail-closed by default. Mutating tools and shell tools require either
 client-managed approval or trusted local auto-approval (`CLAUDE_BRIDGE_AUTO_APPROVE=1`).
 
 For Claude Desktop approval UI support:
-`claude-bridge setup --client-managed-approval ...`.
+`nulm setup --client-managed-approval ...`.
 
 ## Workflow Modes
 
@@ -254,20 +264,20 @@ are handled through the documented local skill registry.
 
 ## Local Control Plane
 
-When the machine is already running a long MCP task, Claude Bridge can keep local task and approval
+When the machine is already running a long MCP task, Nulm can keep local task and approval
 state under `~/.claude-bridge/control-plane`. You can inspect or intervene from another terminal:
 
 ```bash
-claude-bridge tasks list
-claude-bridge tasks cancel latest --reason "Heading out"
-claude-bridge approvals list --status pending
-claude-bridge approvals approve latest
+nulm tasks list
+nulm tasks cancel latest --reason "Heading out"
+nulm approvals list --status pending
+nulm approvals approve latest
 ```
 
 For a browser view on the same computer:
 
 ```bash
-claude-bridge dashboard
+nulm dashboard
 ```
 
 The dashboard binds to `127.0.0.1` by default, uses a per-session token in the URL, and can list
@@ -278,7 +288,7 @@ server is intentionally reachable only from the same machine.
 
 ## Feature Evaluation
 
-Claude Bridge should not keep features just for show. Each feature should have a clear local-first
+Nulm should not keep features just for show. Each feature should have a clear local-first
 job and an honest current status:
 
 - **Keep** features that are implemented, useful, documented, and covered by focused tests.
@@ -314,8 +324,8 @@ Add `.claude-bridge-guard.json` to the project root to customize the guard layer
 conditions (`tool`, `field_equals`, `regex`, `glob`, `extension`, etc.).
 
 ```bash
-claude-bridge policy validate --path .claude-bridge-guard.json
-claude-bridge policy simulate \
+nulm policy validate --path .claude-bridge-guard.json
+nulm policy simulate \
   --path .claude-bridge-guard.json \
   --tool run_shell \
   --param command="npm test"
@@ -329,7 +339,7 @@ Team policies define role-based access controls with inheritance. See
 [docs/security-model.md](docs/security-model.md) for the full schema.
 
 ```bash
-claude-bridge policy diff --base .claude-bridge/team.json --head pr/team.json
+nulm policy diff --base .claude-bridge/team.json --head pr/team.json
 ```
 
 ## AI Advisor and Agent Quality Direction
@@ -358,14 +368,14 @@ export CLAUDE_BRIDGE_AI_EVALUATOR_PROVIDER=local
 ## Audit, Replay, and Anomaly Detection
 
 ```bash
-claude-bridge audit --last --tool run_shell --decision deny --risk high
-claude-bridge replay --record-id <record_id>
-claude-bridge anomaly scan --last
-claude-bridge appeal --record-id <record_id> --justification "reason"
+nulm audit --last --tool run_shell --decision deny --risk high
+nulm replay --record-id <record_id>
+nulm anomaly scan --last
+nulm appeal --record-id <record_id> --justification "reason"
 ```
 
 Anomaly scoring is advisory in v0.1: high scores are surfaced in summaries and audit metadata, but
-they do not silently change guard-policy decisions. Claude Bridge is a policy-gated local runner,
+they do not silently change guard-policy decisions. Nulm is a policy-gated local runner,
 not an OS or container sandbox.
 
 ## Development
@@ -375,7 +385,7 @@ pip install -e .
 pip install -e .[dev]
 pip install -e .[treesitter]
 pip install -e .[multi-format]
-claude-bridge doctor --project-dir .
+nulm doctor --project-dir .
 ruff check .
 black --check .
 mypy src
@@ -385,7 +395,7 @@ pytest
 ## Benchmarking
 
 ```bash
-claude-bridge benchmark --query "login auth" --path src --json
+nulm benchmark --query "login auth" --path src --json
 ```
 
 ## Troubleshooting

@@ -1,6 +1,6 @@
-"""End-to-end tests for full Claude Bridge workflows."""
+"""End-to-end tests for full Nulm workflows."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,9 +1,9 @@
-# Claude Bridge — Roadmap
+# Nulm — Roadmap
 
 > **Last updated:** 2026-05-08
 > **Status:** Active technical roadmap
 
-Claude Bridge is moving from a "security-controlled MCP runtime" toward a broader **agent quality
+Nulm is moving from a "security-controlled MCP runtime" toward a broader **agent quality
 and execution layer**. The existing runtime remains the foundation, but the public product should be
 judged by whether it helps ordinary user requests become professional software work.
 

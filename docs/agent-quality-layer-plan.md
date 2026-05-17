@@ -1,9 +1,9 @@
-# Claude Bridge — Agent Quality Layer Plan
+# Nulm — Agent Quality Layer Plan
 
 > **Last updated:** 2026-05-08
 > **Status:** Canonical long-term plan for the AI agent layer
 
-Claude Bridge should not depend on the user writing perfect prompts. The long-term product goal is
+Nulm should not depend on the user writing perfect prompts. The long-term product goal is
 to let a non-expert describe what they want in ordinary language and still get professional-grade
 software work: scoped plans, relevant context, safer execution, cleaner code, better tests, and
 lower token waste.
@@ -15,7 +15,7 @@ real **Agent Quality Layer** between the chat client and those tools.
 ## Product Decision
 
 Do not rush a broad public launch while the project still reads as only a safe MCP server. The
-stronger product is to convert Claude Bridge from a **secure MCP tool server** into an **agent
+stronger product is to convert Nulm from a **secure MCP tool server** into an **agent
 quality layer** first.
 
 This decision matters because a secure MCP server is useful but easy to compare with many other MCP
@@ -34,7 +34,7 @@ the quality layer operate safely.
 
 ## Product Thesis
 
-Claude Bridge should be a local agent operating layer, not only a guarded tool server.
+Nulm should be a local agent operating layer, not only a guarded tool server.
 
 The user should be able to say:
 
@@ -77,7 +77,7 @@ Installation should stay simple:
 
 ```bash
 pipx install nulm
-claude-bridge install
+nulm install
 ```
 
 After that, the user should be able to configure and improve the bridge from chat:

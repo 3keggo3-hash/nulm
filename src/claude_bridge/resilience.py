@@ -1,6 +1,6 @@
-"""Resilience patterns for Claude Bridge: retry, circuit breaker, and error handling."""
+"""Resilience patterns for Nulm: retry, circuit breaker, and error handling."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

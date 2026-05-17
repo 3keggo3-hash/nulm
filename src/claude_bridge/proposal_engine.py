@@ -5,7 +5,7 @@ statistical recommendation proposals from heuristics; proposals require real
 comparison evidence from the skill-comparison layer.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

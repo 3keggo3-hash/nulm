@@ -1,6 +1,6 @@
 """Workflow session persistence and resume capability."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -17,7 +17,7 @@ def _sessions_dir() -> Path:
 
     if os.environ.get("CLAUDE_BRIDGE_CACHE_DIR"):
         return Path(os.environ["CLAUDE_BRIDGE_CACHE_DIR"]) / "sessions"
-    return Path.home() / ".cache" / "claude-bridge" / "sessions"
+    return Path.home() / ".cache" / "nulm" / "sessions"
 
 
 def _ensure_sessions_dir() -> Path:

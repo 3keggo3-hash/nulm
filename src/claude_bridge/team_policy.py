@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Team role and policy bundle models for Claude Bridge.
+"""Team role and policy bundle models for Nulm.
 
 This module implements role-based access control with inheritance:
   - RolePolicy: a single role with permissions, restrictions, and optional extends.

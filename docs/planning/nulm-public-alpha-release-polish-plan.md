@@ -11,8 +11,8 @@ Compatibility default: `nulm` becomes the primary CLI/MCP-facing name, while exi
 
 ## Release Blockers
 
-- Align versions across `pyproject.toml`, `src/claude_bridge/__init__.py`, changelog, and release
-  notes. Current known mismatch: package metadata is `0.1.1`, runtime `__version__` is `0.1.0`.
+- Keep versions aligned across `pyproject.toml`, `src/claude_bridge/__init__.py`, changelog, and
+  release notes.
 - Make CI and release gate fully green:
   - `ruff check .`
   - `black --check .`
@@ -21,8 +21,8 @@ Compatibility default: `nulm` becomes the primary CLI/MCP-facing name, while exi
   - `python -m build`
   - `twine check dist/*`
   - `./scripts/release-gate.sh`
-- Fix the current `mypy src` failures without weakening strict typing.
-- Fix `ruff check .` failures. If `agents/autonomous/*` is non-release experiment code, exclude it
+- Keep `mypy src` green without weakening strict typing.
+- Keep `ruff check .` green. If `agents/autonomous/*` is non-release experiment code, exclude it
   explicitly with a documented rationale; otherwise clean it.
 - Complete Nulm public naming:
   - README, docs, release notes, issue templates, workflow labels, dashboard/title text, CLI help,

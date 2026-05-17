@@ -1,9 +1,9 @@
-"""Three-layer memory system for Claude Bridge.
+"""Three-layer memory system for Nulm.
 
 Stores user profile, project memory, and lessons learned with encrypted storage.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

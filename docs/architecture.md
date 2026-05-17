@@ -1,6 +1,6 @@
 # Architecture
 
-Claude Bridge is a local MCP server bridging Claude Desktop/VS Code to local filesystem and shell access.
+Nulm is a local MCP server bridging Claude Desktop/VS Code to local filesystem and shell access.
 
 ## System Overview
 
@@ -96,7 +96,7 @@ See `docs/security-model.md` for full details.
 
 ## Local Control Plane Dashboard
 
-The dashboard provides a responsive localhost interface for monitoring and managing Claude Bridge
+The dashboard provides a responsive localhost interface for monitoring and managing Nulm
 operations from the same machine. Phone access is available only when the user explicitly starts a
 tunnel and opens the token-protected tunnel URL.
 

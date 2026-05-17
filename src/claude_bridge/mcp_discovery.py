@@ -4,7 +4,7 @@ Discovery is intentionally observational: it records peer metadata and filters
 already-known tool schemas, but it does not execute peer commands to probe them.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

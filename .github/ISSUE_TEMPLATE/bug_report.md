@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in Claude Bridge
+about: Report a bug in Nulm
 labels: bug
 ---
 
@@ -19,7 +19,7 @@ What you expected to happen.
 **Environment**
 - OS: [e.g. macOS 14, Ubuntu 22.04]
 - Python version: [e.g. 3.12.3]
-- Claude Bridge version: [e.g. 0.1.0]
+- Nulm version: [e.g. 0.1.0]
 - MCP client: [e.g. Claude Desktop]
 
 **Logs / Output**

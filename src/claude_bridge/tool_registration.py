@@ -1,6 +1,6 @@
 """Shared tool registration helpers to reduce MCP server boilerplate."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

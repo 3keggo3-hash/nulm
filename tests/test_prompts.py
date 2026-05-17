@@ -1,6 +1,6 @@
 """Tests for MCP prompt registration and rendering."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 """Project insight utilities: stats, TODO counter, recent files, git log, language detection."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -643,7 +643,7 @@ def _notes_path(root: Path) -> Path:
     else:
         xdg_state_home = os.environ.get("XDG_STATE_HOME", "").strip()
         if xdg_state_home:
-            base_dir = (Path(xdg_state_home).expanduser() / "claude-bridge" / "notes").resolve()
+            base_dir = (Path(xdg_state_home).expanduser() / "nulm" / "notes").resolve()
         else:
             base_dir = (Path.home() / ".claude-bridge" / "notes").resolve()
     return base_dir / f"{digest}.json"

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "claude-bridge": {
+    "nulm": {
       "command": "/usr/bin/env",
       "args": ["python3", "-m", "claude_bridge.mcp_server"],
       "env": {

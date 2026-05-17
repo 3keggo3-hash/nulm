@@ -1,4 +1,4 @@
-# Release Notes — claude-bridge v0.1.0
+# Release Notes — nulm v0.1.1
 
 **Date:** 2026-05-10
 **Status:** Public alpha candidate; broad launch should wait for GitHub CI confirmation and first
@@ -9,7 +9,7 @@ external install feedback
 
 ## Overview
 
-Claude Bridge is a local MCP (Model Context Protocol) server that provides file system, shell,
+Nulm is a local MCP (Model Context Protocol) server that provides file system, shell,
 controlled patch flows, audit, replay, policy, indexing, and bounded workflow tools for Claude
 Desktop and other MCP clients. This release establishes the local execution substrate with explicit
 approval and audit controls.
@@ -50,7 +50,7 @@ advisory MVP for those flows while keeping provider-backed behavior optional and
 - **Anomaly detection foundations:** rule-based anomaly scoring for audit records
 
 ### Developer Experience
-- **CLI interface:** `claude-bridge` command with install, config, doctor, and benchmark subcommands
+- **CLI interface:** `nulm` command with install, config, doctor, and benchmark subcommands
 - **Multi-format readers:** optional image (Pillow) and PDF (PyPDF2) content extraction
 - **Doctor report:** environment diagnostics and dependency health check
 - **Benchmarking:** repeatable indexing and relevance benchmark with baseline comparison
@@ -89,7 +89,7 @@ Checks performed:
 - Index cache is in-memory; very large mono-repos may need disk cache in future
 - PyYAML is optional; YAML policy files require manual installation
 - Anomaly scoring is advisory in v0.1; high scores warn/log but do not enforce guard decisions
-- Claude Bridge is a policy-gated local runner, not an OS/container sandbox
+- Nulm is a policy-gated local runner, not an OS/container sandbox
 
 ---
 
@@ -139,12 +139,12 @@ pip install -e ".[dev]"
 | Field | Value |
 |-------|-------|
 | Distribution name | nulm |
-| Version | 0.1.0 |
+| Version | 0.1.1 |
 | License | MIT |
 | Python | >=3.10 |
-| CLI entry point | `claude-bridge` → `claude_bridge.cli:main` |
+| CLI entry point | `nulm` → `claude_bridge.cli:main`; `claude-bridge` compatibility alias |
 | Core deps | mcp, pathspec, typer, rich, pydantic |
-| Optional deps | tree-sitter, tiktoken, Pillow, PyPDF2 |
+| Optional deps | treesitter, smart, memory, multi-format, policy-yaml, redis, observability, tracing, streaming, legacy |
 
 ---
 

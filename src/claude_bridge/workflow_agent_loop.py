@@ -1,6 +1,6 @@
 """Agent loop execution, validation command checking and session management."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

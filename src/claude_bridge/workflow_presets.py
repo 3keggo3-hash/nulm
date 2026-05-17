@@ -1,6 +1,6 @@
-"""Static workflow presets and prompt helpers for Claude Bridge."""
+"""Static workflow presets and prompt helpers for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -169,7 +169,7 @@ PROMPT_SHORTCUTS = [
 CLIENT_SIDE_ONLY_SHORTCUTS = [
     {
         "name": "/model",
-        "reason": "Model switching belongs to the MCP client or host app, not Claude Bridge.",
+        "reason": "Model switching belongs to the MCP client or host app, not Nulm.",
     },
     {
         "name": "/clear",
@@ -205,7 +205,7 @@ def _build_benchmark_message(target: str, focus: str, language: str = "Turkish")
         f"Target: {target}\n"
         f"Focus: {focus}\n"
         f"Response language: {language}\n"
-        "Start with the cheapest signals first. Use `claude-bridge benchmark` CLI when a full"
+        "Start with the cheapest signals first. Use `nulm benchmark` CLI when a full"
         " measurement run is justified.\n"
         "Separate measurement from interpretation.\n"
         "Call out what can be learned without spending a full benchmark run yet."
@@ -885,7 +885,7 @@ def prompt_shortcut_catalog() -> dict[str, Any]:
             " if the client exposes it.",
             "Typing a natural-language request into chat still consumes a model"
             " turn before tools run.",
-            "Claude Bridge can provide prompt entrypoints, but it cannot force"
+            "Nulm can provide prompt entrypoints, but it cannot force"
             " the client to skip chat routing.",
         ],
     }

@@ -1,6 +1,6 @@
 """Tests for role_assigner.py - RoleAssigner and role assignment."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

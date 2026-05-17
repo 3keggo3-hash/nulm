@@ -1,9 +1,9 @@
-# Claude Bridge MCP API Specification
+# Nulm MCP API Specification
 
-> **Version:** 0.1.0
+> **Version:** 0.1.1
 > **Status:** Alpha
 
-Claude Bridge exposes tools via the Model Context Protocol (MCP). This document describes the MCP tool schemas and REST API endpoints (if HTTP server is enabled).
+Nulm exposes tools via the Model Context Protocol (MCP). This document describes the MCP tool schemas and REST API endpoints (if HTTP server is enabled).
 
 ## Tool Categories
 
@@ -191,7 +191,7 @@ Review completed work for quality.
 ### Meta Tools
 
 #### `bridge_status`
-Get current Claude Bridge status.
+Get current Nulm status.
 
 **Parameters:** None
 

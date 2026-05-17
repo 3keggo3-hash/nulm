@@ -1,6 +1,6 @@
 """Module entry point for ``python -m claude_bridge``."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

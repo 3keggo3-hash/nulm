@@ -2,7 +2,7 @@
 
 > Status: Practical working rules for humans and AI agents
 
-Claude Bridge is useful, but this repository is large enough that careless AI collaboration burns
+Nulm is useful, but this repository is large enough that careless AI collaboration burns
 context quickly. The problem is not only model behavior; it is also repo shape, tool schema size,
 long test output, large diffs, and broad Markdown plans.
 

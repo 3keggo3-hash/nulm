@@ -4,14 +4,14 @@
 
 ### smithery.ai
 
-Register Claude Bridge on [smithery.ai](https://smithery.ai) to reach Cursor, Windsurf, and other
+Register Nulm on [smithery.ai](https://smithery.ai) to reach Cursor, Windsurf, and other
 MCP clients that use smithery as their server discovery backend.
 
 **Steps:**
 1. Create smithery account and verify repository ownership
-2. Use the existing `claude-bridge install` command as the installation instruction
+2. Use the existing `nulm install` command as the installation instruction
 3. Add description: "Local-first agent quality and execution layer for Claude Desktop and MCP clients"
-4. Tag: `python`, `mcp-server`, `claude-bridge`, `agent-quality`, `local-ai`, `developer-tools`
+4. Tag: `python`, `mcp-server`, `nulm`, `agent-quality`, `local-ai`, `developer-tools`
 
 ### mcp.get
 
@@ -20,7 +20,7 @@ submission.
 
 ### npm/mcp GitHub Topic
 
-The repository already carries `mcp-server` and `claude-bridge` GitHub Topics. These surface in
+The repository already carries `mcp-server` and `nulm` GitHub Topics. These surface in
 GitHub's MCP server search results.
 
 ## GitHub Actions CI/CD Recommendation
@@ -51,7 +51,7 @@ jobs:
 
 Add to `.github/workflows/` and configure `PYPI_API_TOKEN` in repository secrets.
 
-Consider adding a `test.yml` workflow that runs on every push and PR:
+Use the existing `ci.yml` workflow on every push and PR:
 
 ```yaml
 name: Test

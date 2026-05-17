@@ -1,10 +1,10 @@
-"""Lightweight first-run onboarding hints for Claude Bridge.
+"""Lightweight first-run onboarding hints for Nulm.
 
 Only shown once per session on the FIRST tool call to help users discover
 available capabilities. Never shown again after dismissal.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -104,8 +104,8 @@ def apply_onboarding(tool_name: str, result: str, *, enabled: bool) -> str:
 
     hint = {
         "title": "Getting Started",
-        "message": "Run  claude-bridge doctor --project-dir .  to check setup, "
-        "or  claude-bridge anomaly --help  to review logs.",
+        "message": "Run  nulm doctor --project-dir .  to check setup, "
+        "or  nulm anomaly --help  to review logs.",
         "dismiss": "This hint will not repeat.",
     }
     details["onboarding"] = hint

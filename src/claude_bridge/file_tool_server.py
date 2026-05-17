@@ -1,6 +1,6 @@
 """Registration helpers for file-oriented MCP tools."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -365,7 +365,7 @@ def register_file_tools(
 
         ctx.register(
             "undo_last_patch",
-            "Undo the last Claude Bridge managed file change.",
+            "Undo the last Nulm managed file change.",
             undo_last_patch,
             destructive=True,
         )

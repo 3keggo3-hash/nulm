@@ -1,6 +1,6 @@
-"""File-oriented tool implementations for Claude Bridge."""
+"""File-oriented tool implementations for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
-"""Compatibility module for launching the Claude Bridge MCP server via python -m."""
+"""Compatibility module for launching the Nulm MCP server via python -m."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 """Anomaly feature extraction and rule-based scoring from audit records."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

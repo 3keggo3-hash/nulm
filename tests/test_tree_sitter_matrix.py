@@ -1,6 +1,6 @@
 """Integration matrix for tree-sitter enabled and fallback indexing."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

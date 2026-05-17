@@ -1,6 +1,6 @@
 """Shell command safety analysis and blocked-command detection."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

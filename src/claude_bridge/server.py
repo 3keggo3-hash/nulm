@@ -1,6 +1,6 @@
-"""MCP server implementation for Claude Bridge."""
+"""MCP server implementation for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -182,7 +182,7 @@ from claude_bridge.shell_tool_server import register_shell_tools
 from claude_bridge.url_tool_server import register_url_tools
 from claude_bridge.notification_tool_server import register_notification_tools
 
-mcp = FastMCP("Claude Bridge")
+mcp = FastMCP("Nulm")
 _DEFAULT_CONTEXT_BUDGET_TOKENS = 4000
 
 
@@ -1008,7 +1008,7 @@ get_proposal_details = _tool_or_disabled(_PROPOSAL_TOOLS, "get_proposal_details"
 
 
 def run_mcp_server() -> None:
-    """Run the Claude Bridge MCP server over stdio."""
+    """Run the Nulm MCP server over stdio."""
     _register_prompts_once()
     mcp.run(transport="stdio")
 

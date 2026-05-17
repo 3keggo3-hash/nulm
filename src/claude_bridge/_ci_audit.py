@@ -1,6 +1,6 @@
 """One-shot CI analysis for quick security and quality checks."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

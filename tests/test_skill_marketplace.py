@@ -1,6 +1,6 @@
 """Tests for skill marketplace package inspection and reviewed import."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

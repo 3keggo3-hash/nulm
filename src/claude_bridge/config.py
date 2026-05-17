@@ -1,6 +1,6 @@
-"""Runtime configuration state for Claude Bridge."""
+"""Runtime configuration state for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 """Unit tests for the guard policy decision model (Paket 1A)."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""User-configurable guard policy loading and decision model for Claude Bridge.
+"""User-configurable guard policy loading and decision model for Nulm.
 
 Implements a fail-closed security layer: tool calls are denied by default unless
 explicitly allowed. Supports JSON (`.claude-bridge-guard.json`) and YAML

@@ -1,6 +1,6 @@
 """Smart utilities: token counting, encoding detection, tool intelligence."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Structured audit logging for Claude Bridge tool calls.
+"""Structured audit logging for Nulm tool calls.
 
 Backward-compatible re-export wrapper.  All symbols are now defined in the
 ``_audit_*`` sub-modules; this file re-exports them so that existing

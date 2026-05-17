@@ -1,6 +1,6 @@
 """Tests for MCP system prompt and setup guide."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -13,7 +13,7 @@ class TestSystemPrompt:
     """Test MCP system prompt content."""
 
     def test_prompt_contains_key_terms(self):
-        assert "Claude Bridge" in SYSTEM_PROMPT
+        assert "Nulm" in SYSTEM_PROMPT
         assert "MCP" in SYSTEM_PROMPT
         assert "patch_file" in SYSTEM_PROMPT
         assert "SEARCH/REPLACE" in SYSTEM_PROMPT
@@ -34,11 +34,11 @@ class TestMCPSetupGuide:
     def test_guide_contains_json_config(self, tmp_path: Path):
         guide = self._guide(tmp_path)
         assert "mcpServers" in guide
-        assert "claude-bridge" in guide
+        assert "nulm" in guide
 
     def test_guide_contains_command(self, tmp_path: Path):
         guide = self._guide(tmp_path)
-        assert "claude-bridge" in guide
+        assert "nulm" in guide
         assert "claude_bridge.mcp_server" in guide
 
     def test_guide_contains_config_paths(self, tmp_path: Path):

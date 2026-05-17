@@ -1,6 +1,6 @@
-"""Observability module for Claude Bridge: health checks, metrics, and monitoring."""
+"""Observability module for Nulm: health checks, metrics, and monitoring."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -268,7 +268,7 @@ class MetricsCollector:
             for key, value in self._counters.items():
                 if "{" in key:
                     name = key.split("{")[0]
-                    lines.append(f'{name}{{instance="claude-bridge"}} {value}')
+                    lines.append(f'{name}{{instance="nulm"}} {value}')
                 else:
                     lines.append(f"{key} {value}")
             for key, values in self._histograms.items():
@@ -280,11 +280,11 @@ class MetricsCollector:
                     p99 = self._percentile(sorted_vals, 99)
                     if "{" in key:
                         name = key.split("{")[0]
-                        lines.append(f'{name}_sum{{instance="claude-bridge"}} {avg}')
-                        lines.append(f'{name}_count{{instance="claude-bridge"}} {len(values)}')
-                        lines.append(f'{name}_p50{{instance="claude-bridge"}} {p50}')
-                        lines.append(f'{name}_p95{{instance="claude-bridge"}} {p95}')
-                        lines.append(f'{name}_p99{{instance="claude-bridge"}} {p99}')
+                        lines.append(f'{name}_sum{{instance="nulm"}} {avg}')
+                        lines.append(f'{name}_count{{instance="nulm"}} {len(values)}')
+                        lines.append(f'{name}_p50{{instance="nulm"}} {p50}')
+                        lines.append(f'{name}_p95{{instance="nulm"}} {p95}')
+                        lines.append(f'{name}_p99{{instance="nulm"}} {p99}')
                     else:
                         lines.append(f"{key}_sum {avg}")
                         lines.append(f"{key}_count {len(values)}")
@@ -294,7 +294,7 @@ class MetricsCollector:
             for key, value in self._gauges.items():
                 if "{" in key:
                     name = key.split("{")[0]
-                    lines.append(f'{name}{{instance="claude-bridge"}} {value}')
+                    lines.append(f'{name}{{instance="nulm"}} {value}')
                 else:
                     lines.append(f"{key} {value}")
         return "\n".join(lines)

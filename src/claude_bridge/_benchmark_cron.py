@@ -1,6 +1,6 @@
 """Benchmark scheduling and cron-like automation."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -16,7 +16,7 @@ from typing import Any, cast
 def _default_schedule_dir() -> Path:
     if os.environ.get("CLAUDE_BRIDGE_CACHE_DIR"):
         return Path(os.environ["CLAUDE_BRIDGE_CACHE_DIR"]) / "schedules"
-    return Path.home() / ".cache" / "claude-bridge" / "schedules"
+    return Path.home() / ".cache" / "nulm" / "schedules"
 
 
 def _ensure_schedule_dir() -> Path:

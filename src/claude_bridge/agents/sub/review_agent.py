@@ -1,6 +1,6 @@
 """Review agent for code quality review and self-critique."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
