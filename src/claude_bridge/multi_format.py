@@ -57,12 +57,12 @@ _IMAGE_MAGIC = {
 def _missing_dependency_response(dependency: str) -> str:
     return json_response(
         False,
-        "Optional multi-format dependency is not installed. Install claude-bridge[multi-format].",
+        "Optional multi-format dependency is not installed. Install nulm[multi-format].",
         code="dependency_missing",
         details={
             "dependency": dependency,
             "extra": "multi-format",
-            "install": "pip install claude-bridge[multi-format]",
+            "install": "pip install nulm[multi-format]",
         },
     )
 

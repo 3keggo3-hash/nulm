@@ -1,4 +1,5 @@
 """Shell command safety analysis and blocked-command detection."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -54,7 +55,10 @@ def _tokens_after_env(tokens: list[str]) -> list[str]:
 
 
 def _interactive_target(tokens: list[str]) -> str | None:
-    command_tokens = _tokens_after_env(tokens)
+    try:
+        command_tokens = _tokens_after_env(tokens)
+    except ValueError:
+        return "malformed_command_tokens"
     if not command_tokens:
         return None
     head = _command_basename(command_tokens[0])
@@ -518,7 +522,10 @@ def blocked_command_reason(stripped: str, tokens: list[str]) -> str | None:
         head = _command_basename(command_tokens[0])
 
     while head == "env":
-        command_tokens = _tokens_after_env(command_tokens)
+        try:
+            command_tokens = _tokens_after_env(command_tokens)
+        except ValueError:
+            return "malformed_env_tokens"
         if not command_tokens:
             return None
         head = _command_basename(command_tokens[0])

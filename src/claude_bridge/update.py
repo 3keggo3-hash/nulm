@@ -1,4 +1,4 @@
-"""Check for claude-bridge updates from PyPI."""
+"""Check for nulm updates from PyPI."""
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -19,16 +19,16 @@ from urllib.error import URLError
 from importlib.metadata import PackageNotFoundError, version as _package_version
 
 try:
-    from packaging.version import parse as parse_version, InvalidVersion
-except ImportError:
-
-    def _parse_version_fallback(v: str) -> str:
-        return v
-
-    parse_version = _parse_version_fallback
-    InvalidVersion = Exception
+    from packaging.version import parse as _parse_version
+except ImportError:  # pragma: no cover - packaging is available in dev/test envs
+    _parse_version = None  # type: ignore[assignment]
 
 from claude_bridge.tool_utils import json_response
+
+
+PACKAGE_NAME = "nulm"
+CLI_NAME = "claude-bridge"
+WHEEL_PREFIX = "nulm-"
 
 
 def _history_dir() -> Path:
@@ -93,7 +93,7 @@ def check_update() -> str:
     up_to_date (bool), install_command.
     """
     try:
-        current_version = _package_version("claude-bridge")
+        current_version = _package_version(PACKAGE_NAME)
     except PackageNotFoundError:
         current_version = "unknown"
 
@@ -110,7 +110,7 @@ def check_update() -> str:
         message = "Could not determine latest version from PyPI"
     elif up_to_date:
         ok = True
-        message = f"claude-bridge is up to date (v{current_version})"
+        message = f"{CLI_NAME} is up to date (v{current_version})"
     else:
         ok = True
         message = f"Update available: v{current_version} → v{latest_version}"
@@ -119,7 +119,7 @@ def check_update() -> str:
         "current_version": current_version,
         "latest_version": latest_version,
         "up_to_date": up_to_date,
-        "install_command": "pip install --upgrade claude-bridge",
+        "install_command": f"pip install --upgrade {PACKAGE_NAME}",
     }
 
     return json_response(ok, message, details=details)
@@ -128,11 +128,13 @@ def check_update() -> str:
 def _versions_compatible(current: str, latest: str) -> bool:
     if current == latest:
         return True
+    if _parse_version is None:
+        return current == latest
     try:
-        cur = parse_version(current)
-        lat = parse_version(latest)
+        cur = _parse_version(current)
+        lat = _parse_version(latest)
         return cur >= lat
-    except (InvalidVersion, TypeError):
+    except (ValueError, TypeError):
         return current == latest
 
 
@@ -149,8 +151,8 @@ def _fetch_latest_version_with_retry(max_retries: int = 3, initial_delay: float 
 
 
 def _fetch_latest_version() -> str:
-    """Fetch the latest claude-bridge version from PyPI JSON API."""
-    url = "https://pypi.org/pypi/claude-bridge/json"
+    """Fetch the latest nulm version from PyPI JSON API."""
+    url = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
     try:
         req = Request(url, headers={"Accept": "application/json"})
         with urlopen(req, timeout=5) as resp:
@@ -163,7 +165,7 @@ def _fetch_latest_version() -> str:
 def _get_package_info() -> dict[str, Any]:
     try:
         result = subprocess.run(
-            ["pip", "show", "claude-bridge"],
+            ["pip", "show", PACKAGE_NAME],
             capture_output=True,
             text=True,
             timeout=10,
@@ -183,7 +185,7 @@ def _get_package_info() -> dict[str, Any]:
 def perform_update() -> UpdateResult:
     current_version = "unknown"
     try:
-        current_version = _package_version("claude-bridge")
+        current_version = _package_version(PACKAGE_NAME)
     except PackageNotFoundError:
         return UpdateResult(
             ok=False,
@@ -221,7 +223,7 @@ def perform_update() -> UpdateResult:
 
     try:
         result = subprocess.run(
-            ["pip", "install", "--upgrade", "claude-bridge"],
+            ["pip", "install", "--upgrade", PACKAGE_NAME],
             capture_output=True,
             text=True,
             timeout=120,
@@ -234,7 +236,7 @@ def perform_update() -> UpdateResult:
                 from_version=current_version,
                 to_version=latest_version,
                 rolled_back=True,
-                backup_path=backup_path,
+                backup_path=str(backup_path),
                 error=f"install_failed: {result.stderr[:200]}",
             )
     except subprocess.TimeoutExpired:
@@ -245,7 +247,7 @@ def perform_update() -> UpdateResult:
             from_version=current_version,
             to_version=latest_version,
             rolled_back=True,
-            backup_path=backup_path,
+            backup_path=str(backup_path),
             error="timeout",
         )
     except OSError:
@@ -254,7 +256,7 @@ def perform_update() -> UpdateResult:
             message="pip not available for update",
             from_version=current_version,
             to_version=latest_version,
-            backup_path=backup_path,
+            backup_path=str(backup_path),
             error="pip_not_available",
         )
 
@@ -266,7 +268,7 @@ def perform_update() -> UpdateResult:
             from_version=current_version,
             to_version=latest_version,
             rolled_back=True,
-            backup_path=backup_path,
+            backup_path=str(backup_path),
             error="version_mismatch",
         )
 
@@ -285,7 +287,7 @@ def perform_update() -> UpdateResult:
         message=f"Successfully updated from v{current_version} to v{latest_version}",
         from_version=current_version,
         to_version=latest_version,
-        backup_path=backup_path,
+        backup_path=str(backup_path),
     )
 
 
@@ -353,13 +355,13 @@ def rollback_update(target_version: str | None = None) -> UpdateResult:
 def _backup_current_package() -> Path | None:
     try:
         result = subprocess.run(
-            ["pip", "download", "--no-deps", "--dest", str(_history_dir()), "claude-bridge"],
+            ["pip", "download", "--no-deps", "--dest", str(_history_dir()), PACKAGE_NAME],
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode == 0:
-            backup_files = list(_history_dir().glob("claude_bridge-*.whl"))
+            backup_files = list(_history_dir().glob(f"{WHEEL_PREFIX}*.whl"))
             if backup_files:
                 return backup_files[0]
     except (subprocess.TimeoutExpired, OSError):
@@ -385,7 +387,7 @@ def _rollback_install(backup_path: Path, target_version: str) -> bool:
 
 def _verify_installed_version(expected: str) -> bool:
     try:
-        installed = _package_version("claude-bridge")
+        installed = _package_version(PACKAGE_NAME)
         return _versions_compatible(expected, installed)
     except PackageNotFoundError:
         return False

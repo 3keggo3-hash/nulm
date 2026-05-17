@@ -3,6 +3,7 @@
 Provides multi-tier approval chains with risk-based level assignment,
 timeout handling, and approval recording for audit purposes.
 """
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -298,9 +299,9 @@ def evaluate_approval_chain(
 
     # Critical block - default deny unless explicitly approved
     if required_level.name == "critical_block":
-        # Check if there's a pre-approved status in context
+        # Only trusted internal callers may set this exact boolean sentinel.
         pre_approved = context.get("_pre_approved", False)
-        if pre_approved:
+        if pre_approved is True:
             return ApprovalStatus.APPROVED.value
         return ApprovalStatus.DENIED.value
 

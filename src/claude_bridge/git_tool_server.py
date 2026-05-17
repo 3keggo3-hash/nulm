@@ -1,4 +1,5 @@
 """Registration helpers for git-oriented MCP tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -18,6 +19,8 @@ def register_git_tools(
     audit_tool_call: Callable[..., str],
     json_response: Callable[..., str],
     project_dir: Callable[[], Path],
+    git_diff_impl: Any = None,
+    git_log_impl: Any = None,
     enabled_names: set[str] | None = None,
 ) -> dict[str, Any]:
     ctx = ToolRegistrationContext(
@@ -117,6 +120,62 @@ def register_git_tools(
             "write_file / patch_file calls.",
             commit_changes,
             destructive=True,
+        )
+
+    if ctx.should_register("git_diff") and git_diff_impl is not None:
+
+        async def git_diff(file_path: str | None = None, cached: bool = False) -> str:
+            started_at = ctx.now_ms()
+            payload = git_diff_impl(
+                project_dir=project_dir(),
+                file_path=file_path,
+                cached=cached,
+            )
+            result = json_response(
+                payload.get("ok", False),
+                "Diff retrieved" if payload.get("ok") else "Diff failed",
+                details=payload,
+            )
+            return audit_tool_call(
+                "git_diff",
+                {"file_path": file_path, "cached": cached},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "git_diff",
+            "Show git diff output for working tree or staged changes.",
+            git_diff,
+            read_only=True,
+        )
+
+    if ctx.should_register("git_log") and git_log_impl is not None:
+
+        async def git_log(max_count: int = 20, file_path: str | None = None) -> str:
+            started_at = ctx.now_ms()
+            payload = git_log_impl(
+                project_dir=project_dir(),
+                max_count=max_count,
+                file_path=file_path,
+            )
+            result = json_response(
+                payload.get("ok", False),
+                "Log retrieved" if payload.get("ok") else "Log failed",
+                details=payload,
+            )
+            return audit_tool_call(
+                "git_log",
+                {"max_count": max_count, "file_path": file_path},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "git_log",
+            "Show recent git commit history.",
+            git_log,
+            read_only=True,
         )
 
     if ctx.should_register("git_branch_list"):

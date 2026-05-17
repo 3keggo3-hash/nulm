@@ -1,4 +1,5 @@
 """Git helper functions for Claude Bridge."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -166,6 +167,79 @@ def git_status_snapshot(project_dir: Path) -> dict[str, Any]:
         "stderr": result.stderr,
         "exit_code": result.returncode,
     }
+
+
+def git_diff(
+    *,
+    project_dir: Path,
+    file_path: str | None = None,
+    cached: bool = False,
+) -> dict[str, Any]:
+    """Return git diff output for the working tree or staged changes."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "output": "No git repository found"}
+    repo_root = Path(root).resolve()
+
+    cmd = ["git", "diff"]
+    if cached:
+        cmd.append("--cached")
+    if file_path:
+        if not _is_safe_git_path(file_path):
+            return {"ok": False, "output": "Invalid file path"}
+        cmd.extend(["--", file_path])
+
+    result = _run_git(cmd, cwd=repo_root)
+    return {
+        "ok": result.returncode == 0,
+        "output": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.returncode,
+    }
+
+
+def git_log(
+    *,
+    project_dir: Path,
+    max_count: int = 20,
+    file_path: str | None = None,
+) -> dict[str, Any]:
+    """Return recent git log entries."""
+    root = _git_root(project_dir)
+    if root is None:
+        return {"ok": False, "entries": [], "output": "No git repository found"}
+    repo_root = Path(root).resolve()
+    safe_count = max(1, min(max_count, 100))
+
+    cmd = [
+        "git",
+        "log",
+        f"--max-count={safe_count}",
+        "--date=iso-strict",
+        "--pretty=format:%H%x00%s%x00%an%x00%ad",
+    ]
+    if file_path:
+        if not _is_safe_git_path(file_path):
+            return {"ok": False, "entries": [], "output": "Invalid file path"}
+        cmd.extend(["--", file_path])
+
+    result = _run_git(cmd, cwd=repo_root)
+    if result.returncode != 0:
+        return {"ok": False, "entries": [], "output": result.stderr}
+
+    entries: list[dict[str, str]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\x00")
+        if len(parts) == 4:
+            entries.append(
+                {
+                    "hash": parts[0],
+                    "message": parts[1],
+                    "author": parts[2],
+                    "date": parts[3],
+                }
+            )
+    return {"ok": True, "entries": entries, "count": len(entries), "output": result.stdout}
 
 
 def commit_changes(

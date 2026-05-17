@@ -1,4 +1,5 @@
 """Tests for CLI setup and desktop integration helpers."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -162,6 +163,22 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert cli.__version__ in result.stdout
+
+    def test_schedule_list_does_not_require_name_or_query(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(tmp_path))
+
+        result = runner.invoke(cli.app, ["schedule", "--list"])
+
+        assert result.exit_code == 0
+        assert "No schedules defined" in result.stdout
+
+    def test_schedule_create_requires_name_cron_and_query(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(tmp_path))
+
+        result = runner.invoke(cli.app, ["schedule"])
+
+        assert result.exit_code == 1
+        assert "NAME is required" in result.stdout
 
     def test_skill_list_json(self, tmp_path: Path, monkeypatch):
         _reset_skill_registry(tmp_path, monkeypatch)
@@ -357,7 +374,14 @@ class TestCLI:
 
         result = runner.invoke(
             cli.app,
-            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path), "--simple"],
+            [
+                "install",
+                "--project-dir",
+                str(project_dir),
+                "--config-path",
+                str(config_path),
+                "--simple",
+            ],
         )
 
         assert result.exit_code == 0
@@ -373,7 +397,14 @@ class TestCLI:
 
         result = runner.invoke(
             cli.app,
-            ["install", "--project-dir", str(project_dir), "--config-path", str(config_path), "--simple"],
+            [
+                "install",
+                "--project-dir",
+                str(project_dir),
+                "--config-path",
+                str(config_path),
+                "--simple",
+            ],
         )
 
         assert result.exit_code == 1

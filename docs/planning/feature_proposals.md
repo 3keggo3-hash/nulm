@@ -32,7 +32,8 @@ Extend the MCP protocol with server-initiated notifications and streaming respon
 
 ### Implementation Approach
 - Add `stream_events` capability flag to `initialize` handshake
-- Implement SSE-like callback mechanism via existing `streaming.py` module
+- Implement event delivery through the existing `_stream_events.py` broadcaster and
+  `notification_tool_server.py` subscription tools
 - Reuse `observability.py` trace context for event correlation
 - Extend `mcp_server.py` with `NotificationSink` interface
 

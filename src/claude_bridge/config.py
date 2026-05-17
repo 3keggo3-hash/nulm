@@ -1,4 +1,5 @@
 """Runtime configuration state for Claude Bridge."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -97,6 +98,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "skills_read",
             "smart",
             "insights_core",
+            "git_read",
         },
     },
     "full": {
@@ -119,6 +121,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "fun",
             "multi_format",
             "url",
+            "git_read",
             "git_commit",
         },
     },
@@ -134,13 +137,19 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "apply_bridge_config_change",
     },
     "file_core": {
+        "append_to_file",
+        "diff_files",
+        "find_files",
         "read_file",
         "read_multiple_files",
         "list_directory",
+        "mkdir",
+        "path_exists",
         "write_file",
         "move_file",
         "copy_path",
         "search_in_files",
+        "stat_file",
         "patch_file",
         "preview_patch",
         "undo_last_patch",
@@ -252,6 +261,10 @@ TOOL_GROUPS: dict[str, set[str]] = {
     "url": {
         "read_url",
     },
+    "git_read": {
+        "git_diff",
+        "git_log",
+    },
     "git_commit": {
         "commit_changes",
     },
@@ -306,6 +319,7 @@ _CONFIG: dict[str, Any] = {
     "role": None,
     "user": None,
     "auto_approve_risk_level": "medium",
+    "auto_approve_patterns": {},
     "max_parallel": 4,
 }
 _ALLOWED_ROOTS_SNAPSHOT: tuple[Path, ...] = tuple(_CONFIG["allowed_roots"])
@@ -342,6 +356,17 @@ def validate_config_value(key: str, value: Any) -> None:
     elif key == "auto_approve_risk_level":
         if value not in {"none", "low", "medium", "high"}:
             raise ValueError("auto_approve_risk_level must be one of none, low, medium, high")
+    elif key == "auto_approve_patterns":
+        if not isinstance(value, dict):
+            raise ValueError("auto_approve_patterns must be a dict")
+        for tool_name, patterns in value.items():
+            if not isinstance(tool_name, str):
+                raise ValueError("auto_approve_patterns keys must be strings")
+            if not isinstance(patterns, list):
+                raise ValueError(f"auto_approve_patterns[{tool_name}] must be a list")
+            for pattern in patterns:
+                if not isinstance(pattern, str):
+                    raise ValueError(f"auto_approve_patterns[{tool_name}] values must be strings")
     elif key == "max_parallel":
         if not isinstance(value, int) or value < 1 or value > 32:
             raise ValueError("max_parallel must be an integer between 1 and 32")
@@ -396,6 +421,7 @@ def apply_config(
     role: str | None = None,
     user: str | None = None,
     auto_approve_risk_level: str = "medium",
+    auto_approve_patterns: dict[str, list[str]] | None = None,
     max_parallel: int = 4,
 ) -> None:
     global _ALLOWED_ROOTS_SNAPSHOT
@@ -478,6 +504,7 @@ def apply_config(
         if user is not None:
             _CONFIG["user"] = user
         _CONFIG["auto_approve_risk_level"] = auto_approve_risk_level
+        _CONFIG["auto_approve_patterns"] = auto_approve_patterns if auto_approve_patterns is not None else {}
         _CONFIG["max_parallel"] = max_parallel
 
 
@@ -616,6 +643,14 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
         ai_evaluator_fallback_action = "ask"
     raw_role = os.environ.get("CLAUDE_BRIDGE_ROLE", "").strip() or None
     raw_user = os.environ.get("CLAUDE_BRIDGE_USER", "").strip() or None
+    raw_auto_approve_patterns = os.environ.get("CLAUDE_BRIDGE_AUTO_APPROVE_PATTERNS", "").strip()
+    auto_approve_patterns: dict[str, list[str]] = {}
+    if raw_auto_approve_patterns:
+        try:
+            import json
+            auto_approve_patterns = json.loads(raw_auto_approve_patterns)
+        except (json.JSONDecodeError, TypeError):
+            pass
     if force_auto_approve is not None:
         auto_approve = force_auto_approve and auto_approve_confirmed
         if force_auto_approve and not auto_approve_confirmed:
@@ -639,6 +674,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
         ai_evaluator_fallback_action=ai_evaluator_fallback_action,
         role=raw_role,
         user=raw_user,
+        auto_approve_patterns=auto_approve_patterns,
     )
 
 
@@ -673,6 +709,22 @@ _RISK_LEVEL_ORDER: tuple[str, ...] = ("none", "low", "medium", "high")
 def auto_approve_risk_level() -> str:
     with _CONFIG_LOCK:
         return str(_CONFIG["auto_approve_risk_level"])
+
+
+def auto_approve_patterns() -> dict[str, list[str]]:
+    with _CONFIG_LOCK:
+        return dict(_CONFIG["auto_approve_patterns"])
+
+
+def matches_auto_approve_pattern(tool_name: str, command: str) -> bool:
+    patterns = auto_approve_patterns()
+    tool_patterns = patterns.get(tool_name, [])
+    if not tool_patterns:
+        return False
+    for pattern in tool_patterns:
+        if command.startswith(pattern):
+            return True
+    return False
 
 
 def should_auto_approve_risk(risk_level: str) -> bool:
@@ -710,6 +762,7 @@ def current_config() -> dict[str, Any]:
                 "role": _CONFIG["role"],
                 "user": _CONFIG["user"],
                 "auto_approve_risk_level": str(_CONFIG["auto_approve_risk_level"]),
+                "auto_approve_patterns": dict(_CONFIG["auto_approve_patterns"]),
                 "max_parallel": int(_CONFIG["max_parallel"]),
             }
         )
@@ -887,6 +940,22 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
             if level not in {"none", "low", "medium", "high"}:
                 raise ValueError("auto_approve_risk_level must be one of none, low, medium, high")
             _CONFIG["auto_approve_risk_level"] = level
+            return current_config()
+
+        if key == "auto_approve_patterns":
+            if not isinstance(value, dict):
+                raise ValueError("auto_approve_patterns must be a dict")
+            for tool_name, patterns in value.items():
+                if not isinstance(tool_name, str):
+                    raise ValueError("auto_approve_patterns keys must be strings")
+                if not isinstance(patterns, list):
+                    raise ValueError(f"auto_approve_patterns[{tool_name}] must be a list")
+                for pattern in patterns:
+                    if not isinstance(pattern, str):
+                        raise ValueError(
+                            f"auto_approve_patterns[{tool_name}] values must be strings"
+                        )
+            _CONFIG["auto_approve_patterns"] = dict(value)
             return current_config()
 
         if key == "max_parallel":

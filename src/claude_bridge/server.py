@@ -1,4 +1,5 @@
 """MCP server implementation for Claude Bridge."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -43,10 +44,22 @@ from claude_bridge.file_tools import (
     clear_last_bridge_change as _clear_last_bridge_change,
 )
 from claude_bridge.file_tools import (
+    append_to_file as _file_append_to_file,
+)
+from claude_bridge.file_tools import (
+    diff_files as _file_diff_files,
+)
+from claude_bridge.file_tools import (
+    find_files as _file_find_files,
+)
+from claude_bridge.file_tools import (
     list_directory as _file_list_directory,
 )
 from claude_bridge.file_tools import (
     copy_path as _file_copy_path,
+)
+from claude_bridge.file_tools import (
+    mkdir as _file_mkdir,
 )
 from claude_bridge.file_tools import (
     move_file as _file_move_file,
@@ -67,6 +80,12 @@ from claude_bridge.file_tools import (
     search_in_files as _file_search_in_files,
 )
 from claude_bridge.file_tools import (
+    path_exists as _file_path_exists,
+)
+from claude_bridge.file_tools import (
+    stat_file as _file_stat_file,
+)
+from claude_bridge.file_tools import (
     undo_last_patch as _file_undo_last_patch,
 )
 from claude_bridge.file_tools import (
@@ -75,6 +94,8 @@ from claude_bridge.file_tools import (
 from claude_bridge.file_tool_server import register_file_tools
 from claude_bridge.git_ops import (
     git_commit,
+    git_diff,
+    git_log,
     git_status_snapshot,
 )
 from claude_bridge.git_tool_server import register_git_tools
@@ -319,6 +340,7 @@ def set_config(
     ai_evaluator_provider: str = "local",
     ai_evaluator_timeout: int = 5,
     ai_evaluator_fallback_action: str = "ask",
+    auto_approve_patterns: dict[str, list[str]] | None = None,
 ) -> None:
     """Set runtime configuration for the MCP tools and reset cached per-session state."""
     reset_audit_session()
@@ -336,6 +358,7 @@ def set_config(
         ai_evaluator_provider=ai_evaluator_provider,
         ai_evaluator_timeout=ai_evaluator_timeout,
         ai_evaluator_fallback_action=ai_evaluator_fallback_action,
+        auto_approve_patterns=auto_approve_patterns,
     )
     from claude_bridge.indexing import clear_index_cache
 
@@ -504,6 +527,12 @@ _FILE_TOOLS = register_file_tools(
     patch_file_impl=_file_patch_file,
     preview_patch_impl=_file_preview_patch,
     undo_last_patch_impl=_file_undo_last_patch,
+    path_exists_impl=_file_path_exists,
+    stat_file_impl=_file_stat_file,
+    mkdir_impl=_file_mkdir,
+    find_files_impl=_file_find_files,
+    diff_files_impl=_file_diff_files,
+    append_to_file_impl=_file_append_to_file,
     git_commit_fn=lambda *a, **kw: _git_commit(*a, **kw),
     request_approval_fn=lambda *a, **kw: _request_approval(*a, **kw),
     ai_provider_getter=_get_ai_provider,
@@ -519,6 +548,12 @@ search_in_files = _tool_or_disabled(_FILE_TOOLS, "search_in_files")
 patch_file = _tool_or_disabled(_FILE_TOOLS, "patch_file")
 preview_patch = _tool_or_disabled(_FILE_TOOLS, "preview_patch")
 undo_last_patch = _tool_or_disabled(_FILE_TOOLS, "undo_last_patch")
+path_exists = _tool_or_disabled(_FILE_TOOLS, "path_exists")
+stat_file = _tool_or_disabled(_FILE_TOOLS, "stat_file")
+mkdir = _tool_or_disabled(_FILE_TOOLS, "mkdir")
+find_files = _tool_or_disabled(_FILE_TOOLS, "find_files")
+diff_files = _tool_or_disabled(_FILE_TOOLS, "diff_files")
+append_to_file = _tool_or_disabled(_FILE_TOOLS, "append_to_file")
 
 
 _MULTI_FORMAT_TOOLS = register_multi_format_tools(
@@ -900,9 +935,13 @@ _GIT_TOOLS = register_git_tools(
     audit_tool_call=_audit_tool_call,
     json_response=_json_response,
     project_dir=_project_dir,
+    git_diff_impl=git_diff,
+    git_log_impl=git_log,
     enabled_names=_ENABLED_TOOL_NAMES,
 )
 commit_changes = _tool_or_disabled(_GIT_TOOLS, "commit_changes")
+git_diff = _tool_or_disabled(_GIT_TOOLS, "git_diff")
+git_log = _tool_or_disabled(_GIT_TOOLS, "git_log")
 
 
 _NOTIFICATION_TOOLS = register_notification_tools(

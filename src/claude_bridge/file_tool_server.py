@@ -1,4 +1,5 @@
 """Registration helpers for file-oriented MCP tools."""
+
 # Copyright (c) 2026 Claude Bridge Contributors
 # SPDX-License-Identifier: MIT
 
@@ -52,6 +53,12 @@ def register_file_tools(
     patch_file_impl: Any,
     preview_patch_impl: Any,
     undo_last_patch_impl: Any,
+    path_exists_impl: Any,
+    stat_file_impl: Any,
+    mkdir_impl: Any,
+    find_files_impl: Any,
+    diff_files_impl: Any,
+    append_to_file_impl: Any,
     git_commit_fn: Callable[..., dict[str, Any]],
     request_approval_fn: Any,
     ai_provider_getter: Callable[[], Any] | None = None,
@@ -360,6 +367,126 @@ def register_file_tools(
             "undo_last_patch",
             "Undo the last Claude Bridge managed file change.",
             undo_last_patch,
+            destructive=True,
+        )
+
+    if ctx.should_register("path_exists"):
+
+        async def path_exists(path: str) -> str:
+            started_at = ctx.now_ms()
+            result = await path_exists_impl(path)
+            return audit_tool_call("path_exists", {"path": path}, result, started_at=started_at)
+
+        ctx.register(
+            "path_exists",
+            "Check whether a file or directory exists inside the workspace.",
+            path_exists,
+            read_only=True,
+        )
+
+    if ctx.should_register("stat_file"):
+
+        async def stat_file(path: str) -> str:
+            started_at = ctx.now_ms()
+            result = await stat_file_impl(path)
+            return audit_tool_call("stat_file", {"path": path}, result, started_at=started_at)
+
+        ctx.register(
+            "stat_file",
+            "Return file or directory metadata such as size, mtime, and mode.",
+            stat_file,
+            read_only=True,
+        )
+
+    if ctx.should_register("mkdir"):
+
+        async def mkdir(path: str, parents: bool = False) -> str:
+            started_at = ctx.now_ms()
+            result = await mkdir_impl(path, parents=parents)
+            return audit_tool_call(
+                "mkdir", {"path": path, "parents": parents}, result, started_at=started_at
+            )
+
+        ctx.register(
+            "mkdir",
+            "Create a directory inside the workspace. Use parents=True for nested paths.",
+            mkdir,
+            destructive=True,
+        )
+
+    if ctx.should_register("find_files"):
+
+        async def find_files(
+            pattern: str,
+            path: str = ".",
+            include_dirs: bool = True,
+            max_results: int = 100,
+        ) -> str:
+            started_at = ctx.now_ms()
+            result = await find_files_impl(
+                pattern,
+                path=path,
+                include_dirs=include_dirs,
+                max_results=max_results,
+            )
+            return audit_tool_call(
+                "find_files",
+                {
+                    "pattern": pattern,
+                    "path": path,
+                    "include_dirs": include_dirs,
+                    "max_results": max_results,
+                },
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "find_files",
+            "Find files by glob pattern. Use for filename search before reading files.",
+            find_files,
+            read_only=True,
+        )
+
+    if ctx.should_register("diff_files"):
+
+        async def diff_files(path1: str, path2: str) -> str:
+            started_at = ctx.now_ms()
+            result = await diff_files_impl(path1, path2)
+            return audit_tool_call(
+                "diff_files",
+                {"path1": path1, "path2": path2},
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "diff_files",
+            "Compare two workspace files and return a bounded unified diff.",
+            diff_files,
+            read_only=True,
+        )
+
+    if ctx.should_register("append_to_file"):
+
+        async def append_to_file(path: str, content: str, create_parents: bool = False) -> str:
+            started_at = ctx.now_ms()
+            result = await append_to_file_impl(path, content, create_parents=create_parents)
+            return audit_tool_call(
+                "append_to_file",
+                {
+                    "path": path,
+                    "content_length": len(content),
+                    "create_parents": create_parents,
+                },
+                result,
+                started_at=started_at,
+            )
+
+        ctx.register(
+            "append_to_file",
+            "Append text to a workspace file.",
+            append_to_file,
             destructive=True,
         )
 
