@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a feature for Claude Bridge
+about: Suggest a feature for Nulm
 labels: enhancement
 ---
 

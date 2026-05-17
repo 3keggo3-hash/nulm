@@ -1,6 +1,6 @@
 """Shell tool constants, limits, and blocked-command sets."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

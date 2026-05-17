@@ -1,6 +1,6 @@
 """Tests for CLI setup and desktop integration helpers."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -36,7 +36,7 @@ class TestDesktopConfig:
             auto_approve=True,
         )
 
-        server = config["mcpServers"]["claude-bridge"]
+        server = config["mcpServers"]["nulm"]
         assert server["command"] == "/usr/bin/python3"
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
         assert server["env"]["CLAUDE_BRIDGE_PROJECT_DIR"] == str(tmp_path.resolve())
@@ -60,7 +60,7 @@ class TestDesktopConfig:
             client_managed_approval=True,
         )
 
-        server = config["mcpServers"]["claude-bridge"]
+        server = config["mcpServers"]["nulm"]
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "1"
 
     def test_build_desktop_config_can_use_low_token_profile(self, tmp_path: Path):
@@ -72,7 +72,7 @@ class TestDesktopConfig:
             context_budget_profile="low-cost",
         )
 
-        server = config["mcpServers"]["claude-bridge"]
+        server = config["mcpServers"]["nulm"]
         assert server["env"]["CLAUDE_BRIDGE_TOOL_PROFILE"] == "essential"
         assert server["env"]["CLAUDE_BRIDGE_CONTEXT_BUDGET_PROFILE"] == "low-cost"
 
@@ -84,7 +84,7 @@ class TestDesktopConfig:
             approval_preset="dev-safe",
         )
 
-        server = config["mcpServers"]["claude-bridge"]
+        server = config["mcpServers"]["nulm"]
         assert server["env"]["CLAUDE_BRIDGE_APPROVAL_PRESET"] == "dev-safe"
 
 
@@ -126,7 +126,7 @@ class TestStartCommand:
             package_root=Path("/tmp/fake-project"),
         )
 
-        server = config["servers"]["claude-bridge"]
+        server = config["servers"]["nulm"]
         assert server["command"] == "/usr/bin/python3"
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
 
@@ -280,7 +280,7 @@ class TestCLI:
         assert result.exit_code == 0
         assert "installed for Claude Desktop" in result.stdout
         written = json.loads(config_path.read_text(encoding="utf-8"))
-        server = written["mcpServers"]["claude-bridge"]
+        server = written["mcpServers"]["nulm"]
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
         assert server["env"]["CLAUDE_BRIDGE_PROJECT_DIR"] == str(project_dir.resolve())
         assert server["env"]["CLAUDE_BRIDGE_ALLOWED_ROOTS"] == (
@@ -310,7 +310,7 @@ class TestCLI:
         assert result.exit_code == 0
         assert "installed for generic-stdio" in result.stdout
         written = json.loads(config_path.read_text(encoding="utf-8"))
-        server = written["servers"]["claude-bridge"]
+        server = written["servers"]["nulm"]
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
 
     def test_install_command_uses_default_path_for_vscode_target(self, tmp_path: Path):
@@ -323,7 +323,7 @@ class TestCLI:
         )
 
         assert result.exit_code == 0
-        expected_path = project_dir / ".claude-bridge.vscode.json"
+        expected_path = project_dir / ".nulm.vscode.json"
         assert expected_path.exists()
         written = json.loads(expected_path.read_text(encoding="utf-8"))
         assert "mcp" in written
@@ -349,7 +349,7 @@ class TestCLI:
 
         assert result.exit_code == 0
         written = json.loads(config_path.read_text(encoding="utf-8"))
-        server = written["mcpServers"]["claude-bridge"]
+        server = written["mcpServers"]["nulm"]
         assert server["env"]["CLAUDE_BRIDGE_APPROVAL_PRESET"] == "dev-safe"
         assert server["env"]["CLAUDE_BRIDGE_AUTO_APPROVE"] == "0"
         assert server["env"]["CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL"] == "1"
@@ -387,7 +387,7 @@ class TestCLI:
         assert result.exit_code == 0
         written = json.loads(config_path.read_text(encoding="utf-8"))
         assert "other-server" in written["mcpServers"]
-        assert "claude-bridge" in written["mcpServers"]
+        assert "nulm" in written["mcpServers"]
 
     def test_install_command_rejects_invalid_json_config(self, tmp_path: Path):
         config_path = tmp_path / "claude_desktop_config.json"
@@ -556,7 +556,7 @@ class TestCLI:
         result = runner.invoke(cli.app, ["doctor", "--project-dir", str(tmp_path)])
 
         assert result.exit_code == 0
-        assert "Claude Bridge" in result.stdout
+        assert "Nulm" in result.stdout
         assert "doctor" in result.stdout.lower()
         assert "Python version is supported" in result.stdout
         assert "claude_bridge package importable" in result.stdout
@@ -1111,4 +1111,4 @@ class TestConfigCLI:
     def test_root_invocation_no_command(self):
         result = runner.invoke(cli.app, [])
         assert result.exit_code == 0
-        assert "Claude Bridge" in result.stdout or "Core" in result.stdout
+        assert "Nulm" in result.stdout or "Core" in result.stdout

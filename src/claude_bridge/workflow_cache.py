@@ -1,6 +1,6 @@
-"""Workflow caching infrastructure for Claude Bridge."""
+"""Workflow caching infrastructure for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -64,8 +64,8 @@ def _workflow_cache_dir() -> Path:
         return (Path(raw).expanduser().resolve() / "workflow").resolve()
     xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
     if xdg:
-        return (Path(xdg).expanduser() / "claude-bridge" / "workflow").resolve()
-    return (Path.home() / ".cache" / "claude-bridge" / "workflow").resolve()
+        return (Path(xdg).expanduser() / "nulm" / "workflow").resolve()
+    return (Path.home() / ".cache" / "nulm" / "workflow").resolve()
 
 
 def _workflow_cache_file(prefix: str, key: tuple[str, ...]) -> Path:

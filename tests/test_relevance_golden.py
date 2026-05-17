@@ -1,6 +1,6 @@
 """Golden-dataset checks for relevance ranking quality."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

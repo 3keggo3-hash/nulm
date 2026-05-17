@@ -1,7 +1,7 @@
 # Compliance Readiness
 
 This document outlines the security controls, audit capabilities, and operational practices that
-support compliance objectives for Claude Bridge deployments.
+support compliance objectives for Nulm deployments.
 
 ---
 

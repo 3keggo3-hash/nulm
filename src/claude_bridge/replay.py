@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Replay engine for Claude Bridge audit records (Package 3D).
+"""Replay engine for Nulm audit records (Package 3D).
 
 Re-evaluates past tool calls against the *current* rule set so that
 policy changes can be tested retroactively without re-executing the

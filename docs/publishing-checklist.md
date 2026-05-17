@@ -4,13 +4,13 @@ Quick pre-release verification before sharing publicly.
 
 ## Product Positioning
 
-- README describes Claude Bridge as an agent quality and execution layer, not only a security MCP
+- README describes Nulm as an agent quality and execution layer, not only a security MCP
   tool server.
 - README clearly separates current implemented runtime features from planned Agent Quality Layer
   features.
 - README is MCP-client-agnostic by default, with Claude Desktop, generic stdio, and VS Code framed
   as target examples rather than the whole product.
-- Public docs describe Claude Bridge as a local-first control plane direction only where accurate;
+- Public docs describe Nulm as a local-first control plane direction only where accurate;
   they describe the localhost-only dashboard as local state inspection/intervention, not hosted
   monitoring or a remote service.
 - `docs/product-vision.md`, `docs/roadmap.md`, and `docs/agent-quality-layer-plan.md` agree on the
@@ -28,20 +28,20 @@ Quick pre-release verification before sharing publicly.
 
 ## Policy / Audit / Replay
 
-- `claude-bridge policy validate --path .claude-bridge-guard.json` reports no errors.
-- `claude-bridge policy simulate` works for a simple allowed command.
-- `claude-bridge audit --last` shows the latest session records.
-- `claude-bridge replay --record-id <id>` re-evaluates an existing record.
+- `nulm policy validate --path .claude-bridge-guard.json` reports no errors.
+- `nulm policy simulate` works for a simple allowed command.
+- `nulm audit --last` shows the latest session records.
+- `nulm replay --record-id <id>` re-evaluates an existing record.
 - Audit records are JSONL with redaction applied.
-- Policy changes are visible via `claude-bridge policy diff`.
+- Policy changes are visible via `nulm policy diff`.
 
 ## Installation Experience
 
 - README covers installation in under 2 minutes.
 - `pipx install nulm` is the primary public install path.
-- `claude-bridge init`, `claude-bridge doctor`, and `claude-bridge install ...` flow is visible in
+- `nulm init`, `nulm doctor`, and `nulm install ...` flow is visible in
   README.
-- The installed CLI is consistently documented as `claude-bridge`.
+- The installed CLI is consistently documented as `nulm`.
 - Editable source install is kept under Development, not the user-facing quick start.
 - Source install flow is clear for contributors.
 - Example config is copy-pasteable and understandable.

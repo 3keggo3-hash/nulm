@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Indexing and file-search helpers for Claude Bridge.
+"""Indexing and file-search helpers for Nulm.
 
 Provides symbolic source indexing for Python, JS/TS, Rust, Go, Java, Kotlin, C#,
 Ruby, PHP, and GDScript. Supports both AST-based (fallback) and Tree-sitter-based
@@ -698,8 +698,8 @@ def _cache_dir() -> Path:
         return Path(raw).expanduser().resolve()
     xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
     if xdg:
-        return (Path(xdg).expanduser() / "claude-bridge").resolve()
-    return (Path.home() / ".cache" / "claude-bridge").resolve()
+        return (Path(xdg).expanduser() / "nulm").resolve()
+    return (Path.home() / ".cache" / "nulm").resolve()
 
 
 def _disk_cache_path(target: Path) -> Path:

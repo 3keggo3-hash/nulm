@@ -1,6 +1,6 @@
 """Performance helpers for large-repo indexing and relevance checks."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

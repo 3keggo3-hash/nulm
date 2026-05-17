@@ -1,6 +1,6 @@
 """Git-based checkpointing - delegates to snapshot.py module-level functions."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

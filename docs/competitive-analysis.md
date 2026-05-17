@@ -1,12 +1,12 @@
 # Competitive Analysis
 
-Claude Bridge should stay focused on the Agent Quality Layer and skill governance. The goal is not
+Nulm should stay focused on the Agent Quality Layer and skill governance. The goal is not
 to become an unbounded local runtime; the differentiator is helping an MCP client choose safer
 context, safer actions, and better review loops around real workspace tools.
 
 ## Product Lessons
 
-| Tool | What works well | Claude Bridge response |
+| Tool | What works well | Nulm response |
 |---|---|---|
 | Claude Code | Skills, hooks, permissions, subagents | Add inspect-before-import skill governance and review loops. |
 | Cursor | Rules, modes, MCP discovery | Keep task-specific guidance visible and profile tools by capability. |

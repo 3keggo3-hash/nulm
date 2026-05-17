@@ -1,6 +1,6 @@
 """Internal helpers for file-oriented tools."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -5,7 +5,7 @@ reviewing and validating team policy changes via pull requests.
 
 ## Overview
 
-The `claude-bridge policy` subcommand provides tools to integrate
+The `nulm policy` subcommand provides tools to integrate
 role-based access control changes into a standard PR review cycle:
 
 | Command | Purpose |
@@ -29,7 +29,7 @@ looks at the PR.
 
 ```bash
 # Compare main branch (base) against PR head
-claude-bridge policy diff --base main-policy.yaml --head pr-policy.yaml --json
+nulm policy diff --base main-policy.yaml --head pr-policy.yaml --json
 ```
 
 Exit code **1** means: validation errors, inheritance problems, or
@@ -77,7 +77,7 @@ effects by simulating tool calls:
 
 ```bash
 # Simulate as junior trying to write to a production path
-claude-bridge policy simulate \
+nulm policy simulate \
   --path pr-policy.yaml \
   --tool write_file \
   --param path=/prod/config.yaml \
@@ -113,7 +113,7 @@ Expected output when the role's `production_env` restriction applies:
 ```yaml
 - name: Policy diff
   run: |
-    claude-bridge policy diff \
+    nulm policy diff \
       --base origin/main:team-policy.yaml \
       --head team-policy.yaml \
       --json > policy-diff.json
@@ -121,7 +121,7 @@ Expected output when the role's `production_env` restriction applies:
 
 - name: Simulate critical paths
   run: |
-    claude-bridge policy simulate \
+    nulm policy simulate \
       --path team-policy.yaml \
       --tool write_file \
       --param path=/prod/config.yaml \
@@ -134,7 +134,7 @@ Expected output when the role's `production_env` restriction applies:
 ```yaml
 policy-diff:
   script:
-    - claude-bridge policy diff --base main-policy.yaml --head $CI_PROJECT_DIR/policy.yaml --json
+    - nulm policy diff --base main-policy.yaml --head $CI_PROJECT_DIR/policy.yaml --json
   artifacts:
     reports:
       json: policy-diff.json

@@ -1,10 +1,10 @@
-"""Skills package for Claude Bridge skill system.
+"""Skills package for Nulm skill system.
 
 Skill directory: .claude-bridge/skills/
 Format: skill_name.v1.json (metadata) + skill_name.py (code)
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

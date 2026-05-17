@@ -1,9 +1,9 @@
-# Claude Bridge — Product Vision
+# Nulm — Product Vision
 
 > **Last updated:** 2026-05-08
 > **Status:** Canonical product direction
 
-Claude Bridge is a **local-first agent quality and execution layer** for Claude Desktop and other
+Nulm is a **local-first agent quality and execution layer** for Claude Desktop and other
 MCP clients. It gives an agent controlled access to local files, shell commands, patches,
 workflows, code indexing, and project memory while adding the missing middle layer: intent
 clarification, context strategy, plan critique, token optimization, result quality review, and safe
@@ -19,13 +19,13 @@ The short version:
 
 ## Current Direction
 
-Claude Bridge started as a Python MCP server for file, shell, and patch tools. The first product
+Nulm started as a Python MCP server for file, shell, and patch tools. The first product
 pivot framed it as an AI-assisted security layer. That security layer remains essential, but the
 product has broadened again: the goal is now to become the local control plane and quality layer
 between an MCP client and a real developer workspace.
 
 The release decision follows from that: do not hurry into a broad public launch as a "safe MCP
-server." First, reshape the product around the Agent Quality Layer. That is what makes Claude Bridge
+server." First, reshape the product around the Agent Quality Layer. That is what makes Nulm
 different from a normal MCP tool collection: it should help users get better code, better plans, and
 better workflow settings without needing deep prompting or engineering-process expertise.
 
@@ -34,7 +34,7 @@ should not need to know how to write a perfect engineering prompt. They should b
 what they want in ordinary language, and Bridge should help turn that into scoped plans, relevant
 context, safe tool use, cleaner code, better tests, and lower token waste.
 
-Claude Bridge should sit between the coding agent and execution as a senior collaborator: not only
+Nulm should sit between the coding agent and execution as a senior collaborator: not only
 asking "is this allowed?", but also "is this the right next step, is the scope too broad, what
 context is actually needed, how can token use be reduced, is there a better approach, and does the
 result meet a professional quality bar?"
@@ -68,7 +68,7 @@ result meet a professional quality bar?"
 - **No mandatory cloud service for core use.** The core server stays local-first and stdio-based.
 - **No remote policy marketplace yet.** A local policy hub may come first; remote registry/SaaS
   remains a later business decision.
-- **No model-hosting product.** Claude Bridge does not ship model weights or become an LLM host.
+- **No model-hosting product.** Nulm does not ship model weights or become an LLM host.
 - **No silent auto-approval expansion.** Approval mode, path boundaries, and hard denies remain
   explicit controls. Chat-driven settings may recommend safer profiles, but cannot quietly weaken
   policy.
@@ -88,7 +88,7 @@ approval request, audit record, and replayable outcome where possible.
 
 ### 3. Agent Quality By Default
 
-Claude Bridge should make professional work easier even when the user gives an imprecise prompt. It
+Nulm should make professional work easier even when the user gives an imprecise prompt. It
 should clarify intent, create acceptance criteria, choose a context plan, challenge broad or risky
 implementation plans, recommend validation, and review the result.
 

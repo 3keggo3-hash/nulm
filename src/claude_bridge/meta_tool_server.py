@@ -1,6 +1,6 @@
 """Registration helpers for meta/configuration MCP tools and prompt catalogue."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -968,12 +968,12 @@ def register_meta_tools(
                             )
                         ),
                         "first_safe_prompt": (
-                            "Use Claude Bridge to inspect this project and suggest the smallest "
+                            "Use Nulm to inspect this project and suggest the smallest "
                             "safe next step."
                         ),
                     },
                     "next_best_actions": [
-                        "Ask: Use Claude Bridge to check whether this project is public-ready.",
+                        "Ask: Use Nulm to check whether this project is public-ready.",
                         'Run run_workflow with mode="quality" for feature or release work.',
                         "Use suggest_bridge_config before changing token or tool settings.",
                     ],
@@ -1052,7 +1052,7 @@ def register_meta_tools(
 
     if _enabled is None or "tools_overview" in _enabled:
 
-        @mcp.tool(**tool_options("List Claude Bridge tools grouped by purpose.", read_only=True))
+        @mcp.tool(**tool_options("List Nulm tools grouped by purpose.", read_only=True))
         async def tools_overview() -> str:
             started_at = time.perf_counter()
             result = json_response(
@@ -1062,13 +1062,13 @@ def register_meta_tools(
                     "recommended_starters": [
                         {
                             "intent": "public_ready_check",
-                            "prompt": "Use Claude Bridge to check project public-readiness.",
+                            "prompt": "Use Nulm to check project public-readiness.",
                             "use": 'run_workflow(mode="quality") plus review_result_quality.',
                         },
                         {
                             "intent": "first_safe_slice",
                             "prompt": (
-                                "Use Claude Bridge to turn this rough request into a safe first "
+                                "Use Nulm to turn this rough request into a safe first "
                                 "implementation slice."
                             ),
                             "use": "improve_request, plan_quality_review, then a small workflow.",

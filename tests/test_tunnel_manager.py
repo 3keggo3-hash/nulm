@@ -1,6 +1,6 @@
 """Tests for Cloudflare tunnel lifecycle helpers."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

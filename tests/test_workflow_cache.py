@@ -1,6 +1,6 @@
 """Tests for workflow_cache.py."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -93,7 +93,7 @@ class TestWorkflowCacheDir:
         monkeypatch.delenv("CLAUDE_BRIDGE_CACHE_DIR", raising=False)
         monkeypatch.setenv("XDG_CACHE_HOME", "/xdg/cache")
         cache_dir = _workflow_cache_dir()
-        assert str(cache_dir) == "/xdg/cache/claude-bridge/workflow"
+        assert str(cache_dir) == "/xdg/cache/nulm/workflow"
 
 
 class TestWorkflowCacheFile:

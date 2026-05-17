@@ -1,6 +1,6 @@
-"""System prompt and setup guide helpers for Claude Bridge."""
+"""System prompt and setup guide helpers for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 SYSTEM_PROMPT = """
-You are connected to Claude Bridge over MCP.
+You are connected to Nulm over MCP.
 
 Key rules:
 - Always inspect files before editing (read_file or list_directory).
@@ -102,10 +102,10 @@ def build_target_config(
         onboarding_enabled=onboarding_enabled,
     )
     if target == "claude-desktop":
-        return {"mcpServers": {"claude-bridge": server_entry}}
+        return {"mcpServers": {"nulm": server_entry}}
     if target == "generic-stdio":
-        return {"servers": {"claude-bridge": server_entry}}
-    return {"mcp": {"servers": {"claude-bridge": server_entry}}}
+        return {"servers": {"nulm": server_entry}}
+    return {"mcp": {"servers": {"nulm": server_entry}}}
 
 
 def build_desktop_config(
@@ -182,13 +182,13 @@ def generate_mcp_setup_guide(
         "claude-desktop": ("Uses the `mcpServers` wrapper expected by Claude Desktop."),
         "generic-stdio": (
             "Uses a simple `servers` wrapper. If your client expects a"
-            " different top-level key, keep the inner `claude-bridge`"
+            " different top-level key, keep the inner `nulm`"
             " server entry and adapt only the wrapper."
         ),
         "vscode": (
             "Uses an `mcp.servers` wrapper as a practical VS Code-oriented"
             " snippet. If your chosen extension expects a different top-level"
-            " key, keep the inner `claude-bridge` entry and adjust only the"
+            " key, keep the inner `nulm` entry and adjust only the"
             " wrapper."
         ),
     }[target]
@@ -196,17 +196,17 @@ def generate_mcp_setup_guide(
         "claude-desktop": (
             "1. Fully quit Claude Desktop.\n"
             "2. Reopen Claude Desktop.\n"
-            "3. Start a new chat and confirm the Claude Bridge tools appear."
+            "3. Start a new chat and confirm the Nulm tools appear."
         ),
         "generic-stdio": (
             "1. Save the config in the location your MCP client reads.\n"
             "2. Restart or reload that client.\n"
-            "3. Confirm the Claude Bridge tools appear."
+            "3. Confirm the Nulm tools appear."
         ),
         "vscode": (
             "1. Save the settings or extension config.\n"
             "2. Reload VS Code or restart the extension host.\n"
-            "3. Confirm the Claude Bridge tools appear in the MCP-capable UI."
+            "3. Confirm the Nulm tools appear in the MCP-capable UI."
         ),
     }[target]
     first_message_tip = ""
@@ -217,13 +217,13 @@ First-message tip:
 - Claude Desktop may occasionally delay MCP tool routing until the second turn.
 - If the first reply claims it cannot access files, retry with a more explicit
   message such as:
-  - "Read the files in this project with claude-bridge"
+  - "Read the files in this project with nulm"
   - "Use workspace_status() and inspect the codebase"
-  - "Review this folder and use claude-bridge tools"
+  - "Review this folder and use nulm tools"
 """.rstrip()
 
     return f"""
-Add Claude Bridge to {target_title} by {location_hint}.
+Add Nulm to {target_title} by {location_hint}.
 
 Recommended configuration:
 
@@ -232,7 +232,7 @@ Recommended configuration:
 ```
 
 Why this format:
-- Launches Claude Bridge through `python -m claude_bridge.mcp_server`, which is
+- Launches Nulm through `python -m claude_bridge.mcp_server`, which is
   more reliable for Claude Desktop than printing setup text during MCP startup.
 - Passes the active project root through `CLAUDE_BRIDGE_PROJECT_DIR`.
 - Passes the broader allowed workspace list through
@@ -250,7 +250,7 @@ After saving the config:
 {first_message_tip}
 
 Approval note:
-- In MCP stdio mode, Claude Bridge cannot safely pause for terminal `input()`
+- In MCP stdio mode, Nulm cannot safely pause for terminal `input()`
   prompts.
 - If you want `run_shell`, `write_file`, `patch_file`, and `undo_last_patch`
   to work with approvals, generate config with client-managed approval enabled.

@@ -1,6 +1,6 @@
-"""Distributed cache module for Claude Bridge with Redis opt-in support."""
+"""Distributed cache module for Nulm with Redis opt-in support."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -24,7 +24,7 @@ class DistributedCache:
         self,
         enabled: bool = False,
         redis_url: str | None = None,
-        prefix: str = "claude-bridge:",
+        prefix: str = "nulm:",
         default_ttl: int = 3600,
         consistency_mode: str = "eventual",
         cluster_nodes: list[str] | None = None,

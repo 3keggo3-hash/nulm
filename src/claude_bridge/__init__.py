@@ -1,7 +1,7 @@
-"""Claude Bridge — Local file and terminal access for Claude.ai."""
+"""Nulm — local-first MCP agent quality and execution layer."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

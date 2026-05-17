@@ -1,6 +1,6 @@
-"""Agent-based toolset permission matrix for Claude Bridge."""
+"""Agent-based toolset permission matrix for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -3,7 +3,7 @@
 Provides tools for listing recommendations and recording accept/reject decisions.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

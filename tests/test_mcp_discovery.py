@@ -1,6 +1,6 @@
 """Tests for mcp_discovery.py - MCP Discovery Engine."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

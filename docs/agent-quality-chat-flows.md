@@ -1,6 +1,6 @@
 # Agent Quality Chat Flows
 
-These examples show how a non-expert user can ask Claude Bridge for better software work without
+These examples show how a non-expert user can ask Nulm for better software work without
 writing a perfect engineering prompt. They describe current deterministic/local behavior: Bridge
 can improve requests, critique plans, suggest context strategy, recommend safe config changes, add
 quality workflow advice, and review result quality. It still relies on the MCP client and user
@@ -42,7 +42,7 @@ Safety boundary:
 
 Operational example:
 
-1. User says: `Use Claude Bridge to check whether this project is public-ready.`
+1. User says: `Use Nulm to check whether this project is public-ready.`
 2. Bridge calls: `tools_overview`, `bridge_status`, then `run_workflow(mode="quality", target=".")`.
 3. User sees: a scoped release-readiness plan, key docs/files to inspect, validation commands, and
    a next prompt for the smallest safe release fix.

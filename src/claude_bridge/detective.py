@@ -1,6 +1,6 @@
-"""Bridge Detective - Error investigation workflow for Claude Bridge."""
+"""Bridge Detective - Error investigation workflow for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

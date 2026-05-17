@@ -1,6 +1,6 @@
-"""Intent Engine - Vague input detection and intent parsing for Claude Bridge."""
+"""Intent Engine - Vague input detection and intent parsing for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

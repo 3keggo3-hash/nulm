@@ -9,16 +9,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Nulm public alpha polish plan under `docs/planning/`.
+- Primary `nulm` CLI entry point while keeping `claude-bridge` as a compatibility alias.
+- Optional dependency documentation for smart, memory, Redis, policy YAML, observability,
+  tracing, streaming, Tree-sitter, multi-format, and legacy extras.
+- Focused distributed cache tests covering Redis failures, invalid JSON, and prefix-scoped clears.
 - **Agent-43 audit layer**: refactored audit tooling with shell safety, context compression, and tunnel manager improvements
 - **Agent-41 relevance**: position-based and IDF weighting for ranking algorithms
 - **Agent-37 detective**: improved error classification with weighted patterns and reduced false positives
 
 ### Fixed
 
+- Aligned runtime `__version__` with package metadata at `0.1.1`.
 - Resolved test failures from agent changes
 
 ### Changed
 
+- Public-facing docs, CLI help, generated MCP config keys, examples, and release gate wording now
+  use Nulm as the project name.
+- Ruff excludes experimental `agents/autonomous/` scripts from the supported release surface.
 - Applied agent recommendations: fixed bugs and removed dead code
 
 ## [0.1.0] - 2026-05-10
@@ -50,7 +59,7 @@ layer, with deterministic Agent Quality tools implemented as the first advisory 
 - Agent Quality tools: `advise_next_step`, `improve_request`, `plan_quality_review`,
   `suggest_bridge_config`, `apply_bridge_config_change`, and `review_result_quality`.
 - Quality workflow integration with compact next prompts and result review guidance.
-- CLI interface: `claude-bridge install`, `setup`, `doctor`, `benchmark`, `policy`, `audit`,
+- CLI interface: `nulm install`, `setup`, `doctor`, `benchmark`, `policy`, `audit`,
   `replay`, `appeal`, `anomaly`.
 - Multi-format readers as optional dependencies.
 - Release quality gate script (`scripts/release-gate.sh`).
@@ -73,4 +82,4 @@ layer, with deterministic Agent Quality tools implemented as the first advisory 
 - Public release docs updated to separate implemented advisory behavior from future provider-backed
   ambitions.
 
-[0.1.0]: https://github.com/3keggo3-hash/claude-bridge/releases/tag/v0.1.0
+[0.1.0]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.0

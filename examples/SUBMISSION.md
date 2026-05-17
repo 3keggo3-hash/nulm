@@ -1,8 +1,8 @@
-# Awesome MCP — Claude Bridge Submission
+# Awesome MCP — Nulm Submission
 
 [Awesome MCP Servers](https://github.com/mcp-server/awesome-mcp-servers) | [Submit a Server](https://github.com/mcp-server/awesome-mcp-servers/blob/main/CONTRIBUTING.md)
 
-## Claude Bridge
+## Nulm
 
 A local-first agent quality and execution layer for Claude Desktop and other MCP clients. It provides
 a lightweight Python MCP server for local development workflows, combining file operations, guarded
@@ -30,14 +30,14 @@ explicit security boundaries and auditability.
 
 ```bash
 pip install -e .
-claude-bridge doctor --project-dir .
-claude-bridge install
+nulm doctor --project-dir .
+nulm install
 ```
 
 ### Add to Claude Desktop
 
 ```bash
-claude-bridge install
+nulm install
 ```
 
 Manual configuration in `claude_desktop_config.json`:
@@ -45,7 +45,7 @@ Manual configuration in `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "claude-bridge": {
+    "nulm": {
       "command": "/usr/bin/env",
       "args": ["python3", "-m", "claude_bridge.mcp_server"],
       "env": {
@@ -62,18 +62,18 @@ Manual configuration in `claude_desktop_config.json`:
 ## Example Usage
 
 ```bash
-claude-bridge doctor --project-dir .
+nulm doctor --project-dir .
 
-claude-bridge run-workflow --mode quality --execute
+nulm run-workflow --mode quality --execute
 
-claude-bridge policy validate --path .claude-bridge-guard.json
+nulm policy validate --path .claude-bridge-guard.json
 
-claude-bridge audit --last --tool run_shell --decision deny --risk high
+nulm audit --last --tool run_shell --decision deny --risk high
 ```
 
 ## Differentiator
 
-Unlike general-purpose MCP servers, Claude Bridge is designed as an **Agent Quality Layer** that
+Unlike general-purpose MCP servers, Nulm is designed as an **Agent Quality Layer** that
 improves prompts, critiques plans, chooses smaller context, suggests safe settings, reviews
 results, and reduces token waste—while keeping the security model explicit, inspectable, and
 replayable. Its local-first design ensures no data leaves the machine for core operations, with
@@ -81,7 +81,7 @@ optional provider-backed advisory calls that fail closed on errors.
 
 ## Links
 
-- [Documentation](https://github.com/3keggo3-hash/claude-bridge#readme)
+- [Documentation](https://github.com/3keggo3-hash/nulm#readme)
 - [PyPI Package](https://pypi.org/project/nulm/)
 - [Security Model](docs/security-model.md)
 - [Agent Quality Plan](docs/agent-quality-layer-plan.md)

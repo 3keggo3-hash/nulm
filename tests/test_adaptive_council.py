@@ -1,6 +1,6 @@
 """Tests for adaptive_council.py - Deactivation proposals and proposal management."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

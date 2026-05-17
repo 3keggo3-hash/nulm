@@ -1,6 +1,6 @@
-"""Environment checks for Claude Bridge developer setup."""
+"""Environment checks for Nulm developer setup."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -310,7 +310,7 @@ def build_security_doctor_report(
             "Auto-approve warning",
             False,
             "Auto-approve is enabled — all operations approved automatically",
-            "Disable with: claude-bridge config set auto_approve false",
+            "Disable with: nulm config set auto_approve false",
         )
     else:
         _update_check(

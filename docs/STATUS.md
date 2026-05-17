@@ -1,6 +1,6 @@
 # Feature Status
 
-Feature matrix for Claude Bridge v0.1 (unreleased). Tracks implementation maturity and test coverage.
+Feature matrix for Nulm v0.1 (unreleased). Tracks implementation maturity and test coverage.
 
 ## Maturity Levels
 

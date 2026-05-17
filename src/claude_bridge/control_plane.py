@@ -1,6 +1,6 @@
 """Local control-plane state for tasks and approval requests."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

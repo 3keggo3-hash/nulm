@@ -1,6 +1,6 @@
 # Skill Discovery and Governance
 
-Claude Bridge skills are local packages with metadata and Python code. V1 discovery is local-first:
+Nulm skills are local packages with metadata and Python code. V1 discovery is local-first:
 the bridge can list, inspect, recommend, import reviewed packages, export packages, and run
 registered skills. It does not fetch, install, or run internet skills automatically.
 
@@ -15,19 +15,19 @@ registered skills. It does not fetch, install, or run internet skills automatica
 ## CLI
 
 ```bash
-claude-bridge skill list --json
-claude-bridge skill inspect docs --json
-claude-bridge skill recommend "write release notes" --context docs --json
-claude-bridge skill packages ./packages --query release --json
-claude-bridge skill package-inspect ./packages/docs.tar.gz --json
-claude-bridge skill import ./packages/docs.tar.gz --json
-claude-bridge skill export docs ./packages/docs.tar.gz --json
+nulm skill list --json
+nulm skill inspect docs --json
+nulm skill recommend "write release notes" --context docs --json
+nulm skill packages ./packages --query release --json
+nulm skill package-inspect ./packages/docs.tar.gz --json
+nulm skill import ./packages/docs.tar.gz --json
+nulm skill export docs ./packages/docs.tar.gz --json
 ```
 
 High-risk packages require an explicit override:
 
 ```bash
-claude-bridge skill import ./packages/risky.tar.gz --allow-high-risk
+nulm skill import ./packages/risky.tar.gz --allow-high-risk
 ```
 
 ## MCP Tools

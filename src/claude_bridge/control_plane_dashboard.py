@@ -1,6 +1,6 @@
 """Local-only HTTP dashboard for the control plane."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -250,7 +250,7 @@ def _dashboard_html(token: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude Bridge Control Plane</title>
+  <title>Nulm Control Plane</title>
   <style>
     :root {{
       color-scheme: light dark;

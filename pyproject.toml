@@ -10,9 +10,9 @@ readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    {name = "Claude Bridge Contributors"}
+    {name = "Nulm Contributors"}
 ]
-keywords = ["claude", "mcp", "security", "policy", "audit", "ai", "bridge"]
+keywords = ["nulm", "mcp", "security", "policy", "audit", "ai", "agent-quality"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -91,6 +91,7 @@ streaming = [
 ]
 
 [project.scripts]
+nulm = "claude_bridge.cli:main"
 claude-bridge = "claude_bridge.cli:main"
 
 [tool.setuptools.packages.find]
@@ -99,10 +100,19 @@ where = ["src"]
 [tool.black]
 line-length = 100
 target-version = ['py310', 'py311', 'py312', 'py313']
+extend-exclude = '''
+(
+  ^/agents/autonomous/
+)
+'''
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+extend-exclude = [
+    # Experimental autonomous research scripts are not part of the supported release surface.
+    "agents/autonomous",
+]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,6 +1,6 @@
 """Config CLI commands."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -42,10 +42,10 @@ def _find_config_path() -> Path | None:
         if path.exists():
             return path
     xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
-    path = Path(xdg) / "claude-bridge" / "config.toml"
+    path = Path(xdg) / "nulm" / "config.toml"
     if path.exists():
         return path
-    path = Path.home() / ".config" / "claude-bridge" / "config.toml"
+    path = Path.home() / ".config" / "nulm" / "config.toml"
     if path.exists():
         return path
     path = Path.cwd() / "config.toml"
@@ -149,12 +149,8 @@ def config_set(
         console.print(f"  {exc}")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        console.print(
-            "  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values"
-        )
-        console.print(
-            f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key"
-        )
+        console.print("  [dim]→[/dim] [cyan]nulm config list[/cyan]  Show all config values")
+        console.print(f"  [dim]→[/dim] [cyan]nulm config describe {key}[/cyan]  Describe this key")
         raise typer.Exit(code=1)
     try:
         result = update_runtime_config(key, parsed_value)
@@ -165,12 +161,8 @@ def config_set(
         console.print(f"[red]Error:[/red] {exc}")
         console.print()
         console.print("[bold]Next steps:[/bold]")
-        console.print(
-            "  [dim]→[/dim] [cyan]claude-bridge config list[/cyan]  Show all config values"
-        )
-        console.print(
-            f"  [dim]→[/dim] [cyan]claude-bridge config describe {key}[/cyan]  Describe this key"
-        )
+        console.print("  [dim]→[/dim] [cyan]nulm config list[/cyan]  Show all config values")
+        console.print(f"  [dim]→[/dim] [cyan]nulm config describe {key}[/cyan]  Describe this key")
         raise typer.Exit(code=1)
 
 
@@ -220,8 +212,8 @@ def config_add_pattern(
     """Add command patterns for auto-approval without prompting.
 
     Examples:
-      claude-bridge config add-pattern run_shell '["cat", "head", "ls"]'
-      claude-bridge config add-pattern read_file '["\\.py", "\\.md"]'
+      nulm config add-pattern run_shell '["cat", "head", "ls"]'
+      nulm config add-pattern read_file '["\\.py", "\\.md"]'
     """
     import json
 
@@ -259,8 +251,8 @@ def config_remove_pattern(
     """Remove command patterns from auto-approval list.
 
     Examples:
-      claude-bridge config remove-pattern run_shell '["cat"]'
-      claude-bridge config remove-pattern read_file '["\\.py"]'
+      nulm config remove-pattern run_shell '["cat"]'
+      nulm config remove-pattern read_file '["\\.py"]'
     """
     import json
 

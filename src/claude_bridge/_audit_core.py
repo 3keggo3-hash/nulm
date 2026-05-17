@@ -1,6 +1,6 @@
 """Audit session management, file I/O, and directory scanning."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 """Bridge-internal AI provider routing for advisory workflows."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 from __future__ import annotations

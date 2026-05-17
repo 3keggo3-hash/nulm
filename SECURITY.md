@@ -8,7 +8,7 @@
 
 ## Security Model
 
-Claude Bridge is a **policy-gated local runner**, not an OS or container sandbox. It provides
+Nulm is a **policy-gated local runner**, not an OS or container sandbox. It provides
 layered security controls:
 
 - **Fail-closed by default** — mutating tools and shell commands require explicit approval.
@@ -33,7 +33,7 @@ Instead, please report them through GitHub's private vulnerability reporting:
 3. Fill in the details of the vulnerability.
 
 Alternatively, you may open a confidential advisory via
-[GitHub Security Advisories](https://github.com/3keggo3-hash/claude-bridge/security/advisories/new).
+[GitHub Security Advisories](https://github.com/3keggo3-hash/nulm/security/advisories/new).
 
 ### What to Include
 

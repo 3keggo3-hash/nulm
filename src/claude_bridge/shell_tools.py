@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Shell-oriented tool implementations for Claude Bridge.
+"""Shell-oriented tool implementations for Nulm.
 
 Backward-compatible re-export wrapper. All implementations live in
 the ``_shell_*`` sub-modules; this module re-exports every public and

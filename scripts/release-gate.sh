@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release quality gate for claude-bridge.
+# Release quality gate for Nulm.
 # Usage: ./scripts/release-gate.sh
 set -euo pipefail
 
@@ -52,7 +52,7 @@ check_optional() {
 cd "$PROJECT_DIR"
 
 echo "============================================"
-echo "  claude-bridge - Release Quality Gate"
+echo "  Nulm - Release Quality Gate"
 echo "============================================"
 echo ""
 

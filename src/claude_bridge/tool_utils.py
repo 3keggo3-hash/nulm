@@ -1,6 +1,6 @@
-"""Shared helpers for Claude Bridge tools."""
+"""Shared helpers for Nulm tools."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

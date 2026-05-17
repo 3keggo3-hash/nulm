@@ -1,6 +1,6 @@
 """Deterministic Agent Quality Layer advice for rough user goals."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -375,7 +375,7 @@ def advise_next_step(request: AgentAdviceRequest) -> AgentAdviceResponse:
             recommended_next_step="Ask the user for the desired outcome before reading files.",
             why_this_step="A missing goal would make context selection and validation arbitrary.",
             should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
+            question="What outcome should Nulm help you achieve?",
             next_prompt=(
                 "State the product or code outcome you want, plus any important constraints."
             ),
@@ -424,7 +424,7 @@ def improve_request(
         return ImprovedRequestResponse(
             clarified_goal="No clear user goal was provided.",
             should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
+            question="What outcome should Nulm help you achieve?",
             improved_prompt=(
                 "State the desired outcome, the target project area, and any constraints."
             ),
@@ -1253,7 +1253,7 @@ def advise_next_step_optimized(request: AgentAdviceRequest) -> AgentAdviceRespon
             recommended_next_step="Ask the user for the desired outcome before reading files.",
             why_this_step="A missing goal would make context selection and validation arbitrary.",
             should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
+            question="What outcome should Nulm help you achieve?",
             next_prompt="State the outcome you want, plus constraints.",
         )
 
@@ -1300,7 +1300,7 @@ def improve_request_optimized(
         return ImprovedRequestResponse(
             clarified_goal="No clear user goal was provided.",
             should_ask_user=True,
-            question="What outcome should Claude Bridge help you achieve?",
+            question="What outcome should Nulm help you achieve?",
             improved_prompt="State desired outcome, target area, and constraints.",
         )
 

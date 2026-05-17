@@ -1,6 +1,6 @@
 """Diagnostic commands for Bridge Detective investigation phase."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

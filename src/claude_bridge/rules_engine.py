@@ -1,7 +1,7 @@
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
-"""Condition matching engine and rule evaluation for Claude Bridge.
+"""Condition matching engine and rule evaluation for Nulm.
 
 This module implements Package 2C of the security layer: a condition-based
 rule matching engine that evaluates ToolRequestContext instances against

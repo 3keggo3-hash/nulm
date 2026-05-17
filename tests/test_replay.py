@@ -1,6 +1,6 @@
 """Tests for Package 3C (audit query/filtering) and 3D (replay engine)."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

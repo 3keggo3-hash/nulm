@@ -1,10 +1,10 @@
-"""Hierarchical Approval System for Claude Bridge.
+"""Hierarchical Approval System for Nulm.
 
 Provides multi-tier approval chains with risk-based level assignment,
 timeout handling, and approval recording for audit purposes.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

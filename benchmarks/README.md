@@ -1,23 +1,23 @@
 # Benchmarking
 
-Claude Bridge now includes a repeatable benchmark command to measure indexing and relevance regressions.
+Nulm now includes a repeatable benchmark command to measure indexing and relevance regressions.
 
 ## Quick Usage
 
 ```bash
-claude-bridge benchmark --project-dir . --path src --query "auth session login"
+nulm benchmark --project-dir . --path src --query "auth session login"
 ```
 
 For machine-readable output:
 
 ```bash
-claude-bridge benchmark --project-dir . --path src --query "auth session login" --json
+nulm benchmark --project-dir . --path src --query "auth session login" --json
 ```
 
 To run with a profile file:
 
 ```bash
-claude-bridge benchmark --project-dir /path/to/repo --profile-file benchmarks/profiles/django_auth.json
+nulm benchmark --project-dir /path/to/repo --profile-file benchmarks/profiles/django_auth.json
 ```
 
 ## Baseline Comparison
@@ -25,7 +25,7 @@ claude-bridge benchmark --project-dir /path/to/repo --profile-file benchmarks/pr
 If you provide a baseline file, the command checks duration, minimum file count, and expected top ranks:
 
 ```bash
-claude-bridge benchmark \
+nulm benchmark \
   --project-dir . \
   --path src \
   --query "login auth session" \

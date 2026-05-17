@@ -1,6 +1,6 @@
-"""OpenTelemetry distributed tracing for Claude Bridge."""
+"""OpenTelemetry distributed tracing for Nulm."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 
@@ -135,7 +135,7 @@ class TracingManager:
         exporter = ConsoleSpanExporter()
         self._provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(self._provider)
-        self._tracer = trace.get_tracer("claude-bridge", "0.1.0")
+        self._tracer = trace.get_tracer("nulm", "0.1.0")
 
     @property
     def tracer(self) -> trace.Tracer | None:

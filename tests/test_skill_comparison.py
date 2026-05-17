@@ -1,6 +1,6 @@
 """Tests for skill_comparison.py - SkillComparator and performance comparison."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

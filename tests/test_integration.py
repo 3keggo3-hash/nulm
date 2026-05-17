@@ -5,7 +5,7 @@ role assignment, skill comparison, recommendation proposals,
 and proposal engine behavior.
 """
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

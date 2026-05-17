@@ -1,6 +1,6 @@
 """Tests for url_tools SSRF protections."""
 
-# Copyright (c) 2026 Claude Bridge Contributors
+# Copyright (c) 2026 Nulm Contributors
 # SPDX-License-Identifier: MIT
 
 

@@ -1,6 +1,6 @@
 # Security Model
 
-Claude Bridge provides a security model based on layered guard policies, explicit approval gates, and a
+Nulm provides a security model based on layered guard policies, explicit approval gates, and a
 fully-audited tool call log. This document describes the trust boundaries, protection layers, and
 configuration model.
 
@@ -12,7 +12,7 @@ The bridge runs as a local MCP server on the user's machine. All tool calls orig
 client (Claude Desktop, VS Code, etc.) and are processed inside the bridge process.
 
 ```
-  MCP Client  ──(stdio)──>  Claude Bridge Server  ──>  File System / Shell
+  MCP Client  ──(stdio)──>  Nulm Server  ──>  File System / Shell
                                    │
                            Audit Log (disk)
 ```
@@ -40,7 +40,7 @@ The mode is set via `--approval-preset` or individual `--auto-approve` / `--clie
 flags at startup or through environment variables.
 
 `client_managed_approval=true` means the MCP client is expected to show and enforce approval prompts
-before invoking destructive tools. Claude Bridge treats that client-side approval contract as
+before invoking destructive tools. Nulm treats that client-side approval contract as
 satisfied; clients without equivalent approval handling should use read-only mode or fail-closed
 defaults instead.
 
