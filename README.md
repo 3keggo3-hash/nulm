@@ -2,18 +2,19 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/nulm)](https://pypi.org/project/nulm/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/claude-bridge/test.yml?branch=main)](https://github.com/3keggo3-hash/claude-bridge/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/nulm/test.yml?branch=main)](https://github.com/3keggo3-hash/nulm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
 
 ## What's New
 
-- **Context Compression Manager** — IMPLEMENTED (decompression bomb protection added to `_context_compression.py`)
-- **Audit Trail Query Interface** — IMPLEMENTED (SQL-like parser in `_audit_query_parser.py`)
-- **Autonomous Skill Discovery** — IMPLEMENTED security hardening (26 blocked patterns in `_shell_safety.py`)
-- **Hierarchical Approval System** — IMPLEMENTED (`_approval_hierarchy.py` + `tool_utils.py` integration)
-- **Parallel Workflow Executor** — IMPLEMENTED (`_parallel_executor.py` + `workflow_engine.py` extension)
+- **AI council workflow** — `run_council_session` and `/council` create read-only specialist
+  debate sessions and return approval-gated implementation plans.
+- **Bridge-internal model routing** — optional provider/model profiles route council/advisory calls
+  without changing the host chat model.
+- **Context Compression Manager** — decompression bomb protection added to `_context_compression.py`.
+- **Audit Trail Query Interface** — SQL-like parser in `_audit_query_parser.py`.
 
 <!-- GitHub Topics: mcp-server, claude-bridge, agent-quality, local-ai, developer-tools -->
 CI: GitHub Actions | PyPI package: `nulm` | CLI: `claude-bridge` |
@@ -56,12 +57,6 @@ claude-bridge install --target vscode
 claude-bridge install --target generic-stdio
 ```
 
-## What's New
-
-- **Agent-43 refactor**: audit layer improvements, shell safety hardening, context compression, tunnel manager
-- **Agent-41 relevance**: position-based and IDF weighting for improved ranking accuracy
-- **Agent-37 detective**: weighted error patterns with reduced false positives
-
 ## First 5 Minutes
 
 Try a natural request first:
@@ -85,6 +80,10 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
   ranking without embeddings
 - **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` —
   structured review, explain, test, todo, quality, and bounded agent-loop flows
+- **AI council**: `run_council_session` and `/council` assign specialist roles, collect bounded
+  debate rounds, synthesize consensus, and return `steps_json` for approval-gated execution
+- **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
+  for Bridge advisory calls while keeping API keys in environment variables
 - **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
   constrained text-only HTTP/HTTPS reading
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
@@ -176,6 +175,47 @@ For Claude Desktop approval UI support:
 
 With `execute=true`, workflows run a safe read-only discovery step (file reads and listing only,
 no shell or patch execution).
+
+## AI Council and Model Routing
+
+The council workflow is read-only. It asks a bounded set of specialist roles to debate a task,
+synthesizes consensus, lists dissent and risks, and returns `steps_json` that can be applied through
+the existing plan/approval tools. It does not patch files, run shell commands, or override policy.
+
+```text
+/council target="src/" task="add model routing"
+```
+
+Equivalent MCP tool call:
+
+```text
+run_council_session(task="add model routing", target="src/", agent_count=5, rounds=2)
+```
+
+Bridge-internal AI routing is disabled by default. When enabled, it affects only Bridge advisory
+calls such as the council workflow; it cannot switch the MCP client's main chat model.
+
+```bash
+export CLAUDE_BRIDGE_AI_ROUTING_ENABLED=1
+export CLAUDE_BRIDGE_AI_ROUTING_MODE=auto
+export CLAUDE_BRIDGE_AI_DEFAULT_PROFILE=local
+export CLAUDE_BRIDGE_AI_PROFILES_JSON='{
+  "fast": {"provider": "openai", "model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY"},
+  "deep": {
+    "provider": "anthropic",
+    "model": "claude-3-5-sonnet-latest",
+    "api_key_env": "ANTHROPIC_API_KEY"
+  }
+}'
+export CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON='[
+  {"name": "security", "profile": "deep", "keywords": ["security", "secret", "approval"]}
+]'
+```
+
+Provider API keys must be supplied through the named environment variables (`OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, etc.). Raw keys are not stored in Bridge config or returned
+by `get_config`. Custom cloud provider `base_url` values must use HTTPS and must not point to
+private/internal hosts; Ollama routing is limited to localhost/loopback URLs.
 
 ## Agent Quality examples
 
