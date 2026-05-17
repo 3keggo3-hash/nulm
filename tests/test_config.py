@@ -375,6 +375,7 @@ def test_tool_profile_union_covers_public_server_exports():
         "get_stream_capabilities",
         "stream_subscribe",
         "register_notification_tools",
+        "register_proposal_tools",
     }
 
     assert sorted(public_tool_exports - profile_tools - ignored_exports) == []

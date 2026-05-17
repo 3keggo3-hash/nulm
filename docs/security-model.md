@@ -114,6 +114,16 @@ Custom cloud provider `base_url` values must use HTTPS and must not point to pri
 or hostnames resolving to private/internal addresses. Ollama routing is intentionally limited to
 localhost/loopback URLs because it is expected to run on the user's own machine.
 
+### Adaptive Proposals and MCP Discovery
+
+Adaptive proposals are approval-gated. Skill comparison can create pending deactivation proposals,
+but no skill is deactivated merely because a proposal exists; the user must call `accept_proposal`
+explicitly. Proposal state is written under the project-local `.claude-bridge/proposals` directory.
+
+MCP discovery is observational and validates discovered tool schemas before surfacing them. Tools
+with blocked patterns, unsupported schemas, or high-risk descriptions are treated as untrusted for
+recommendation purposes, and discovery does not execute discovered tools.
+
 ---
 
 ## Mobile Dashboard and Tunnel Safety

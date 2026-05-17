@@ -13,6 +13,8 @@
   debate sessions and return approval-gated implementation plans.
 - **Bridge-internal model routing** — optional provider/model profiles route council/advisory calls
   without changing the host chat model.
+- **Adaptive proposal tools** — optional skill comparison and MCP discovery helpers can surface
+  accept/reject proposals without silently changing active behavior.
 - **Context Compression Manager** — decompression bomb protection added to `_context_compression.py`.
 - **Audit Trail Query Interface** — SQL-like parser in `_audit_query_parser.py`.
 
@@ -84,6 +86,8 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
   debate rounds, synthesize consensus, and return `steps_json` for approval-gated execution
 - **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
   for Bridge advisory calls while keeping API keys in environment variables
+- **Adaptive proposals**: `list_pending_proposals`, `get_proposal_details`, `accept_proposal`, and
+  `reject_proposal` expose user-approved skill deactivation proposals
 - **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
   constrained text-only HTTP/HTTPS reading
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
@@ -216,6 +220,17 @@ Provider API keys must be supplied through the named environment variables (`OPE
 `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, etc.). Raw keys are not stored in Bridge config or returned
 by `get_config`. Custom cloud provider `base_url` values must use HTTPS and must not point to
 private/internal hosts; Ollama routing is limited to localhost/loopback URLs.
+
+## Adaptive Proposals
+
+The adaptive proposal layer compares recorded skill outcomes, checks whether a replacement has a
+statistically meaningful advantage, and stores pending deactivation proposals under
+`.claude-bridge/proposals`. Proposals are inert until explicitly accepted with `accept_proposal`;
+rejection is recorded with `reject_proposal`.
+
+MCP peer discovery is observational. It can identify nearby MCP-like processes and validate exposed
+tool schemas, but untrusted or invalid tools are filtered from recommendations and are not executed
+by discovery itself.
 
 ## Agent Quality examples
 

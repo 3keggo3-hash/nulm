@@ -127,6 +127,7 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "git_read",
             "git_commit",
             "ai_council",
+            "adaptive_proposals",
         },
     },
 }
@@ -274,6 +275,12 @@ TOOL_GROUPS: dict[str, set[str]] = {
     },
     "git_commit": {
         "commit_changes",
+    },
+    "adaptive_proposals": {
+        "accept_proposal",
+        "reject_proposal",
+        "list_pending_proposals",
+        "get_proposal_details",
     },
 }
 

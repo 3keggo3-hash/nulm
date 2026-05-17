@@ -981,6 +981,32 @@ get_stream_capabilities = _tool_or_disabled(_NOTIFICATION_TOOLS, "get_stream_cap
 emit_progress_event = _tool_or_disabled(_NOTIFICATION_TOOLS, "emit_progress_event")
 
 
+if any(
+    _should_register_tool(name)
+    for name in {
+        "accept_proposal",
+        "reject_proposal",
+        "list_pending_proposals",
+        "get_proposal_details",
+    }
+):
+    from claude_bridge.proposal_tool_server import register_proposal_tools
+
+    _PROPOSAL_TOOLS = register_proposal_tools(
+        mcp=mcp,
+        tool_options=_tool_options,
+        audit_tool_call=_audit_tool_call,
+        json_response=_json_response,
+        enabled_names=_ENABLED_TOOL_NAMES,
+    )
+else:
+    _PROPOSAL_TOOLS = {}
+accept_proposal = _tool_or_disabled(_PROPOSAL_TOOLS, "accept_proposal")
+reject_proposal = _tool_or_disabled(_PROPOSAL_TOOLS, "reject_proposal")
+list_pending_proposals = _tool_or_disabled(_PROPOSAL_TOOLS, "list_pending_proposals")
+get_proposal_details = _tool_or_disabled(_PROPOSAL_TOOLS, "get_proposal_details")
+
+
 def run_mcp_server() -> None:
     """Run the Claude Bridge MCP server over stdio."""
     _register_prompts_once()
