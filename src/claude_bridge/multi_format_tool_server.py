@@ -27,12 +27,17 @@ def register_multi_format_tools(
 
     if ctx.should_register("read_image"):
 
-        async def read_image(path: str) -> str:
+        async def read_image(path: str, include_content: bool = False) -> str:
             from claude_bridge.multi_format import read_image as _read_image
 
             started_at = ctx.now_ms()
-            result = _read_image(path)
-            return audit_tool_call("read_image", {"path": path}, result, started_at=started_at)
+            result = _read_image(path, include_content=include_content)
+            return audit_tool_call(
+                "read_image",
+                {"path": path, "include_content": include_content},
+                result,
+                started_at=started_at,
+            )
 
         ctx.register(
             "read_image",

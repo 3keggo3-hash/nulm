@@ -479,8 +479,10 @@ def git_diff_summary(root: Path, target: str = "HEAD") -> dict[str, Any]:
         "root": str(root),
         "target": target,
         "changed": True,
-        "files": files,
+        "files": files[:100],
         "total_files": len(files),
+        "returned_files": min(len(files), 100),
+        "truncated": len(files) > 100,
         "total_insertions": total_insertions,
         "total_deletions": total_deletions,
     }

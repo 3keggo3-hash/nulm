@@ -174,6 +174,7 @@ def git_diff(
     project_dir: Path,
     file_path: str | None = None,
     cached: bool = False,
+    max_chars: int = 50000,
 ) -> dict[str, Any]:
     """Return git diff output for the working tree or staged changes."""
     root = _git_root(project_dir)
@@ -190,11 +191,19 @@ def git_diff(
         cmd.extend(["--", file_path])
 
     result = _run_git(cmd, cwd=repo_root)
+    output = result.stdout
+    original_chars = len(output)
+    truncated = original_chars > max_chars
+    if truncated:
+        output = output[:max_chars]
     return {
         "ok": result.returncode == 0,
-        "output": result.stdout,
+        "output": output,
         "stderr": result.stderr,
         "exit_code": result.returncode,
+        "truncated": truncated,
+        "original_chars": original_chars,
+        "max_chars": max_chars,
     }
 
 

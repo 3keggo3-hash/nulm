@@ -21,6 +21,8 @@ from claude_bridge.skill_registry import get_registry
 DEFAULT_TIMEOUT_SECONDS = 30
 SKILL_DIR = Path(".claude-bridge/skills")
 ALLOWED_PERMISSIONS = {"read", "analyze", "write", "execute"}
+_STDOUT_MAX_CHARS = 10000
+_STDERR_MAX_CHARS = 2000
 
 
 @dataclass
@@ -31,6 +33,10 @@ class SkillResult:
     output: str = ""
     error: str = ""
     duration: float = 0.0
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    stdout_chars: int = 0
+    stderr_chars: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +44,10 @@ class SkillResult:
             "output": self.output,
             "error": self.error,
             "duration": self.duration,
+            "stdout_truncated": self.stdout_truncated,
+            "stderr_truncated": self.stderr_truncated,
+            "stdout_chars": self.stdout_chars,
+            "stderr_chars": self.stderr_chars,
         }
 
 
@@ -149,19 +159,38 @@ class SkillExecutor:
             duration = time.monotonic() - start
             registry.record_hit(name)
 
+            stdout = result.stdout
+            stderr = result.stderr
+            stdout_truncated = len(stdout) > _STDOUT_MAX_CHARS
+            stderr_truncated = len(stderr) > _STDERR_MAX_CHARS
+            stdout_chars = len(stdout)
+            stderr_chars = len(stderr)
+            if stdout_truncated:
+                stdout = stdout[:_STDOUT_MAX_CHARS]
+            if stderr_truncated:
+                stderr = stderr[:_STDERR_MAX_CHARS]
+
             if result.returncode == 0:
                 return SkillResult(
                     status="success",
-                    output=result.stdout,
-                    error=result.stderr,
+                    output=stdout,
+                    error=stderr,
                     duration=duration,
+                    stdout_truncated=stdout_truncated,
+                    stderr_truncated=stderr_truncated,
+                    stdout_chars=stdout_chars,
+                    stderr_chars=stderr_chars,
                 )
             else:
                 return SkillResult(
                     status="failed",
-                    output=result.stdout,
-                    error=result.stderr or f"Exit code: {result.returncode}",
+                    output=stdout,
+                    error=stderr or f"Exit code: {result.returncode}",
                     duration=duration,
+                    stdout_truncated=stdout_truncated,
+                    stderr_truncated=stderr_truncated,
+                    stdout_chars=stdout_chars,
+                    stderr_chars=stderr_chars,
                 )
 
         except subprocess.TimeoutExpired:

@@ -15,6 +15,8 @@ _MIN_AGENTS = 2
 _MAX_AGENTS = 8
 _MIN_ROUNDS = 1
 _MAX_ROUNDS = 3
+_AGENT_RESPONSE_MAX_TOKENS = 500
+_CONSENSUS_MAX_TOKENS = 800
 
 
 @dataclass(frozen=True)
@@ -73,8 +75,8 @@ def run_council_session(
     *,
     task: str,
     target: str = ".",
-    agent_count: int = 5,
-    rounds: int = 2,
+    agent_count: int = 3,
+    rounds: int = 1,
     model_profile: str = "auto",
     language: str = "Turkish",
     router: AIModelRouter,
@@ -85,6 +87,7 @@ def run_council_session(
 
     resolved_rounds = _clamp(rounds, _MIN_ROUNDS, _MAX_ROUNDS)
     agents = assign_council_agents(task, agent_count=agent_count, profile=model_profile)
+    cost_estimate = _council_cost_estimate(agent_count=len(agents), rounds=resolved_rounds)
     first_round = [
         _ask_agent(
             router,
@@ -134,6 +137,7 @@ def run_council_session(
             "target": target,
             "agent_count": len(agents),
             "rounds": resolved_rounds,
+            "cost_estimate": cost_estimate,
             "agents": [agent.to_dict() for agent in agents],
             "debate": debate_rounds,
             "consensus": consensus["text"],
@@ -176,7 +180,7 @@ def _ask_agent(
         task=task,
         context={"role": agent.role, "target": target},
         profile_name=agent.profile,
-        max_tokens=500,
+        max_tokens=_AGENT_RESPONSE_MAX_TOKENS,
     )
     return _response_payload(agent, response)
 
@@ -203,13 +207,33 @@ def _synthesize_consensus(
         task=task,
         context={"role": "chair", "target": target, "task_type": "council_consensus"},
         profile_name=model_profile,
-        max_tokens=800,
+        max_tokens=_CONSENSUS_MAX_TOKENS,
     )
     if not response.text.strip():
         text = _fallback_consensus(task, target)
     else:
         text = response.text.strip()
     return {"text": text, "route": response.decision.to_dict()}
+
+
+def _council_cost_estimate(*, agent_count: int, rounds: int) -> dict[str, Any]:
+    agent_calls = agent_count * rounds
+    consensus_calls = 1
+    estimated_model_calls = agent_calls + consensus_calls
+    max_output_tokens = agent_calls * _AGENT_RESPONSE_MAX_TOKENS + _CONSENSUS_MAX_TOKENS
+    return {
+        "schema_version": "council_cost_estimate.v1",
+        "agent_calls": agent_calls,
+        "consensus_calls": consensus_calls,
+        "estimated_model_calls": estimated_model_calls,
+        "max_output_tokens": max_output_tokens,
+        "tokens_per_agent_round": _AGENT_RESPONSE_MAX_TOKENS,
+        "consensus_max_tokens": _CONSENSUS_MAX_TOKENS,
+        "note": (
+            "Remote API spend occurs only when AI routing is enabled and selected profiles "
+            "use remote providers."
+        ),
+    }
 
 
 def _response_payload(agent: CouncilAgent, response: AIModelResponse) -> dict[str, Any]:

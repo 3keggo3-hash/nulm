@@ -1533,6 +1533,7 @@ class TestWorkflowTool:
                 mode="review",
                 target="src/",
                 option="bugs and missing tests",
+                detail_level="full",
             )
         )
         assert payload["ok"] is True
@@ -1581,6 +1582,7 @@ class TestWorkflowTool:
                 mode="orchestrate",
                 target="src/",
                 option="split by modules and define integration gates",
+                detail_level="full",
             )
         )
         assert payload["ok"] is True
@@ -1598,6 +1600,7 @@ class TestWorkflowTool:
                 target="src/",
                 option="fix the failing behavior with bounded iterations",
                 max_iterations=4,
+                detail_level="full",
             )
         )
         assert payload["ok"] is True
@@ -1676,7 +1679,9 @@ class TestWorkflowTool:
         assert "Response language: English" in payload["details"]["prompt"]
 
     async def test_todo_workflow_recommends_shell_when_useful(self, temp_project):
-        payload = parse_payload(await mcp_server.run_workflow(mode="todo", target="."))
+        payload = parse_payload(
+            await mcp_server.run_workflow(mode="todo", target=".", detail_level="full")
+        )
         assert payload["ok"] is True
         assert payload["details"]["recommended_tools"] == [
             "list_directory",
@@ -1695,7 +1700,12 @@ class TestWorkflowTool:
         target_file.write_text("hello execute mode")
 
         payload = parse_payload(
-            await mcp_server.run_workflow(mode="review", target="notes.txt", execute=True)
+            await mcp_server.run_workflow(
+                mode="review",
+                target="notes.txt",
+                execute=True,
+                detail_level="full",
+            )
         )
 
         assert payload["ok"] is True
@@ -1717,7 +1727,12 @@ class TestWorkflowTool:
         export_file.write_text('[preset.0]\nname="Android"\n')
 
         payload = parse_payload(
-            await mcp_server.run_workflow(mode="review", target="grid_manager.gd", execute=True)
+            await mcp_server.run_workflow(
+                mode="review",
+                target="grid_manager.gd",
+                execute=True,
+                detail_level="full",
+            )
         )
 
         assert payload["ok"] is True
@@ -1744,7 +1759,12 @@ class TestWorkflowTool:
         (temp_project / "subdir" / "misc.py").write_text("def helper():\n    return None\n")
 
         payload = parse_payload(
-            await mcp_server.run_workflow(mode="review", target="subdir", execute=True)
+            await mcp_server.run_workflow(
+                mode="review",
+                target="subdir",
+                execute=True,
+                detail_level="full",
+            )
         )
 
         assert payload["ok"] is True
@@ -1773,7 +1793,12 @@ class TestWorkflowTool:
         pyproject.write_text('[project]\nname = "bridge"\n')
 
         payload = parse_payload(
-            await mcp_server.run_workflow(mode="review", target="module.py", execute=True)
+            await mcp_server.run_workflow(
+                mode="review",
+                target="module.py",
+                execute=True,
+                detail_level="full",
+            )
         )
 
         assert payload["ok"] is True
@@ -1818,6 +1843,7 @@ class TestWorkflowTool:
                 target="src",
                 goal="understand auth flow",
                 max_files=6,
+                include_git_diff=True,
             )
         )
 
@@ -1837,6 +1863,7 @@ class TestWorkflowTool:
                 target="src",
                 goal="understand auth flow",
                 max_files=6,
+                include_git_diff=True,
             )
         )
         assert second["ok"] is True

@@ -94,7 +94,7 @@ class TestReadImage:
         write_b64_fixture(temp_project, "sample.png.b64", "sample.png")
         monkeypatch.setattr(multi_format, "_import_image_module", lambda: FakeImageModule())
 
-        payload = parse_payload(await mcp_server.read_image("sample.png"))
+        payload = parse_payload(await mcp_server.read_image("sample.png", include_content=True))
 
         assert payload["ok"] is True
         assert payload["details"]["mime_type"] == "image/png"
@@ -102,7 +102,37 @@ class TestReadImage:
         assert payload["details"]["width"] == 1
         assert payload["details"]["height"] == 1
         assert payload["details"]["content_base64"]
+        assert payload["details"]["content_included"] is True
+        assert payload["details"]["content_truncated"] is False
         assert payload["details"]["truncated"] is False
+
+    async def test_read_image_omits_base64_by_default(
+        self, temp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write_b64_fixture(temp_project, "sample.png.b64", "sample.png")
+        monkeypatch.setattr(multi_format, "_import_image_module", lambda: FakeImageModule())
+
+        payload = parse_payload(await mcp_server.read_image("sample.png"))
+
+        assert payload["ok"] is True
+        assert "content_base64" not in payload["details"]
+        assert payload["details"]["content_included"] is False
+        assert payload["details"]["content_truncated"] is False
+
+    async def test_read_image_inline_content_has_byte_limit(
+        self, temp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write_b64_fixture(temp_project, "sample.png.b64", "sample.png")
+        monkeypatch.setattr(multi_format, "_import_image_module", lambda: FakeImageModule())
+        monkeypatch.setattr(multi_format, "_IMAGE_INLINE_MAX_BYTES", 1)
+
+        payload = parse_payload(await mcp_server.read_image("sample.png", include_content=True))
+
+        assert payload["ok"] is True
+        assert "content_base64" not in payload["details"]
+        assert payload["details"]["content_included"] is False
+        assert payload["details"]["content_truncated"] is True
+        assert payload["details"]["inline_max_byte_size"] == 1
 
     async def test_read_image_missing_dependency_is_structured(
         self, temp_project: Path, monkeypatch: pytest.MonkeyPatch
@@ -182,8 +212,24 @@ class TestReadPdf:
         assert payload["details"]["page_end"] == 11
         assert payload["details"]["returned_page_count"] == 10
         assert payload["details"]["page_limit"] == 10
+        assert payload["details"]["char_limit"] == 100000
         assert payload["details"]["truncated"] is True
         assert payload["details"]["has_more"] is True
+
+    async def test_read_pdf_respects_text_character_limit(
+        self, temp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        write_b64_fixture(temp_project, "sample.pdf.b64", "sample.pdf")
+        monkeypatch.setattr(multi_format, "_import_pdf_module", lambda: FakePdfModule())
+        monkeypatch.setattr(multi_format, "_PDF_TEXT_MAX_CHARS", 3)
+
+        payload = parse_payload(await mcp_server.read_pdf("sample.pdf", page_start=1, page_end=1))
+
+        assert payload["ok"] is True
+        assert payload["details"]["text"] == "pag"
+        assert payload["details"]["char_count"] == 3
+        assert payload["details"]["char_limit"] == 3
+        assert payload["details"]["truncated"] is True
 
     async def test_read_pdf_respects_page_end(
         self, temp_project: Path, monkeypatch: pytest.MonkeyPatch

@@ -124,12 +124,17 @@ def register_git_tools(
 
     if ctx.should_register("git_diff") and git_diff_impl is not None:
 
-        async def git_diff(file_path: str | None = None, cached: bool = False) -> str:
+        async def git_diff(
+            file_path: str | None = None,
+            cached: bool = False,
+            max_chars: int = 50000,
+        ) -> str:
             started_at = ctx.now_ms()
             payload = git_diff_impl(
                 project_dir=project_dir(),
                 file_path=file_path,
                 cached=cached,
+                max_chars=max(1000, min(max_chars, 200000)),
             )
             result = json_response(
                 payload.get("ok", False),
@@ -138,7 +143,7 @@ def register_git_tools(
             )
             return audit_tool_call(
                 "git_diff",
-                {"file_path": file_path, "cached": cached},
+                {"file_path": file_path, "cached": cached, "max_chars": max_chars},
                 result,
                 started_at=started_at,
             )

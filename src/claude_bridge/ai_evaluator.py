@@ -21,6 +21,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from claude_bridge.guard_policy import (
@@ -776,10 +777,31 @@ async def evaluate_tool_with_ai(
         tool_params=remote_params,
         context={"project_dir": ctx.project_dir or ""},
     )
+    budget: TokenBudget | None = None
+    budget_path = _budget_path_for_context(ctx)
+    if not is_local:
+        budget = load_budget(str(budget_path))
+        if budget.is_exhausted:
+            resp = EvaluationResponse(
+                action=EvaluationAction.ASK,
+                reason="AI evaluator token budget exhausted; requires approval",
+            )
+            decision = evaluation_response_to_policy_decision(resp, ctx=ctx)
+            decision.metadata["ai_budget_exhausted"] = True
+            decision.metadata["ai_budget_used"] = budget.used
+            decision.metadata["ai_budget_monthly_limit"] = budget.monthly_limit
+            return decision
     try:
         resp = await evaluate_with_timeout(provider, request, timeout=timeout)
     except Exception:
         resp = EvaluationResponse.fail_closed(reason="AI evaluator failed unexpectedly")
+    if budget is not None:
+        tokens_used = resp.tokens_used or _estimate_evaluation_tokens(request, resp)
+        budget.track_usage(tokens_used)
+        try:
+            save_budget(budget, str(budget_path))
+        except OSError:
+            pass
 
     is_fallback_trigger = resp.action == EvaluationAction.ASK and (
         resp.reason.startswith("AI evaluator timed out")
@@ -801,7 +823,23 @@ async def evaluate_tool_with_ai(
     latency = ai_latency_summary().get("last_ms")
     if latency is not None:
         decision.metadata["ai_evaluator_latency_ms"] = latency
+    if budget is not None:
+        decision.metadata["ai_budget_used"] = budget.used
+        decision.metadata["ai_budget_monthly_limit"] = budget.monthly_limit
     return decision
+
+
+def _budget_path_for_context(ctx: ToolRequestContext) -> Path:
+    root = Path(ctx.project_dir).resolve() if ctx.project_dir else Path.cwd()
+    return root / BUDGET_STORAGE_PATH
+
+
+def _estimate_evaluation_tokens(
+    request: EvaluationRequest, response: EvaluationResponse
+) -> float:
+    payload = json.dumps(request.to_dict(), ensure_ascii=False, sort_keys=True)
+    response_text = json.dumps(response.to_dict(), ensure_ascii=False, sort_keys=True)
+    return float(max(1, (len(payload) + len(response_text) + 3) // 4))
 
 
 # ---------------------------------------------------------------------------

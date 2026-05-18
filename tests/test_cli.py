@@ -313,6 +313,25 @@ class TestCLI:
         server = written["servers"]["nulm"]
         assert server["args"] == ["-m", "claude_bridge.mcp_server"]
 
+    def test_write_target_config_persists_tool_profile(self, tmp_path: Path):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        config_path = tmp_path / "generic.json"
+
+        cli._write_target_config(
+            config_path,
+            target="generic-stdio",
+            project_dir=project_dir,
+            allowed_roots=[project_dir],
+            auto_approve=False,
+            client_managed_approval=True,
+            tool_profile="essential",
+        )
+
+        written = json.loads(config_path.read_text(encoding="utf-8"))
+        server = written["servers"]["nulm"]
+        assert server["env"]["CLAUDE_BRIDGE_TOOL_PROFILE"] == "essential"
+
     def test_install_command_uses_default_path_for_vscode_target(self, tmp_path: Path):
         project_dir = tmp_path / "project"
         project_dir.mkdir()

@@ -95,7 +95,7 @@ def register_workflow_tools(
             goal: str = "understand the current task",
             max_files: int = 8,
             include_tests: bool = True,
-            include_git_diff: bool = True,
+            include_git_diff: bool = False,
             include_docs: bool = True,
             budget_tokens: int | None = None,
         ) -> str:
@@ -295,6 +295,7 @@ def register_workflow_tools(
             language: str = "Turkish",
             execute: bool = False,
             max_iterations: int = 3,
+            detail_level: str = "compact",
         ) -> str:
             started_at = ctx.now_ms()
             result = await run_workflow_impl(
@@ -312,6 +313,7 @@ def register_workflow_tools(
                 project_dir=project_dir,
                 infer_project_root=infer_project_root,
                 json_response=json_response,
+                detail_level=detail_level,
             )
             return audit_tool_call(
                 "run_workflow",
@@ -321,6 +323,7 @@ def register_workflow_tools(
                     "option": option,
                     "language": language,
                     "execute": execute,
+                    "detail_level": detail_level,
                 },
                 result,
                 started_at=started_at,

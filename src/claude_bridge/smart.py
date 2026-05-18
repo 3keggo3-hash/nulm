@@ -229,6 +229,7 @@ def budget_metadata(
 ) -> dict[str, Any]:
     safe_budget = max(1, int(budget_tokens))
     return {
+        "schema_version": "budget_metadata.v1",
         "context_budget_tokens": safe_budget,
         "estimated_tokens": estimated_tokens,
         "budget_spent": estimated_tokens,

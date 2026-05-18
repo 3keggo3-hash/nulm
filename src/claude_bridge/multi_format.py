@@ -20,8 +20,10 @@ from claude_bridge.tool_utils import (
 )
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024
+_IMAGE_INLINE_MAX_BYTES = 1024
 _PDF_MAX_BYTES = 10 * 1024 * 1024
 _PDF_PAGE_LIMIT = 10
+_PDF_TEXT_MAX_CHARS = 100000
 _IMAGE_FORMATS = {
     ".bmp": "image/bmp",
     ".gif": "image/gif",
@@ -120,7 +122,7 @@ def _detect_format_by_magic(data: bytes) -> str | None:
     return None
 
 
-def read_image(path: str) -> str:
+def read_image(path: str, include_content: bool = False) -> str:
     """Read supported image metadata and base64 content from a workspace path."""
     target, error = _resolve_read_target(path)
     if error is not None:
@@ -178,7 +180,10 @@ def read_image(path: str) -> str:
                     "supported_formats": sorted(_PIL_FORMATS),
                 },
             )
-        content_base64 = base64.b64encode(target.read_bytes()).decode("ascii")
+        content_base64 = None
+        content_truncated = include_content and byte_size > _IMAGE_INLINE_MAX_BYTES
+        if include_content and not content_truncated:
+            content_base64 = base64.b64encode(target.read_bytes()).decode("ascii")
     except OSError as exc:
         return json_response(
             False,
@@ -198,6 +203,9 @@ def read_image(path: str) -> str:
             "width": int(width),
             "height": int(height),
             "content_base64": content_base64,
+            "content_included": content_base64 is not None,
+            "content_truncated": content_truncated,
+            "inline_max_byte_size": _IMAGE_INLINE_MAX_BYTES,
             "truncated": False,
             "max_byte_size": _IMAGE_MAX_BYTES,
         },
@@ -295,7 +303,11 @@ async def read_pdf(path: str, page_start: int = 1, page_end: int | None = None) 
         )
 
     text = "\n\n".join(texts)
-    truncated = capped_end < requested_end or capped_end < total_pages
+    text_truncated = len(text) > _PDF_TEXT_MAX_CHARS
+    if text_truncated:
+        text = text[:_PDF_TEXT_MAX_CHARS]
+    truncated = text_truncated or capped_end < requested_end or capped_end < total_pages
+    char_count = len(text)
     return json_response(
         True,
         f"Read PDF: {path}",
@@ -310,7 +322,8 @@ async def read_pdf(path: str, page_start: int = 1, page_end: int | None = None) 
             "requested_page_end": requested_end,
             "returned_page_count": len(texts),
             "page_limit": _PDF_PAGE_LIMIT,
-            "char_count": len(text),
+            "char_count": char_count,
+            "char_limit": _PDF_TEXT_MAX_CHARS,
             "truncated": truncated,
             "has_more": capped_end < total_pages,
             "max_byte_size": _PDF_MAX_BYTES,
