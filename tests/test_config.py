@@ -170,12 +170,18 @@ class TestCurrentConfig:
                     "provider": "openai",
                     "model": "gpt-test",
                     "api_key_env": "OPENAI_API_KEY",
+                    "input_cost_per_mtok": 0.15,
+                    "output_cost_per_mtok": 0.60,
+                    "quality_tier": "cheap",
+                    "max_output_tokens": 400,
                 }
             },
         )
         cfg = config_module.current_config()
         assert cfg["ai_routing_enabled"] is True
         assert cfg["ai_model_profiles"]["fast"]["api_key_env"] == "OPENAI_API_KEY"
+        assert cfg["ai_model_profiles"]["fast"]["quality_tier"] == "cheap"
+        assert cfg["ai_model_profiles"]["fast"]["max_output_tokens"] == 400
         assert "sk-" not in json.dumps(cfg["ai_model_profiles"])
 
 
@@ -209,6 +215,29 @@ class TestUpdateRuntimeConfig:
     async def test_ai_fallback_allow_rejected_at_runtime(self, temp_project):
         with pytest.raises(ValueError, match="must be one of deny/ask"):
             config_module.update_runtime_config("ai_evaluator_fallback_action", "allow")
+
+    async def test_update_ai_model_profiles_accepts_cost_metadata(self, temp_project):
+        result = config_module.update_runtime_config(
+            "ai_model_profiles",
+            {
+                "balanced": {
+                    "provider": "openai",
+                    "model": "gpt-test",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "input_cost_per_mtok": 1.25,
+                    "output_cost_per_mtok": 5.0,
+                    "quality_tier": "balanced",
+                    "max_output_tokens": 600,
+                }
+            },
+        )
+
+        profile = result["ai_model_profiles"]["balanced"]
+
+        assert profile["input_cost_per_mtok"] == 1.25
+        assert profile["output_cost_per_mtok"] == 5.0
+        assert profile["quality_tier"] == "balanced"
+        assert profile["max_output_tokens"] == 600
 
 
 class TestConfigureFromEnvState:
