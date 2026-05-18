@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - AI routing decisions now expose quality tier, token cap, and estimated maximum cost metadata for
   model selection transparency.
+- README now leads with the concrete MCP safety use case, moves security up front, separates core,
+  optional, and experimental surfaces, and explains `claude-bridge` compatibility naming.
 
 ## [0.1.1] - 2026-05-17
 
