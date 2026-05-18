@@ -92,6 +92,25 @@ class TestGitIntegration:
         assert "-old" in result["details"]["output"]
         assert "+new" in result["details"]["output"]
 
+    async def test_git_diff_truncates_large_output(self, git_project):
+        test_file = git_project / "tracked.txt"
+        test_file.write_text("old\n")
+        subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=git_project,
+            capture_output=True,
+            check=True,
+        )
+        test_file.write_text("new\n" * 2000)
+
+        result = parse_payload(await mcp_server.git_diff(file_path="tracked.txt", max_chars=1000))
+
+        assert result["ok"] is True
+        assert result["details"]["truncated"] is True
+        assert result["details"]["original_chars"] > len(result["details"]["output"])
+        assert result["details"]["max_chars"] == 1000
+
     async def test_git_log_lists_recent_commits(self, git_project):
         test_file = git_project / "tracked.txt"
         test_file.write_text("hello\n")

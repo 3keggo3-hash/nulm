@@ -158,6 +158,39 @@ async def write_file(
             metadata={"tool": "write_file", "path": path, **dict(rule_decision.metadata)},
         )
 
+    if target.exists() and target.is_dir():
+        return json_response(
+            False,
+            f"Not a file: {path}",
+            code="not_a_file",
+            details={"path": path},
+        )
+    if target.exists() and not overwrite:
+        return json_response(
+            False,
+            f"File already exists: {path}",
+            code="file_exists",
+            details={"path": path},
+        )
+    if not target.parent.exists() and not create_parents:
+        return json_response(
+            False,
+            f"Parent directory does not exist: {target.parent}",
+            code="parent_directory_missing",
+            details={"path": path, "parent": str(target.parent)},
+        )
+
+    if target.suffix == ".py":
+        try:
+            ast.parse(content)
+        except SyntaxError as exc:
+            return json_response(
+                False,
+                f"Python syntax error in file content: {exc}",
+                code="python_syntax_error",
+                details={"path": path, "error": str(exc)},
+            )
+
     config = current_config()
     ai_enabled = bool(config.get("ai_evaluator_enabled", False))
     ai_timeout = int(config.get("ai_evaluator_timeout", 5))
@@ -213,39 +246,6 @@ async def write_file(
             risk_reasons=list(ai_decision.risk_reasons),
             metadata={"tool": "write_file", "path": path, **dict(ai_decision.metadata)},
         )
-
-    if target.exists() and target.is_dir():
-        return json_response(
-            False,
-            f"Not a file: {path}",
-            code="not_a_file",
-            details={"path": path},
-        )
-    if target.exists() and not overwrite:
-        return json_response(
-            False,
-            f"File already exists: {path}",
-            code="file_exists",
-            details={"path": path},
-        )
-    if not target.parent.exists() and not create_parents:
-        return json_response(
-            False,
-            f"Parent directory does not exist: {target.parent}",
-            code="parent_directory_missing",
-            details={"path": path, "parent": str(target.parent)},
-        )
-
-    if target.suffix == ".py":
-        try:
-            ast.parse(content)
-        except SyntaxError as exc:
-            return json_response(
-                False,
-                f"Python syntax error in file content: {exc}",
-                code="python_syntax_error",
-                details={"path": path, "error": str(exc)},
-            )
 
     line_count = len(content.splitlines())
     approval_params = {"file": path, "overwrite": overwrite, "line_count": line_count}

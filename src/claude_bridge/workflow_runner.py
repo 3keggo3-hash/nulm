@@ -474,6 +474,72 @@ def _ensure_agent_quality_details(details: dict[str, Any]) -> None:
     )
 
 
+def _compact_agent_quality(agent_quality: dict[str, Any]) -> dict[str, Any]:
+    quality_first = agent_quality.get("quality_first", {})
+    compact: dict[str, Any] = {
+        "schema_version": agent_quality.get("schema_version", "workflow_agent_quality.v1"),
+        "summary": agent_quality.get("summary", ""),
+        "recommended_first_tool": agent_quality.get("recommended_first_tool"),
+        "quality_first": {
+            "enabled": (
+                bool(quality_first.get("enabled", False))
+                if isinstance(quality_first, dict)
+                else False
+            ),
+            "required_review_tool": (
+                quality_first.get("required_review_tool")
+                if isinstance(quality_first, dict)
+                else None
+            ),
+        },
+    }
+    for key in ("execution_summary", "suggested_next_prompt"):
+        if key in agent_quality:
+            compact[key] = agent_quality[key]
+    return compact
+
+
+def _compact_execution(execution: dict[str, Any] | None) -> dict[str, Any] | None:
+    if execution is None:
+        return None
+    return {
+        "performed_actions": list(execution.get("performed_actions", [])),
+        "result_count": len(execution.get("results", [])),
+        "summary": _execution_result_summary(execution),
+        "loop_plan": execution.get("loop_plan"),
+    }
+
+
+def _workflow_details_for_level(details: dict[str, Any], detail_level: str) -> dict[str, Any]:
+    if detail_level == "full":
+        return details
+    compact: dict[str, Any] = {
+        "mode": details["mode"],
+        "target": details["target"],
+        "project_type": details["project_type"],
+        "prompt": details["prompt"],
+        "recommended_tools": details["recommended_tools"],
+        "steps": details["steps"],
+        "execute": details["execute"],
+        "max_iterations": details["max_iterations"],
+        "cached": details["cached"],
+        "recipe": details["recipe"],
+        "detail_level": "compact",
+        "omitted_detail_keys": [
+            "examples",
+            "warnings",
+            "quality_bar",
+            "orchestration_rules",
+            "agent_loop_policy",
+        ],
+        "agent_quality": _compact_agent_quality(details["agent_quality"]),
+    }
+    compact_execution = _compact_execution(details.get("execution"))
+    if compact_execution is not None:
+        compact["execution"] = compact_execution
+    return compact
+
+
 async def _execute_workflow_first_step(
     *,
     mode: str,
@@ -624,6 +690,7 @@ async def run_workflow(
     project_dir: Callable[[], Path],
     infer_project_root: Callable[[Path], Path],
     json_response: Callable[..., str],
+    detail_level: str = "compact",
 ) -> str:
     if mode not in SUPPORTED_WORKFLOW_MODES:
         return json_response(
@@ -638,6 +705,13 @@ async def run_workflow(
             "max_iterations must be at least 1",
             code="invalid_max_iterations",
             details={"max_iterations": max_iterations},
+        )
+    if detail_level not in {"compact", "full"}:
+        return json_response(
+            False,
+            "detail_level must be compact or full",
+            code="invalid_detail_level",
+            details={"detail_level": detail_level},
         )
 
     prompt = workflow_prompt(mode, target, option, language)
@@ -662,6 +736,7 @@ async def run_workflow(
         str(max_iterations),
         str(project_root.resolve()),
         str(resolved_for_type.resolve()),
+        detail_level,
         state_signature,
     )
     if not execute:
@@ -675,7 +750,8 @@ async def run_workflow(
             cached = _safe_cached_json_payload(cached_payload)
             if cached is not None and isinstance(cached.get("details"), dict):
                 cached["details"]["cached"] = True
-                _ensure_agent_quality_details(cached["details"])
+                if detail_level == "full":
+                    _ensure_agent_quality_details(cached["details"])
                 return json.dumps(cached, ensure_ascii=False)
     recommended_tools = ["list_directory", "read_file"]
     if mode == "todo":
@@ -743,9 +819,17 @@ async def run_workflow(
                 "agent_loop_policy": agent_loop_policy,
                 "execute": execute,
                 "max_iterations": max_iterations,
+                "cached": False,
+                "recipe": _workflow_recipe(
+                    mode=mode,
+                    project_type=project_type,
+                    execute=execute,
+                    max_iterations=max_iterations,
+                ),
                 "execution": execution,
                 "agent_quality": agent_quality,
             }
+            error_details = _workflow_details_for_level(error_details, detail_level)
             return json_response(
                 False,
                 error_payload["message"],
@@ -777,7 +861,6 @@ async def run_workflow(
         "agent_quality": agent_quality,
     }
     if execution is not None:
-        details["execution"] = execution
         _add_executed_workflow_quality(
             agent_quality=agent_quality,
             mode=mode,
@@ -785,8 +868,10 @@ async def run_workflow(
             option=option,
             execution_summary=_execution_result_summary(execution),
         )
+        details["execution"] = execution
 
-    response = json_response(True, f"Workflow prepared for mode: {mode}", details=details)
+    response_details = _workflow_details_for_level(details, detail_level)
+    response = json_response(True, f"Workflow prepared for mode: {mode}", details=response_details)
     if not execute:
         with _WORKFLOW_CACHE_LOCK:
             _store_cache_entry(_WORKFLOW_PLAN_CACHE, cache_key, response)

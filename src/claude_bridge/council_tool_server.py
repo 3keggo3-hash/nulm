@@ -32,8 +32,8 @@ def register_council_tools(
         async def run_council_session(
             task: str,
             target: str = ".",
-            agent_count: int = 5,
-            rounds: int = 2,
+            agent_count: int = 3,
+            rounds: int = 1,
             model_profile: str = "auto",
             language: str = "Turkish",
         ) -> str:

@@ -10,6 +10,8 @@ from __future__ import annotations
 from claude_bridge.skill_executor import (
     SkillExecutor,
     SkillResult,
+    _STDERR_MAX_CHARS,
+    _STDOUT_MAX_CHARS,
     _skill_env,
     get_executor,
 )
@@ -83,11 +85,31 @@ class TestSkillResult:
         assert data["status"] == "success"
         assert data["output"] == "hello"
         assert data["duration"] == 1.5
+        assert data["stdout_truncated"] is False
+        assert data["stderr_truncated"] is False
 
     def test_default_values(self) -> None:
         result = SkillResult(status="error", error="something went wrong")
         assert result.output == ""
         assert result.duration == 0.0
+
+
+def test_skill_result_can_report_truncated_output_metadata() -> None:
+    result = SkillResult(
+        status="success",
+        output="x" * _STDOUT_MAX_CHARS,
+        error="e" * _STDERR_MAX_CHARS,
+        stdout_truncated=True,
+        stderr_truncated=True,
+        stdout_chars=_STDOUT_MAX_CHARS + 10,
+        stderr_chars=_STDERR_MAX_CHARS + 10,
+    )
+
+    data = result.to_dict()
+    assert data["stdout_truncated"] is True
+    assert data["stderr_truncated"] is True
+    assert data["stdout_chars"] == _STDOUT_MAX_CHARS + 10
+    assert data["stderr_chars"] == _STDERR_MAX_CHARS + 10
 
 
 def test_get_executor_singleton() -> None:

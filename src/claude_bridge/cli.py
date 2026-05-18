@@ -793,6 +793,9 @@ def _write_desktop_config(
     auto_approve: bool,
     client_managed_approval: bool,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> Path:
     _, build_target_config, _, _ = _prompt_runtime()
     config = _load_desktop_config(config_path)
@@ -810,6 +813,9 @@ def _write_desktop_config(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
+        tool_profile=tool_profile,
+        context_budget_profile=context_budget_profile,
+        onboarding_enabled=onboarding_enabled,
     )
     mcp_servers = generated_config.get("mcpServers")
     if not isinstance(mcp_servers, dict):
@@ -848,6 +854,9 @@ def _write_target_config(
     auto_approve: bool,
     client_managed_approval: bool,
     approval_preset: str | None = None,
+    tool_profile: str = "standard",
+    context_budget_profile: str = "balanced",
+    onboarding_enabled: bool = True,
 ) -> Path:
     if target == "claude-desktop":
         return _write_desktop_config(
@@ -857,6 +866,9 @@ def _write_target_config(
             auto_approve=auto_approve,
             client_managed_approval=client_managed_approval,
             approval_preset=approval_preset,
+            tool_profile=tool_profile,
+            context_budget_profile=context_budget_profile,
+            onboarding_enabled=onboarding_enabled,
         )
     _, build_target_config, _, _ = _prompt_runtime()
     config = build_target_config(
@@ -866,6 +878,9 @@ def _write_target_config(
         auto_approve=auto_approve,
         client_managed_approval=client_managed_approval,
         approval_preset=approval_preset,
+        tool_profile=tool_profile,
+        context_budget_profile=context_budget_profile,
+        onboarding_enabled=onboarding_enabled,
     )
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -1763,6 +1778,7 @@ def install(
                 auto_approve=resolved_auto_approve,
                 client_managed_approval=resolved_client_managed,
                 approval_preset=resolved_preset,
+                tool_profile=resolved_tool_profile,
             )
         except ValueError as exc:
             console.print(f"[red]Install failed:[/red] {exc}")

@@ -164,3 +164,30 @@ class TestGitInsights:
         assert payload["ok"] is False
         assert payload["code"] == "git_error"
         assert "error" in payload["details"]
+
+    async def test_git_diff_insights_limits_file_list(self, temp_project):
+        subprocess.run(["git", "init"], cwd=temp_project, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=temp_project,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=temp_project,
+            capture_output=True,
+        )
+        for index in range(105):
+            (temp_project / f"file_{index}.txt").write_text("old\n")
+        subprocess.run(["git", "add", "."], cwd=temp_project, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=temp_project, capture_output=True)
+        for index in range(105):
+            (temp_project / f"file_{index}.txt").write_text("new\n")
+
+        payload = parse_payload(await mcp_server.git_diff_insights("."))
+
+        assert payload["ok"] is True
+        assert payload["details"]["total_files"] == 105
+        assert payload["details"]["returned_files"] == 100
+        assert payload["details"]["truncated"] is True
+        assert len(payload["details"]["files"]) == 100

@@ -98,6 +98,13 @@ async def move_file(
             code="parent_directory_missing",
             details={"destination": destination, "parent": str(destination_path.parent)},
         )
+    if destination_path.exists() and not overwrite:
+        return json_response(
+            False,
+            f"Destination already exists: {destination}",
+            code="destination_exists",
+            details={"destination": destination},
+        )
 
     policy_context = ToolRequestContext(
         tool_name="move_file",
@@ -339,6 +346,49 @@ async def copy_path(
             code="parent_directory_missing",
             details={"destination": destination, "parent": str(destination_path.parent)},
         )
+    if destination_path.exists() and not overwrite:
+        return json_response(
+            False,
+            f"Destination already exists: {destination}",
+            code="destination_exists",
+            details={"destination": destination},
+        )
+    if source_path.is_dir():
+        total_size = 0
+        file_count = 0
+        roots = allowed_roots()
+        for f in source_path.rglob("*"):
+            resolved_f = f
+            try:
+                resolved_f = f.resolve()
+            except OSError:
+                continue
+            if not any(is_within_root(resolved_f, root) for root in roots):
+                continue
+            if f.is_file() and not f.is_symlink():
+                file_count += 1
+                if file_count > 10000:
+                    return json_response(
+                        False,
+                        "Directory contains too many files (>10000)",
+                        code="too_many_files",
+                        details={"source": source, "file_count": file_count},
+                    )
+                try:
+                    total_size += f.stat().st_size
+                except OSError:
+                    pass
+        if total_size > 500 * 1024 * 1024:
+            return json_response(
+                False,
+                "Directory size exceeds 500MB limit",
+                code="dir_too_large",
+                details={
+                    "source": source,
+                    "size_bytes": total_size,
+                    "limit_bytes": 500 * 1024 * 1024,
+                },
+            )
 
     policy_context = ToolRequestContext(
         tool_name="copy_path",

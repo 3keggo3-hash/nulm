@@ -14,8 +14,15 @@ from typing import Any, Iterator
 import pytest
 
 from claude_bridge import server as mcp_server
-from claude_bridge.ai_evaluator import EvaluationAction, LocalEvaluatorProvider
+from claude_bridge.ai_evaluator import (
+    EvaluationAction,
+    EvaluationResponse,
+    LocalEvaluatorProvider,
+    Provider,
+)
 from claude_bridge.file_tools import patch_file
+from claude_bridge.file_tools import copy_path
+from claude_bridge.file_tools import move_file
 from claude_bridge.file_tools import write_file
 from claude_bridge.rules_engine import evaluate_policy_chain
 from claude_bridge.shell_tools import run_shell
@@ -64,6 +71,15 @@ def assert_decision(
 
 async def reject_approval(_tool_name: str, _params: dict[str, Any], **_kwargs: Any) -> bool:
     return False
+
+
+class CountingProvider(Provider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def evaluate(self, request: Any) -> EvaluationResponse:
+        self.calls += 1
+        return EvaluationResponse(action=EvaluationAction.ALLOW)
 
 
 class TestPolicyDecisionE2E:
@@ -502,6 +518,71 @@ class TestAiEvaluatorDecisions:
         assert payload["code"] == "policy_denied"
         assert_decision(payload, action="deny", source="ai", risk_level="high")
         assert not (project / "ai-denied.txt").exists()
+
+    async def test_local_write_validation_runs_before_ai_evaluator(
+        self, policy_project: tuple[Path, Path]
+    ) -> None:
+        project, _ = policy_project
+        (project / "existing.txt").write_text("old", encoding="utf-8")
+        mcp_server.set_config(
+            project_dir=project,
+            auto_approve=True,
+            shell_timeout=2,
+            ai_evaluator_enabled=True,
+        )
+        provider = CountingProvider()
+
+        payload = parse_payload(
+            await write_file(
+                "existing.txt",
+                "new",
+                overwrite=False,
+                ai_provider=provider,
+            )
+        )
+
+        assert payload["ok"] is False
+        assert payload["code"] == "file_exists"
+        assert provider.calls == 0
+
+    async def test_local_move_and_copy_validation_runs_before_ai_evaluator(
+        self, policy_project: tuple[Path, Path]
+    ) -> None:
+        project, _ = policy_project
+        (project / "src.txt").write_text("source", encoding="utf-8")
+        (project / "dst.txt").write_text("destination", encoding="utf-8")
+        mcp_server.set_config(
+            project_dir=project,
+            auto_approve=True,
+            shell_timeout=2,
+            ai_evaluator_enabled=True,
+        )
+
+        move_provider = CountingProvider()
+        move_payload = parse_payload(
+            await move_file(
+                "src.txt",
+                "dst.txt",
+                overwrite=False,
+                ai_provider=move_provider,
+            )
+        )
+        copy_provider = CountingProvider()
+        copy_payload = parse_payload(
+            await copy_path(
+                "src.txt",
+                "dst.txt",
+                overwrite=False,
+                ai_provider=copy_provider,
+            )
+        )
+
+        assert move_payload["ok"] is False
+        assert move_payload["code"] == "destination_exists"
+        assert move_provider.calls == 0
+        assert copy_payload["ok"] is False
+        assert copy_payload["code"] == "destination_exists"
+        assert copy_provider.calls == 0
 
     async def test_ai_timeout_fallback_ask_by_default(
         self, policy_project: tuple[Path, Path]

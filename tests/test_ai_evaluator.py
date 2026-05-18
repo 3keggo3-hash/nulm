@@ -618,6 +618,95 @@ class TestEvaluateToolWithAi:
         assert result.action == DecisionAction.ASK
         assert "failure" in result.reason.lower()
 
+    @pytest.mark.asyncio
+    async def test_local_evaluator_returns_ask_no_separate_fallback_provider(self) -> None:
+        provider = LocalEvaluatorProvider(ask_patterns=["sudo"])
+        result = await evaluate_tool_with_ai(
+            ToolRequestContext(tool_name="run_shell", params={"command": "sudo rm"}),
+            provider=provider,
+            enabled=True,
+            timeout=5,
+            fallback_action="deny",
+        )
+        assert result is not None
+        assert result.action == DecisionAction.ASK
+        assert "matched ask pattern" in result.reason.lower()
+        assert result.metadata.get("ai_evaluator_latency_ms") is None or result.metadata.get("ai_evaluator_latency_ms") >= 0
+
+    @pytest.mark.asyncio
+    async def test_fallback_triggered_on_provider_timeout(self) -> None:
+        class SlowProvider(Provider):
+            def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+                import time
+                time.sleep(10)
+                return EvaluationResponse(action=EvaluationAction.ALLOW)
+
+        result = await evaluate_tool_with_ai(
+            ToolRequestContext(tool_name="run_shell", params={}),
+            provider=SlowProvider(),
+            enabled=True,
+            timeout=0.1,
+            fallback_action="deny",
+        )
+        assert result is not None
+        assert result.action == DecisionAction.DENY
+        assert "fallback" in result.reason.lower()
+        assert "timeout" in result.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_remote_evaluator_tracks_budget_usage(self, tmp_path) -> None:
+        class MeteredProvider(Provider):
+            def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+                return EvaluationResponse(action=EvaluationAction.ALLOW, tokens_used=42)
+
+        result = await evaluate_tool_with_ai(
+            ToolRequestContext(
+                tool_name="run_shell",
+                params={"command": "echo ok"},
+                project_dir=str(tmp_path),
+            ),
+            provider=MeteredProvider(),
+            enabled=True,
+            timeout=5,
+            fallback_action="ask",
+        )
+
+        assert result is not None
+        assert result.action == DecisionAction.ALLOW
+        budget = load_budget(str(tmp_path / ".claude-bridge" / "budget.json"))
+        assert budget.used == 42
+        assert result.metadata["ai_budget_used"] == 42
+
+    @pytest.mark.asyncio
+    async def test_remote_evaluator_budget_exhaustion_skips_provider(self, tmp_path) -> None:
+        budget_path = tmp_path / ".claude-bridge" / "budget.json"
+        save_budget(TokenBudget(monthly_limit=10, used=10), str(budget_path))
+
+        class CountingProvider(Provider):
+            calls = 0
+
+            def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+                self.calls += 1
+                return EvaluationResponse(action=EvaluationAction.ALLOW)
+
+        provider = CountingProvider()
+        result = await evaluate_tool_with_ai(
+            ToolRequestContext(
+                tool_name="run_shell",
+                params={"command": "echo ok"},
+                project_dir=str(tmp_path),
+            ),
+            provider=provider,
+            enabled=True,
+            timeout=5,
+            fallback_action="ask",
+        )
+
+        assert result is not None
+        assert result.action == DecisionAction.ASK
+        assert result.metadata["ai_budget_exhausted"] is True
+        assert provider.calls == 0
+
 
 # ---------------------------------------------------------------------------
 # Token Budget Manager — automatic model routing

@@ -236,6 +236,7 @@ class TestRunCouncilSession:
         details = payload["details"]
         assert details["schema_version"] == "ai_council_session.v1"
         assert details["execution_boundary"].startswith("This council is read-only")
+        assert details["cost_estimate"]["estimated_model_calls"] == 4
         assert "steps_json" in details
 
     async def test_agent_loop_session_does_not_add_advice_to_each_step(
@@ -265,7 +266,9 @@ class TestRunWorkflowAgentQuality:
     async def test_workflow_output_includes_agent_quality_advisory(self, temp_project):
         (temp_project / "module.py").write_text("def fn():\n    return 1\n")
 
-        payload = parse_payload(await mcp_server.run_workflow(mode="review", target="."))
+        payload = parse_payload(
+            await mcp_server.run_workflow(mode="review", target=".", detail_level="full")
+        )
 
         assert payload["ok"] is True
         advisory = payload["details"]["agent_quality"]
@@ -284,6 +287,7 @@ class TestRunWorkflowAgentQuality:
                 mode="quality",
                 target=".",
                 option="correctness and regression safety",
+                detail_level="full",
             )
         )
 
@@ -310,7 +314,9 @@ class TestRunWorkflowAgentQuality:
     async def test_quality_mode_suggests_next_prompt(self, temp_project):
         (temp_project / "module.py").write_text("def fn():\n    return 1\n")
 
-        payload = parse_payload(await mcp_server.run_workflow(mode="quality", target="."))
+        payload = parse_payload(
+            await mcp_server.run_workflow(mode="quality", target=".", detail_level="full")
+        )
 
         assert payload["ok"] is True
         advisory = payload["details"]["agent_quality"]
@@ -341,6 +347,9 @@ class TestRunWorkflowAgentQuality:
         assert details["mode"] == "review"
         assert details["steps"]
         assert details["recommended_tools"] == ["list_directory", "read_file"]
+        assert details["detail_level"] == "compact"
+        assert "examples" not in details
+        assert "examples" in details["omitted_detail_keys"]
         assert details["agent_quality"]["quality_first"]["enabled"] is False
 
     async def test_executed_workflow_success_adds_summary_based_next_prompt(self, temp_project):
@@ -348,7 +357,12 @@ class TestRunWorkflowAgentQuality:
         target.write_text("def fn():\n    return 1\n")
 
         payload = parse_payload(
-            await mcp_server.run_workflow(mode="quality", target="module.py", execute=True)
+            await mcp_server.run_workflow(
+                mode="quality",
+                target="module.py",
+                execute=True,
+                detail_level="full",
+            )
         )
 
         assert payload["ok"] is True
@@ -402,6 +416,7 @@ class TestRunWorkflowAgentQuality:
                 project_dir=lambda: temp_project,
                 infer_project_root=lambda path: temp_project,
                 json_response=json_response,
+                detail_level="full",
             )
         )
 
@@ -423,3 +438,40 @@ class TestRunWorkflowAgentQuality:
         assert "quality_first" in advisory
         assert "execution_summary" not in advisory
         assert payload["details"]["execute"] is False
+
+    async def test_compact_mode_preserves_critical_step_info(self, temp_project):
+        (temp_project / "module.py").write_text("def old():\n    return 1\n")
+
+        compact_payload = parse_payload(
+            await mcp_server.run_workflow(mode="review", target=".", detail_level="compact")
+        )
+        assert compact_payload["ok"] is True
+        compact_details = compact_payload["details"]
+        assert compact_details["detail_level"] == "compact"
+        assert "omitted_detail_keys" in compact_details
+        assert "steps" in compact_details
+        assert len(compact_details["steps"]) > 0
+
+    async def test_full_mode_vs_compact_mode_content_comparison(self, temp_project):
+        (temp_project / "module.py").write_text("def old():\n    return 1\n")
+
+        compact_payload = parse_payload(
+            await mcp_server.run_workflow(mode="review", target=".", detail_level="compact")
+        )
+        full_payload = parse_payload(
+            await mcp_server.run_workflow(mode="review", target=".", detail_level="full")
+        )
+
+        assert compact_payload["ok"] is True
+        assert full_payload["ok"] is True
+
+        compact_details = compact_payload["details"]
+        full_details = full_payload["details"]
+
+        assert compact_details["detail_level"] == "compact"
+        assert "detail_level" not in full_details
+        assert compact_details["mode"] == full_details["mode"]
+        assert compact_details["target"] == full_details["target"]
+        assert compact_details["steps"] == full_details["steps"]
+        assert "examples" in full_details
+        assert "examples" in compact_details["omitted_detail_keys"]

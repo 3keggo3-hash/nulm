@@ -39,6 +39,30 @@ def test_run_council_session_returns_steps_json() -> None:
     details = result["details"]
     assert details["schema_version"] == "ai_council_session.v1"
     assert len(details["agents"]) == 3
+    assert details["cost_estimate"]["estimated_model_calls"] == 4
+    assert details["cost_estimate"]["max_output_tokens"] == 2300
     assert details["debate"][0]["responses"][0]["route"]["profile"] == "local"
     steps = json.loads(details["steps_json"])
     assert steps[0]["action"].startswith("Inspect src/")
+
+
+def test_council_cost_estimate_has_schema_version() -> None:
+    router = AIModelRouter(enabled=False)
+
+    result = run_council_session(
+        task="add feature",
+        target="src/",
+        agent_count=3,
+        rounds=2,
+        router=router,
+    )
+
+    assert result["ok"] is True
+    cost = result["details"]["cost_estimate"]
+    assert cost["schema_version"] == "council_cost_estimate.v1"
+    assert cost["agent_calls"] == 6
+    assert cost["consensus_calls"] == 1
+    assert cost["estimated_model_calls"] == 7
+    assert cost["tokens_per_agent_round"] == 500
+    assert cost["consensus_max_tokens"] == 800
+    assert "note" in cost

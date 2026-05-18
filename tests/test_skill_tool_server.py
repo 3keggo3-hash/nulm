@@ -106,6 +106,25 @@ async def test_run_skill_returns_executor_result(temp_project: Path, monkeypatch
     assert payload["details"]["result"]["status"] == "success"
 
 
+async def test_run_skill_truncates_large_stdout(temp_project: Path, monkeypatch) -> None:
+    monkeypatch.chdir(temp_project)
+    skill_registry._registry = None
+    registry = skill_registry.get_registry()
+    registry.register(
+        "loud",
+        SkillMeta(name="loud", version="1.0", trigger_phrases=["loud"]),
+        "def run(ctx):\n    print('x' * 11000)\n",
+    )
+
+    payload = json.loads(await mcp_server.run_skill("loud", "{}"))
+
+    result = payload["details"]["result"]
+    assert payload["ok"] is True
+    assert result["stdout_truncated"] is True
+    assert result["stdout_chars"] > len(result["output"])
+    assert len(result["output"]) == 10000
+
+
 async def test_run_skill_requires_approval(temp_project: Path, monkeypatch) -> None:
     monkeypatch.chdir(temp_project)
     skill_registry._registry = None
