@@ -7,35 +7,55 @@
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
 
-## What's New
-
-- **AI council workflow** — `run_council_session` and `/council` create read-only specialist
-  debate sessions and return approval-gated implementation plans.
-- **Bridge-internal model routing** — optional provider/model profiles route council/advisory calls
-  without changing the host chat model.
-- **Adaptive proposal tools** — optional, approval-gated recommendation helpers can surface
-  accept/reject decisions without silently changing active behavior.
-- **Context Compression Manager** — decompression bomb protection added to `_context_compression.py`.
-- **Audit Trail Query Interface** — SQL-like parser in `_audit_query_parser.py`.
-
 <!-- GitHub Topics: mcp-server, nulm, agent-quality, local-ai, developer-tools -->
 CI: GitHub Actions | PyPI package: `nulm` | CLI: `nulm` |
 Python: 3.10+ | License: MIT |
 Code style: Black
 
-> A local-first agent quality and execution layer for MCP clients.
+> Nulm wraps your MCP client with path-safe file operations, guarded shell execution, and audit
+> logging without requiring a remote server.
 
-Nulm is a lightweight Python MCP server for local development and agent workflows. It lets
-an MCP client inspect project files, run guarded shell commands, apply controlled patches, build
-context packs, search/index source code, use bounded workflow helpers, and coordinate small
-meta-agent tasks without giving up path boundaries, auditability, or approval controls.
+Nulm is a lightweight Python MCP server for developers who want an AI client to work inside a local
+project without handing it unrestricted filesystem or shell access. It lets the client inspect
+files, apply controlled patches, run guarded commands, search/index source code, and leave an audit
+trail for what happened.
 
-It is designed to make rough user requests easier to turn into professional software work. Today it
-provides the local MCP execution substrate and early advisory tools. The longer-term direction is a
-local-first control plane for agentic development: prompt improvement, plan critique, smaller
-context choices, safe Bridge settings, result review, and token-waste reduction while keeping the
-security model explicit, inspectable, and replayable. The control plane is local-only: no remote
-service or VPS is required for core operation.
+Today the reliable core is the local MCP execution substrate: guarded file access, guarded shell
+execution, patch application, audit logging, policy checks, and MCP client setup. The agent-quality
+features are early advisory tools layered on top of that core. They can help shape requests, plans,
+and reviews, but they do not replace code review, tests, approvals, or the built-in guard policy.
+
+## Security Model
+
+Nulm starts fail-closed by default. Mutating tools and shell tools require either client-managed
+approval or trusted local auto-approval (`CLAUDE_BRIDGE_AUTO_APPROVE=1`).
+
+- **Local-only by design**: no remote service needed for core operation
+- **Path boundaries**: tools resolve paths against configured project root and allowed roots
+- **Command filtering**: `sudo`, `rm -rf`, `chmod 777`, `| bash`, `curl | node`, `node -e` blocked
+- **Path traversal protection**: `../` cannot escape configured roots
+- **Sensitive file protection**: `.env`, `.pem`, `.key`, `id_rsa` blocked from reads/writes/patches
+- **Symlink hardening**: copy/move operations reject symlink attacks
+- **TOCTOU protection**: writes use `O_CREAT | O_EXCL` and pre-write symlink checks
+- **Atomic writes**: temp file then `os.replace` to prevent partial writes
+- **ReDoS protection**: regex compilation has 2-second timeout
+- **Audit logging**: structured, masked audit records with replay capability
+
+See [docs/security-model.md](docs/security-model.md) for the full rule-writing guide.
+
+## Naming Note
+
+| Surface | Use |
+|---|---|
+| PyPI package | `nulm` |
+| CLI command | `nulm` |
+| Compatibility CLI alias | `claude-bridge` |
+| Python module | `claude_bridge` |
+| Config/env prefix | `CLAUDE_BRIDGE_*` |
+
+The project was originally named `claude-bridge`. Public packaging now uses `nulm`, while the Python
+module, config directory, and environment variables keep the old names for backward compatibility
+during the alpha cycle.
 
 ## Quick Start
 
@@ -60,20 +80,26 @@ nulm install --target vscode
 nulm install --target generic-stdio
 ```
 
-## First 5 Minutes
+## Example: Safe Refactor in Claude Desktop
 
-Try a natural request first:
+Install Nulm for a local Python project:
 
-```text
-Use Nulm to check whether this project is public-ready.
+```bash
+nulm install --target claude-desktop --project-dir ~/myproject
 ```
 
-The useful first path is `tools_overview`, `bridge_status`, then
-`run_workflow(mode="quality")`. For completed work, call `review_result_quality` with the changed
-files and validation commands. For token or tool-surface tuning, call `suggest_bridge_config` before
-`apply_bridge_config_change`.
+Then fully quit and reopen Claude Desktop, start a new conversation, and ask:
 
-## Features
+```text
+Use Nulm to inspect myproject/auth.py and fix any SQL injection risk you find.
+```
+
+Nulm keeps the work inside the configured project roots, requires approval for mutating tools and
+shell commands unless you opt into local auto-approval, and records structured audit entries.
+
+## Current Status
+
+### Core
 
 - **File operations**: `read_file`, `read_multiple_files`, `list_directory`, `write_file`,
   `move_file`, `copy_path`, `search_in_files`
@@ -83,29 +109,47 @@ files and validation commands. For token or tool-surface tuning, call `suggest_b
   ranking without embeddings
 - **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` —
   structured review, explain, test, todo, quality, and bounded agent-loop flows
-- **AI council**: `run_council_session` and `/council` assign specialist roles, collect bounded
-  debate rounds, synthesize consensus, and return `steps_json` for approval-gated execution
-- **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
-  for Bridge advisory calls while keeping API keys in environment variables
-- **Adaptive proposals**: `list_pending_proposals`, `get_proposal_details`, `accept_proposal`, and
-  `reject_proposal` expose advisory skill recommendations and record user decisions
-- **Full-profile readers**: `read_image`, `read_pdf`, `read_url` — optional multi-format and
-  constrained text-only HTTP/HTTPS reading
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
 - **Audit logging**: tool calls recorded as structured JSONL
-- **Policy engine**: custom guard rules, team RBAC, AI advisor, policy diff for CI/CD
+- **Policy engine**: custom guard rules, team RBAC, deterministic policy replay, policy diff for
+  CI/CD
 - **Replay and appeal**: deterministic decision replay and post-hoc appeal with audit chain
-- **Anomaly detection**: rule-based audit anomaly scanning
-- **Full-profile meta-agent tools**: local plans, approach exploration, deterministic self-critique,
-  git-backed checkpoints
 - **Tool profiles**: `essential`, `standard`, `full` for token/capability tradeoffs
-- **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
-  safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
-  advice parsing telemetry
 - **Local control plane**: task and approval state exposed through CLI, MCP tools, and a
   localhost-only dashboard
 - **Multi-root workspace switching**: `workspace_status` and `switch_project_root` for working
   across multiple project roots with path boundary enforcement
+
+### Optional Extras
+
+These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`, or
+`nulm[smart]`.
+
+- **Tree-sitter indexing**: optional parser-backed indexing for supported languages
+- **Multi-format readers**: `read_image`, `read_pdf`, `read_url` with optional image/PDF
+  dependencies and constrained text-only HTTP/HTTPS reading
+- **Token-aware helpers**: optional token estimation and context-sizing helpers
+- **Encrypted local memory**: optional cryptography-backed local memory support
+- **YAML policy files**: optional YAML parsing for guard policy files
+
+### Planned / Experimental
+
+- **AI council**: `run_council_session` and `/council` run role-based planning prompts and return
+  `steps_json` for approval-gated execution. It is a planning aid, not an autonomous implementer.
+- **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
+  for Bridge advisory calls while keeping API keys in environment variables.
+- **Adaptive proposals**: `list_pending_proposals`, `get_proposal_details`, `accept_proposal`, and
+  `reject_proposal` expose advisory recommendations and record user decisions. Proposals are inert
+  until accepted.
+- **Anomaly detection**: rule-based audit anomaly scanning. Scores are surfaced for review; they do
+  not silently change policy decisions.
+- **Full-profile meta-agent tools**: local plans, approach exploration, deterministic self-critique,
+  and git-backed checkpoints.
+- **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
+  safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
+  advice parsing telemetry.
+- **Integration plumbing**: Redis cache, Prometheus metrics, OpenTelemetry tracing, and SSE helpers
+  are packaged for integration work, but are not required for the normal MCP server path.
 
 ## Installation
 
@@ -126,11 +170,15 @@ pip install "nulm[multi-format]"  # optional image/PDF reading
 pip install "nulm[smart]"         # token-aware helpers
 pip install "nulm[memory]"        # encrypted local memory support
 pip install "nulm[policy-yaml]"   # YAML policy files
-pip install "nulm[redis]"         # experimental Redis-backed cache
-pip install "nulm[observability]" # Prometheus metrics
-pip install "nulm[tracing]"       # OpenTelemetry tracing
-pip install "nulm[streaming]"     # SSE streaming helpers
+pip install "nulm[redis]"         # experimental Redis-backed cache plumbing
+pip install "nulm[observability]" # experimental Prometheus metrics plumbing
+pip install "nulm[tracing]"       # experimental OpenTelemetry tracing plumbing
+pip install "nulm[streaming]"     # experimental SSE streaming helpers
 ```
+
+The first five extras above are the practical user-facing ones for most local installs. Redis,
+observability, tracing, and streaming are packaged for integration work, but they are not required
+for the normal MCP server path and should be treated as experimental in this alpha.
 
 See [docs/optional-dependencies.md](docs/optional-dependencies.md) for the full extras matrix.
 
@@ -195,9 +243,9 @@ no shell or patch execution).
 
 ## AI Council and Model Routing
 
-The council workflow is read-only. It asks a bounded set of specialist roles to debate a task,
-synthesizes consensus, lists dissent and risks, and returns `steps_json` that can be applied through
-the existing plan/approval tools. It does not patch files, run shell commands, or override policy.
+The council workflow is read-only. It runs a bounded set of role-based planning prompts,
+synthesizes the responses, lists risks, and returns `steps_json` that can be applied through the
+existing plan/approval tools. It does not patch files, run shell commands, or override policy.
 
 ```text
 /council target="src/" task="add model routing"
@@ -318,23 +366,9 @@ job and an honest current status:
 - **Remove** features that are mostly decorative, duplicate better paths, or cannot be made safe
   and explainable.
 
-The product direction is a local control plane and quality layer for MCP-based development, not a
-collection of impressive-sounding tools. Docs should distinguish implemented CLI/MCP behavior from
-planned control-plane ideas, and should not imply remote monitoring or hosted sync unless code for
-that surface is added.
-
-## Security
-
-- **Local-only by design**: no remote service needed for core operation
-- **Path boundaries**: tools resolve paths against configured project root and allowed roots
-- **Command filtering**: `sudo`, `rm -rf`, `chmod 777`, `| bash`, `curl | node`, `node -e` blocked
-- **Path traversal protection**: `../` cannot escape configured roots
-- **Sensitive file protection**: `.env`, `.pem`, `.key`, `id_rsa` blocked from reads/writes/patches
-- **Symlink hardening**: copy/move operations reject symlink attacks
-- **TOCTOU protection**: writes use `O_CREAT | O_EXCL` and pre-write symlink checks
-- **Atomic writes**: temp file then `os.replace` to prevent partial writes
-- **ReDoS protection**: regex compilation has 2-second timeout
-- **Audit logging**: structured, masked audit records with replay capability
+The product direction is a local control plane and quality layer for MCP-based development. Docs
+should distinguish implemented CLI/MCP behavior from planned control-plane ideas, and should not
+imply remote monitoring or hosted sync unless code for that surface is added.
 
 ## Custom Policy
 
@@ -365,19 +399,18 @@ nulm policy diff --base .claude-bridge/team.json --head pr/team.json
 
 An optional second-opinion layer for proposed agent actions. It can suggest `allow`, `deny`, or
 `ask`, but its broader role is to critique whether the next step is necessary, scoped, safe, and
-aligned with the user's intent. It acts like a debate partner between the coding agent and local
-execution, without overriding built-in hard denies.
+aligned with the user's intent. It does not override built-in hard denies.
 
 Disabled by default. The local deterministic provider works without network access; Anthropic,
 OpenAI, and Ollama providers are optional and fail closed on invalid responses or provider errors.
 The current Python module and environment variables still use the `ai_evaluator` name for backward
 compatibility.
 
-The current advisor is an early slice of the larger Agent Quality Layer planned in
-[`docs/agent-quality-layer-plan.md`](docs/agent-quality-layer-plan.md). That layer is intended to
-help users write less-perfect prompts while still getting scoped plans, lower token usage, safer
-config choices, and stronger result review. `bridge_status` also exposes Agent Quality telemetry
-for provider-response parsing and fallback counts so failures stay visible.
+The current advisor is an early, advisory slice of the larger Agent Quality Layer described in
+[`docs/agent-quality-layer-plan.md`](docs/agent-quality-layer-plan.md). The implemented pieces focus
+on scoped prompts, plan critique, token/context suggestions, safe config suggestions, and result
+review. `bridge_status` also exposes Agent Quality telemetry for provider-response parsing and
+fallback counts so failures stay visible.
 
 ```bash
 export CLAUDE_BRIDGE_AI_EVALUATOR_ENABLED=1
