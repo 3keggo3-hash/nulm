@@ -16,6 +16,21 @@ from typing import Any
 _MAX_MODEL_RESPONSE_BYTES = 131072
 _DEFAULT_TIMEOUT = 30
 _ALLOWED_PROVIDERS = {"local", "openai", "anthropic", "deepseek", "ollama"}
+_ALLOWED_QUALITY_TIERS = {"local", "cheap", "balanced", "deep"}
+_HIGH_RISK_TERMS = (
+    "security",
+    "approval",
+    "shell",
+    "destructive",
+    "policy",
+    "architecture",
+    "risk",
+    "secret",
+    "secrets",
+    "path boundary",
+    "path boundaries",
+)
+_SIMPLE_TASK_TERMS = ("summarize", "summary", "explain", "classify", "describe")
 
 
 @dataclass(frozen=True)
@@ -29,6 +44,10 @@ class AIModelProfile:
     base_url: str = ""
     timeout: int = _DEFAULT_TIMEOUT
     tags: tuple[str, ...] = field(default_factory=tuple)
+    input_cost_per_mtok: float = 0.0
+    output_cost_per_mtok: float = 0.0
+    quality_tier: str = "local"
+    max_output_tokens: int = 0
 
     def to_redacted_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +57,10 @@ class AIModelProfile:
             "base_url": self.base_url,
             "timeout": self.timeout,
             "tags": list(self.tags),
+            "input_cost_per_mtok": self.input_cost_per_mtok,
+            "output_cost_per_mtok": self.output_cost_per_mtok,
+            "quality_tier": self.quality_tier,
+            "max_output_tokens": self.max_output_tokens,
             "has_api_key": bool(self.api_key_env and os.environ.get(self.api_key_env, "")),
         }
 
@@ -61,6 +84,10 @@ class AIRouteDecision:
     model: str
     mode: str
     reason: str
+    quality_tier: str = "local"
+    estimated_input_tokens: int = 0
+    effective_max_tokens: int = 0
+    estimated_max_cost_usd: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +96,10 @@ class AIRouteDecision:
             "model": self.model,
             "mode": self.mode,
             "reason": self.reason,
+            "quality_tier": self.quality_tier,
+            "estimated_input_tokens": self.estimated_input_tokens,
+            "effective_max_tokens": self.effective_max_tokens,
+            "estimated_max_cost_usd": round(self.estimated_max_cost_usd, 8),
         }
 
 
@@ -121,6 +152,18 @@ def parse_model_profiles(raw: Any) -> dict[str, AIModelProfile]:
         timeout = int(value.get("timeout", _DEFAULT_TIMEOUT))
         if timeout <= 0:
             raise ValueError(f"ai_model_profiles[{name}].timeout must be positive")
+        input_cost_per_mtok = float(value.get("input_cost_per_mtok", 0.0))
+        output_cost_per_mtok = float(value.get("output_cost_per_mtok", 0.0))
+        if input_cost_per_mtok < 0:
+            raise ValueError(f"ai_model_profiles[{name}].input_cost_per_mtok must be non-negative")
+        if output_cost_per_mtok < 0:
+            raise ValueError(f"ai_model_profiles[{name}].output_cost_per_mtok must be non-negative")
+        quality_tier = str(value.get("quality_tier", "local")).lower()
+        if quality_tier not in _ALLOWED_QUALITY_TIERS:
+            raise ValueError(f"ai_model_profiles[{name}].quality_tier is unsupported")
+        max_output_tokens = int(value.get("max_output_tokens", 0))
+        if max_output_tokens < 0:
+            raise ValueError(f"ai_model_profiles[{name}].max_output_tokens must be non-negative")
         profiles[name] = AIModelProfile(
             name=name,
             provider=provider,
@@ -129,6 +172,10 @@ def parse_model_profiles(raw: Any) -> dict[str, AIModelProfile]:
             base_url=str(value.get("base_url", "")),
             timeout=timeout,
             tags=_coerce_str_list(value.get("tags", [])),
+            input_cost_per_mtok=input_cost_per_mtok,
+            output_cost_per_mtok=output_cost_per_mtok,
+            quality_tier=quality_tier,
+            max_output_tokens=max_output_tokens,
         )
     return profiles
 
@@ -171,6 +218,21 @@ def _default_profiles() -> dict[str, AIModelProfile]:
             model="gpt-4o-mini",
             api_key_env="OPENAI_API_KEY",
             tags=("fast", "low-cost"),
+            input_cost_per_mtok=0.15,
+            output_cost_per_mtok=0.60,
+            quality_tier="cheap",
+            max_output_tokens=400,
+        ),
+        "balanced": AIModelProfile(
+            name="balanced",
+            provider="openai",
+            model="gpt-4o",
+            api_key_env="OPENAI_API_KEY",
+            tags=("balanced", "quality"),
+            input_cost_per_mtok=2.5,
+            output_cost_per_mtok=10.0,
+            quality_tier="balanced",
+            max_output_tokens=800,
         ),
         "deep": AIModelProfile(
             name="deep",
@@ -178,6 +240,10 @@ def _default_profiles() -> dict[str, AIModelProfile]:
             model="claude-3-5-sonnet-latest",
             api_key_env="ANTHROPIC_API_KEY",
             tags=("deep", "reasoning"),
+            input_cost_per_mtok=3.0,
+            output_cost_per_mtok=15.0,
+            quality_tier="deep",
+            max_output_tokens=1000,
         ),
     }
 
@@ -240,13 +306,7 @@ class AIModelRouter:
             reason = f"unsupported routing mode {mode!r}; using local"
 
         profile = self.profiles.get(profile_name, self.profiles["local"])
-        return AIRouteDecision(
-            profile_name=profile.name,
-            provider=profile.provider,
-            model=profile.model,
-            mode=mode,
-            reason=reason,
-        )
+        return _route_decision(profile, mode=mode, reason=reason, prompt=task, max_tokens=0)
 
     def generate_text(
         self,
@@ -261,17 +321,25 @@ class AIModelRouter:
         decision = self.select_profile(task or prompt, context)
         if profile_name != "auto" and profile_name in self.profiles:
             profile = self.profiles[profile_name]
-            decision = AIRouteDecision(
-                profile_name=profile.name,
-                provider=profile.provider,
-                model=profile.model,
+            decision = _route_decision(
+                profile,
                 mode="manual",
                 reason="explicit profile",
+                prompt=prompt,
+                max_tokens=max_tokens,
             )
         else:
             profile = self.profiles.get(decision.profile_name, self.profiles["local"])
+            decision = _route_decision(
+                profile,
+                mode=decision.mode,
+                reason=decision.reason,
+                prompt=prompt,
+                max_tokens=max_tokens,
+            )
+        effective_max_tokens = _effective_max_tokens(profile, max_tokens)
         try:
-            text = self._call_profile(profile, prompt, max_tokens=max_tokens)
+            text = self._call_profile(profile, prompt, max_tokens=effective_max_tokens)
             return AIModelResponse(
                 ok=True,
                 text=text,
@@ -280,12 +348,12 @@ class AIModelRouter:
             )
         except Exception as exc:
             fallback = self.profiles["local"]
-            fallback_decision = AIRouteDecision(
-                profile_name=fallback.name,
-                provider=fallback.provider,
-                model=fallback.model,
+            fallback_decision = _route_decision(
+                fallback,
                 mode="fallback",
                 reason=f"{profile.name} failed: {_provider_error_reason(exc)}",
+                prompt=prompt,
+                max_tokens=max_tokens,
             )
             return AIModelResponse(
                 ok=False,
@@ -310,15 +378,43 @@ class AIModelRouter:
     def _auto_profile(self, task: str, context: dict[str, Any]) -> str:
         complexity = len(task.split()) + int(context.get("file_count", 0)) * 5
         role = str(context.get("role", "")).lower()
-        if any(
-            word in task.lower() or word in role for word in ("security", "architecture", "risk")
-        ):
-            return "deep" if self._profile_ready("deep") else "local"
-        if complexity > 120 and self._profile_ready("deep"):
-            return "deep"
+        task_type = str(context.get("task_type", "")).lower()
+        haystack = " ".join([task.lower(), role, task_type])
+        if _is_high_risk(haystack):
+            return (
+                self._cheapest_ready_profile(("deep",))
+                or self._cheapest_ready_profile(("balanced",))
+                or "local"
+            )
+        if task_type == "council_consensus" or role == "chair":
+            return self._cheapest_ready_profile(("balanced", "deep")) or "local"
+        if complexity > 120:
+            return self._cheapest_ready_profile(("balanced", "deep")) or "local"
+        if role in {"maintainer", "test_strategist"}:
+            return self._cheapest_ready_profile(("balanced", "deep")) or "local"
+        if _is_simple_task(haystack) or role in {
+            "performance_reviewer",
+            "docs_reviewer",
+            "product_reviewer",
+            "implementer",
+        }:
+            return self._cheapest_ready_profile(("cheap", "balanced")) or "local"
         if self._profile_ready("fast"):
             return "fast"
+        cheap_profile = self._cheapest_ready_profile(("cheap", "balanced"))
+        if cheap_profile is not None:
+            return cheap_profile
         return self.default_profile if self._profile_ready(self.default_profile) else "local"
+
+    def _cheapest_ready_profile(self, quality_tiers: tuple[str, ...]) -> str | None:
+        candidates = [
+            profile
+            for profile in self.profiles.values()
+            if profile.quality_tier in quality_tiers and self._profile_ready(profile.name)
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=_profile_cost_sort_key).name
 
     def _profile_ready(self, name: str) -> bool:
         profile = self.profiles.get(name)
@@ -354,6 +450,73 @@ def _provider_error_reason(exc: Exception) -> str:
     if isinstance(exc, urllib.error.URLError):
         return f"connection error: {exc.reason}"
     return str(exc)
+
+
+def _estimate_token_count(text: str) -> int:
+    try:
+        from claude_bridge.smart import estimate_token_count
+
+        return estimate_token_count(text)
+    except Exception:
+        return max(1, int(len(text.split()) * 1.3))
+
+
+def _effective_max_tokens(profile: AIModelProfile, requested_max_tokens: int) -> int:
+    if requested_max_tokens <= 0:
+        return 0
+    if profile.max_output_tokens > 0:
+        return min(requested_max_tokens, profile.max_output_tokens)
+    return requested_max_tokens
+
+
+def _estimated_max_cost_usd(
+    profile: AIModelProfile, *, estimated_input_tokens: int, effective_max_tokens: int
+) -> float:
+    return (
+        (estimated_input_tokens * profile.input_cost_per_mtok)
+        + (effective_max_tokens * profile.output_cost_per_mtok)
+    ) / 1_000_000
+
+
+def _route_decision(
+    profile: AIModelProfile,
+    *,
+    mode: str,
+    reason: str,
+    prompt: str,
+    max_tokens: int,
+) -> AIRouteDecision:
+    estimated_input_tokens = _estimate_token_count(prompt) if prompt else 0
+    effective_max_tokens = _effective_max_tokens(profile, max_tokens)
+    return AIRouteDecision(
+        profile_name=profile.name,
+        provider=profile.provider,
+        model=profile.model,
+        mode=mode,
+        reason=reason,
+        quality_tier=profile.quality_tier,
+        estimated_input_tokens=estimated_input_tokens,
+        effective_max_tokens=effective_max_tokens,
+        estimated_max_cost_usd=_estimated_max_cost_usd(
+            profile,
+            estimated_input_tokens=estimated_input_tokens,
+            effective_max_tokens=effective_max_tokens,
+        ),
+    )
+
+
+def _profile_cost_sort_key(profile: AIModelProfile) -> tuple[float, str]:
+    # Output dominates council calls, so weight it slightly higher for routing choices.
+    blended_cost = profile.input_cost_per_mtok + (profile.output_cost_per_mtok * 2)
+    return (blended_cost, profile.name)
+
+
+def _is_high_risk(haystack: str) -> bool:
+    return any(term in haystack for term in _HIGH_RISK_TERMS)
+
+
+def _is_simple_task(haystack: str) -> bool:
+    return any(term in haystack for term in _SIMPLE_TASK_TERMS)
 
 
 def _api_key(profile: AIModelProfile, default_env: str) -> str:
