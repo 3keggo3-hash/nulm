@@ -217,17 +217,33 @@ export CLAUDE_BRIDGE_AI_ROUTING_ENABLED=1
 export CLAUDE_BRIDGE_AI_ROUTING_MODE=auto
 export CLAUDE_BRIDGE_AI_DEFAULT_PROFILE=local
 export CLAUDE_BRIDGE_AI_PROFILES_JSON='{
-  "fast": {"provider": "openai", "model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY"},
+  "fast": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "quality_tier": "cheap",
+    "input_cost_per_mtok": 0.15,
+    "output_cost_per_mtok": 0.60,
+    "max_output_tokens": 400
+  },
   "deep": {
     "provider": "anthropic",
     "model": "claude-3-5-sonnet-latest",
-    "api_key_env": "ANTHROPIC_API_KEY"
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "quality_tier": "deep",
+    "input_cost_per_mtok": 3.0,
+    "output_cost_per_mtok": 15.0,
+    "max_output_tokens": 1000
   }
 }'
 export CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON='[
   {"name": "security", "profile": "deep", "keywords": ["security", "secret", "approval"]}
 ]'
 ```
+
+Route decisions include the selected profile, provider, quality tier, estimated input tokens,
+effective output-token cap, and estimated maximum cost. Cost values are estimates from configured
+profile metadata and are meant for transparency, not billing reconciliation.
 
 Provider API keys must be supplied through the named environment variables (`OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, etc.). Raw keys are not stored in Bridge config or returned
