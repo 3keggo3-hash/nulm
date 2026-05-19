@@ -119,8 +119,10 @@ The approval workflow enables real-time decision-making on pending operations:
 Guarded dashboard-to-CLI execution for local operations:
 
 - **Run**: Submit an allowlisted `nulm ...` or `claude-bridge ...` command from the dashboard
-- **Record**: Store the command, exit status, and output in durable control-plane messages
-- **Boundaries**: Reject arbitrary shell commands and stop long-running commands with a timeout
+- **Record**: Store the command, exit status, stdout, and stderr in durable control-plane messages
+- **Boundaries**: Reject arbitrary shell commands; enforce 20-second timeout per command
+- **Permission levels**: `read_only` (diagnostics only), `safe_local` (control-plane ops), `needs_approval` (skill/audit/anomaly — must use Approvals tab first)
+- **Streaming**: Background jobs use `subprocess.Popen` with session polling via `GET /api/cli/{session_id}/stream`
 
 ### Config/Status
 

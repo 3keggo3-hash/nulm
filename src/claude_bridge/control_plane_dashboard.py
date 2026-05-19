@@ -15,6 +15,8 @@ import secrets
 import shlex
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -44,6 +46,9 @@ _DASHBOARD_RECORD_LIMIT = 50
 _RECENT_TOOL_CALL_LIMIT = 30
 _CLI_TIMEOUT_SECONDS = 20
 _CLI_OUTPUT_LIMIT = 12000
+_STREAMING_POLL_INTERVAL = 0.3
+_ACTIVE_CLI_SESSIONS: dict[str, dict[str, Any]] = {}
+_ACTIVE_CLI_SESSIONS_LOCK = threading.Lock()
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 _UNSPECIFIED_HOSTS = {"0.0.0.0", "::"}
 _TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
@@ -88,6 +93,18 @@ _ALLOWED_SKILL_SUBCOMMANDS: set[str] = {
 }
 _ALLOWED_AUDIT_SUBCOMMANDS: set[str] = {"summary", "export"}
 _ALLOWED_ANOMALY_SUBCOMMANDS: set[str] = {"scan"}
+
+CLI_PERMISSION_LEVELS: dict[str, set[str]] = {
+    "read_only": {"version", "--version", "--help", "doctor", "envdoctor", "policy", "sessions"},
+    "safe_local": {"control-plane", "tasks", "approvals"},
+    "needs_approval": {"skill", "audit", "anomaly"},
+}
+
+_COMMANDS_BY_LEVEL: dict[str, set[str]] = {
+    "read_only": CLI_PERMISSION_LEVELS["read_only"],
+    "safe_local": CLI_PERMISSION_LEVELS["safe_local"],
+    "needs_approval": CLI_PERMISSION_LEVELS["needs_approval"],
+}
 
 
 class ControlPlaneDashboardError(ValueError):
@@ -233,7 +250,7 @@ def apply_dashboard_action(
     raise ControlPlaneDashboardError(f"Unsupported dashboard action '{action}'")
 
 
-def run_dashboard_cli_command(command: str) -> dict[str, Any]:
+def run_dashboard_cli_command(command: str, *, background: bool = False) -> dict[str, Any]:
     """Run a guarded Nulm CLI command submitted from the dashboard."""
     message = create_message(
         command,
@@ -247,6 +264,27 @@ def run_dashboard_cli_command(command: str) -> dict[str, Any]:
             response="Running...",
             metadata={"source": "dashboard", "kind": "cli", "argv": args},
         )
+        if background:
+            session_id = message["id"]
+            with _ACTIVE_CLI_SESSIONS_LOCK:
+                _ACTIVE_CLI_SESSIONS[session_id] = {
+                    "message_id": message["id"],
+                    "command": command,
+                    "argv": args,
+                    "status": "running",
+                    "stdout_chunks": [],
+                    "stderr_chunks": [],
+                    "output": "",
+                    "returncode": None,
+                    "started_at": time.time(),
+                    "updated_at": time.time(),
+                }
+            threading.Thread(
+                target=_run_cli_background,
+                args=(session_id, command, args),
+                daemon=True,
+            ).start()
+            return {"ok": True, "session_id": session_id, "record": acknowledged or message}
         result = subprocess.run(
             [sys.executable, "-m", "claude_bridge", *args],
             cwd=Path.cwd(),
@@ -268,6 +306,8 @@ def run_dashboard_cli_command(command: str) -> dict[str, Any]:
                 "kind": "cli",
                 "argv": args,
                 "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
             },
         )
         return {"ok": result.returncode == 0, "record": completed or acknowledged or message}
@@ -293,6 +333,75 @@ def run_dashboard_cli_command(command: str) -> dict[str, Any]:
         return {"ok": False, "record": failed or message, "error": "command_timeout"}
 
 
+def _run_cli_background(session_id: str, command: str, args: list[str]) -> None:
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "claude_bridge", *args],
+            cwd=Path.cwd(),
+            env=dict(os.environ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=False,
+        )
+        session = _ACTIVE_CLI_SESSIONS.get(session_id)
+        if session is None:
+            proc.kill()
+            return
+        session["process"] = proc
+        while True:
+            poll = proc.poll()
+            if poll is not None:
+                break
+            time.sleep(_STREAMING_POLL_INTERVAL)
+        time.sleep(0.1)
+        stdout, stderr = proc.communicate()
+        if session is None:
+            return
+        with _ACTIVE_CLI_SESSIONS_LOCK:
+            session["returncode"] = proc.returncode
+            session["stdout"] = stdout
+            session["stderr"] = stderr
+            session["output"] = _format_cli_output(proc.returncode, stdout, stderr)
+            session["updated_at"] = time.time()
+            if session["status"] == "running":
+                session["status"] = "completed"
+        output = _format_cli_output(proc.returncode, stdout, stderr)
+        status = cast(MessageStatus, "completed" if proc.returncode == 0 else "failed")
+        update_message_status(
+            session["message_id"],
+            status,
+            response=output,
+            metadata={
+                "source": "dashboard",
+                "kind": "cli",
+                "argv": args,
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+        )
+    except Exception as exc:
+        msg_id: str | None = None
+        with _ACTIVE_CLI_SESSIONS_LOCK:
+            session = _ACTIVE_CLI_SESSIONS.get(session_id)
+            if session:
+                session["status"] = "failed"
+                session["output"] = str(exc)
+                session["updated_at"] = time.time()
+                msg_id = session.get("message_id")
+        if msg_id:
+            try:
+                update_message_status(
+                    msg_id,
+                    "failed",
+                    response=str(exc),
+                    metadata={"source": "dashboard", "kind": "cli"},
+                )
+            except Exception:
+                pass
+
+
 def _dashboard_cli_args(command: str) -> list[str]:
     try:
         parts = shlex.split(command)
@@ -310,12 +419,16 @@ def _dashboard_cli_args(command: str) -> list[str]:
     return args
 
 
-def _validate_dashboard_cli_args(args: list[str]) -> None:
+def _validate_dashboard_cli_args(args: list[str]) -> str:
     top_level = args[0]
-    if top_level not in _ALLOWED_CLI_TOP_LEVEL:
-        allowed = ", ".join(sorted(_ALLOWED_CLI_TOP_LEVEL))
+    level = _get_command_permission_level(top_level)
+    if level is None:
         raise ControlPlaneDashboardError(
-            f"Unsupported dashboard CLI command '{top_level}'. Allowed: {allowed}"
+            f"Command '{top_level}' is blocked from dashboard execution"
+        )
+    if level == "needs_approval":
+        raise ControlPlaneDashboardError(
+            f"Command '{top_level}' requires approval. Use the Approvals tab first."
         )
     if top_level == "skill" and len(args) > 1 and args[1] not in _ALLOWED_SKILL_SUBCOMMANDS:
         raise ControlPlaneDashboardError(f"Unsupported dashboard skill command '{args[1]}'")
@@ -323,6 +436,14 @@ def _validate_dashboard_cli_args(args: list[str]) -> None:
         raise ControlPlaneDashboardError(f"Unsupported dashboard audit command '{args[1]}'")
     if top_level == "anomaly" and len(args) > 1 and args[1] not in _ALLOWED_ANOMALY_SUBCOMMANDS:
         raise ControlPlaneDashboardError(f"Unsupported dashboard anomaly command '{args[1]}'")
+    return level
+
+
+def _get_command_permission_level(command: str) -> str | None:
+    for level, commands in _COMMANDS_BY_LEVEL.items():
+        if command in commands:
+            return level
+    return None
 
 
 def _format_cli_output(returncode: int, stdout: str, stderr: str) -> str:
@@ -335,6 +456,22 @@ def _format_cli_output(returncode: int, stdout: str, stderr: str) -> str:
     if len(output) > _CLI_OUTPUT_LIMIT:
         return output[:_CLI_OUTPUT_LIMIT] + "\n\n[output truncated]"
     return output
+
+
+def _get_cli_session_status(session_id: str) -> dict[str, Any]:
+    with _ACTIVE_CLI_SESSIONS_LOCK:
+        session = _ACTIVE_CLI_SESSIONS.get(session_id)
+    if session is None:
+        return {"error": "session_not_found", "status": "unknown"}
+    return {
+        "session_id": session_id,
+        "status": session["status"],
+        "output": session.get("output", ""),
+        "stdout": session.get("stdout", ""),
+        "stderr": session.get("stderr", ""),
+        "returncode": session.get("returncode"),
+        "updated_at": session.get("updated_at"),
+    }
 
 
 def create_dashboard_server(
@@ -408,6 +545,25 @@ def _make_handler(
                     }
                 )
                 return
+            if parsed.path.startswith("/api/cli/"):
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) == 4 and parts[2] == "stream":
+                    if not self._is_authorized(parsed.query):
+                        self._send_json({"error": "unauthorized"}, status=401)
+                        return
+                    session_id = parts[3]
+                    self._send_json(_get_cli_session_status(session_id))
+                    return
+            if parsed.path.startswith("/api/agent/"):
+                parts = parsed.path.strip("/").split("/")
+                if len(parts) == 3 and parts[1] == "task":
+                    if not self._is_authorized(parsed.query):
+                        self._send_json({"error": "unauthorized"}, status=401)
+                        return
+                    task_id = parts[2]
+                    from claude_bridge._dashboard_task_runner import get_dashboard_task_status
+                    self._send_json(get_dashboard_task_status(task_id))
+                    return
             if self._send_static_file(parsed.path.lstrip("/")):
                 return
             self._send_json({"error": "not_found"}, status=404)
@@ -435,7 +591,8 @@ def _make_handler(
                 if not isinstance(command, str) or not command.strip():
                     self._send_json({"error": "command_required"}, status=400)
                     return
-                self._send_json(run_dashboard_cli_command(command.strip()))
+                background = body.get("background", False)
+                self._send_json(run_dashboard_cli_command(command.strip(), background=background))
                 return
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "tasks":
                 _, collection, record_id, action = parts
@@ -455,6 +612,15 @@ def _make_handler(
                         return
                     self._send_json({"ok": True, "record": task_action_record})
                     return
+            if len(parts) == 3 and parts[0] == "api" and parts[1] == "agent":
+                task = body.get("task", "")
+                mode = body.get("mode", "agent_loop")
+                if not isinstance(task, str) or not task.strip():
+                    self._send_json({"error": "task_required"}, status=400)
+                    return
+                from claude_bridge._dashboard_task_runner import run_dashboard_task
+                self._send_json(run_dashboard_task(task.strip(), mode=mode))
+                return
             if len(parts) != 4 or parts[0] != "api":
                 self._send_json({"error": "not_found"}, status=404)
                 return

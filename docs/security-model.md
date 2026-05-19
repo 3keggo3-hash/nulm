@@ -131,6 +131,36 @@ as invalid for recommendation purposes.
 
 ---
 
+## Guarded CLI Runner
+
+The dashboard's CLI tab runs only explicitly allowlisted `nulm ...` / `claude-bridge ...` commands
+through a strict argument parser. Arbitrary shell execution is not possible.
+
+### Permission Levels
+
+| Level | Commands | Behaviour |
+|-------|----------|-----------|
+| `read_only` | `version`, `--help`, `--version`, `doctor`, `envdoctor`, `policy`, `sessions` | Read-only diagnostics only. |
+| `safe_local` | `control-plane`, `tasks`, `approvals` | Safe local control-plane operations. |
+| `needs_approval` | `skill`, `audit`, `anomaly` | Require explicit approval before dashboard execution. |
+| *(blocked)* | All other commands | Rejected — cannot run from dashboard. |
+
+### Security Properties
+
+- **Allowlist only** — only listed top-level commands and subcommands are permitted
+- **No arbitrary shell** — commands are parsed and passed as arguments to `python -m claude_bridge`, not to a shell
+- **Timeout** — 20-second timeout per command; background jobs tracked by session ID
+- **Token required** — all dashboard API calls require a per-session bearer token
+- **Local-only by default** — dashboard binds to `127.0.0.1` unless `--lan`, `--vpn`, or `--public` is set
+- **stdout/stderr captured** — output is stored in message metadata and returned via polling endpoint
+
+### Agent Task Dispatcher
+
+Background agent tasks can be submitted via `POST /api/agent` and polled via
+`GET /api/agent/task/{task_id}`. Tasks are stored in the control plane and managed
+through the task lifecycle (pending → running → completed/failed/cancelled).
+The dispatcher uses the existing approval hierarchy for permission levels.
+
 ## Mobile Dashboard and Remote Access Safety
 
 The dashboard binds to `localhost`/`127.0.0.1` by default, restricting access to the local machine only.

@@ -23,13 +23,14 @@ const tabs = [
   { key: "overview", label: "Overview" },
   { key: "activity", label: "Activity" },
   { key: "approvals", label: "Approvals" },
-  { key: "messages", label: "Messages" },
+  { key: "messages", label: "CLI" },
 ];
 
 let activeTab = "overview";
 let lastError = "";
 let dashboardData = null;
 let isRefreshing = false;
+let cliFilter = "";
 
 function apiUrl(path) {
   const separator = path.includes("?") ? "&" : "?";
@@ -64,14 +65,74 @@ async function postAction(path, body = { reason: "dashboard" }) {
   await refreshDashboard({ showLoading: false });
 }
 
+let cliPollInterval = null;
+
 async function sendMessage() {
   const box = document.getElementById("messageText");
   const message = box.value.trim();
   if (!message) {
     return;
   }
-  await runAction(() => postAction("/api/cli", { command: message }));
+  const result = await postActionRaw("/api/cli", { command: message });
+  if (result.session_id) {
+    pollCliSession(result.session_id);
+  }
   box.value = "";
+}
+
+async function postActionRaw(path, body = {}) {
+  const response = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let message = `Dashboard API returned ${response.status}`;
+    try {
+      const payload = await response.json();
+      message = payload.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+function pollCliSession(sessionId) {
+  if (cliPollInterval) clearInterval(cliPollInterval);
+  cliPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(apiUrl(`/api/cli/${sessionId}/stream`));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.status === "completed" || data.status === "failed" || data.error) {
+        clearInterval(cliPollInterval);
+        cliPollInterval = null;
+        await refreshDashboard({ showLoading: false });
+      }
+    } catch {}
+  }, 500);
+}
+
+let agentPollInterval = null;
+
+function dispatchAgentTask(task, mode = "agent_loop") {
+  return postActionRaw("/api/agent", { task, mode });
+}
+
+function pollAgentTask(taskId) {
+  if (agentPollInterval) clearInterval(agentPollInterval);
+  agentPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(apiUrl(`/api/agent/task/${taskId}`));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.status === "completed" || data.status === "failed" || data.error) {
+        clearInterval(agentPollInterval);
+        agentPollInterval = null;
+        await refreshDashboard({ showLoading: false });
+      }
+    } catch {}
+  }, 500);
 }
 
 function escapeHtml(value) {
@@ -414,22 +475,53 @@ function renderUsage(usage) {
   `;
 }
 
-function renderMessages(messages) {
-  if (!messages.length) {
-    return '<div class="empty">No messages.</div>';
+function renderMessages(messages, filterText = "") {
+  const filtered = filterText
+    ? messages.filter((m) => m.message?.toLowerCase().includes(filterText.toLowerCase()))
+    : messages;
+  if (!filtered.length) {
+    return '<div class="empty">No messages' + (filterText ? " matching filter" : "") + '.</div>';
   }
-  return messages
+  return filtered
     .map(
-      (row) => `
-        <article class="message">
+      (row) => {
+        const returncode = row.metadata?.returncode;
+        const stdout = row.metadata?.stdout || "";
+        const stderr = row.metadata?.stderr || "";
+        const isSuccess = returncode === 0;
+        const hasStderr = stderr.trim().length > 0;
+        const response = row.response || "";
+        const lines = response.split("\n").length;
+        const isLong = lines > 20;
+        const shortResponse = isLong ? response.split("\n").slice(0, 10).join("\n") : response;
+        const id = `msg-${row.id}`;
+        const isRunning = row.status === "acknowledged" || row.status === "queued";
+        const exitBadge = isRunning
+          ? '<span class="exit-badge exit-running">…</span>'
+          : `<span class="exit-badge exit-${isSuccess ? "ok" : "fail"}">${returncode ?? "—"}</span>`;
+        return `
+        <article class="message" id="${escapeHtml(id)}">
           <div class="message-header">
-            <span class="message-status">${escapeHtml(row.status)}</span>
+            ${exitBadge}
+            <code class="message-command">${escapeHtml(row.message || "")}</code>
+            ${isRunning ? '<span class="running-indicator">running</span>' : ""}
             <span class="timestamp">${escapeHtml(row.updated_at || row.created_at || "")}</span>
+            <div class="message-actions">
+              ${!isRunning ? `<button class="icon-btn" title="Copy output" data-copy="${escapeHtml(id)}">📋</button>` : ""}
+              ${!isRunning ? `<button class="icon-btn" title="Re-run" data-rerun="${escapeHtml(row.message || "")}">↻</button>` : ""}
+            </div>
           </div>
-          <div class="message-body">${escapeHtml(row.message || "")}</div>
-          <div class="message-response">${escapeHtml(row.response || "")}</div>
+          ${stdout.trim() ? `<pre class="cli-stdout">${escapeHtml(stdout.trim())}</pre>` : ""}
+          ${hasStderr ? `<pre class="cli-stderr">${escapeHtml(stderr.trim())}</pre>` : ""}
+          ${response.trim() ? `
+            <div class="message-response">
+              <pre class="${isLong ? "collapsible" : ""}">${escapeHtml(isLong ? shortResponse : response)}</pre>
+              ${isLong ? `<button class="expand-btn" data-expand="${escapeHtml(id)}">▼ show ${lines - 10} more lines</button>` : ""}
+            </div>
+          ` : ""}
         </article>
-      `
+      `;
+      }
     )
     .join("");
 }
@@ -461,15 +553,24 @@ function renderTabContent(data) {
     return `
       <section>
         <h2>CLI</h2>
+        <input id="cliFilter" type="text" placeholder="Filter commands..." value="${escapeHtml(cliFilter)}" style="margin-bottom:8px;width:100%;padding:6px;" />
         <textarea
           id="messageText"
           placeholder="nulm doctor --json"
         ></textarea>
         <div class="actions">
           <button class="primary" id="sendMessage">Run</button>
+          <button id="rerunLast">Re-run last</button>
+        </div>
+        <div class="agent-section">
+          <h3>Agent Task</h3>
+          <textarea id="agentTaskText" placeholder="Describe what you want the agent to do..." style="min-height:60px;"></textarea>
+          <div class="actions">
+            <button class="primary" id="dispatchAgent">Dispatch Agent</button>
+          </div>
         </div>
         <div class="messages-list">
-          ${renderMessages(data.messages || [])}
+          ${renderMessages(data.messages || [], cliFilter)}
         </div>
       </section>
     `;
@@ -537,6 +638,61 @@ function bindActions() {
     refreshDashboard({ showLoading: false });
   });
   document.getElementById("sendMessage")?.addEventListener("click", sendMessage);
+  document.getElementById("cliFilter")?.addEventListener("input", (e) => {
+    cliFilter = e.target.value;
+    renderApp(dashboardData);
+  });
+  document.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.copy;
+      const el = document.getElementById(id);
+      if (!el) return;
+      const pre = el.querySelector(".message-response pre");
+      const text = pre ? pre.textContent : el.querySelector(".message-response")?.textContent || "";
+      navigator.clipboard.writeText(text).catch(() => {});
+    });
+  });
+  document.querySelectorAll("[data-expand]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.expand;
+      const el = document.getElementById(id);
+      if (!el) return;
+      const pre = el.querySelector(".message-response pre.collapsible");
+      if (pre) pre.classList.remove("collapsible");
+      btn.remove();
+    });
+  });
+  document.querySelectorAll("[data-rerun]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const cmd = btn.dataset.rerun;
+      const box = document.getElementById("messageText");
+      if (box) box.value = cmd;
+      activeTab = "messages";
+      renderApp(dashboardData);
+    });
+  });
+  const rerunLastBtn = document.getElementById("rerunLast");
+  if (rerunLastBtn) {
+    rerunLastBtn.addEventListener("click", () => {
+      const last = (dashboardData && dashboardData.messages) ? dashboardData.messages[0] : null;
+      if (last && last.message) {
+        const box = document.getElementById("messageText");
+        if (box) box.value = last.message;
+      }
+    });
+  }
+  document.getElementById("dispatchAgent")?.addEventListener("click", async () => {
+    const box = document.getElementById("agentTaskText");
+    const task = box?.value?.trim();
+    if (!task) return;
+    try {
+      const result = await dispatchAgentTask(task);
+      if (result.task_id) pollAgentTask(result.task_id);
+    } catch (err) {
+      lastError = err.message;
+      renderApp(dashboardData);
+    }
+  });
 }
 
 function renderShell(subtitle, mainContent) {
