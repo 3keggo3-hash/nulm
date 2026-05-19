@@ -19,6 +19,7 @@ from claude_bridge.config import (
     BUDGET_PROFILES,
     TOOL_PROFILES,
     APPROVAL_PRESETS,
+    AI_EVALUATOR_PROVIDERS,
     current_config,
     update_runtime_config,
     validate_config_value,
@@ -174,7 +175,7 @@ def config_describe(
     descriptions: dict[str, str] = {
         "shell_timeout": "Shell command timeout in seconds (positive integer, 1-120)",
         "ai_evaluator_timeout": "AI evaluator timeout in seconds (positive integer)",
-        "ai_evaluator_provider": "AI provider: local, openai, anthropic, ollama, deepseek",
+        "ai_evaluator_provider": f"AI provider: {', '.join(sorted(AI_EVALUATOR_PROVIDERS))}",
         "ai_evaluator_fallback_action": "Fallback action when evaluator fails: deny or ask",
         "context_budget_profile": f"Context budget: {', '.join(BUDGET_PROFILES)}",
         "tool_profile": f"Tool profile: {', '.join(TOOL_PROFILES)}",

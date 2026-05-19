@@ -15,7 +15,70 @@ from typing import Any
 
 _MAX_MODEL_RESPONSE_BYTES = 131072
 _DEFAULT_TIMEOUT = 30
-_ALLOWED_PROVIDERS = {"local", "openai", "anthropic", "deepseek", "ollama"}
+_OPENAI_COMPAT_PROVIDERS: dict[str, dict[str, str]] = {
+    "openai": {
+        "env": "OPENAI_API_KEY",
+        "default_model": "gpt-4o-mini",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+    },
+    "deepseek": {
+        "env": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-chat",
+        "endpoint": "https://api.deepseek.com/v1/chat/completions",
+    },
+    "minimax": {
+        "env": "MINIMAX_API_KEY",
+        "default_model": "MiniMax-M2.5",
+        "endpoint": "https://api.minimax.io/v1/chat/completions",
+    },
+    "google": {
+        "env": "GEMINI_API_KEY",
+        "default_model": "gemini-2.5-flash",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    },
+    "groq": {
+        "env": "GROQ_API_KEY",
+        "default_model": "llama-3.1-8b-instant",
+        "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+    },
+    "mistral": {
+        "env": "MISTRAL_API_KEY",
+        "default_model": "mistral-small-latest",
+        "endpoint": "https://api.mistral.ai/v1/chat/completions",
+    },
+    "xai": {
+        "env": "XAI_API_KEY",
+        "default_model": "grok-4.3",
+        "endpoint": "https://api.x.ai/v1/chat/completions",
+    },
+    "together": {
+        "env": "TOGETHER_API_KEY",
+        "default_model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "endpoint": "https://api.together.xyz/v1/chat/completions",
+    },
+    "openrouter": {
+        "env": "OPENROUTER_API_KEY",
+        "default_model": "openai/gpt-4o-mini",
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+    },
+    "perplexity": {
+        "env": "PERPLEXITY_API_KEY",
+        "default_model": "sonar-pro",
+        "endpoint": "https://api.perplexity.ai/chat/completions",
+    },
+    "fireworks": {
+        "env": "FIREWORKS_API_KEY",
+        "default_model": "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        "endpoint": "https://api.fireworks.ai/inference/v1/chat/completions",
+    },
+}
+_ALLOWED_PROVIDERS = {
+    "local",
+    "anthropic",
+    "cohere",
+    "ollama",
+    *_OPENAI_COMPAT_PROVIDERS,
+}
 _ALLOWED_QUALITY_TIERS = {"local", "cheap", "balanced", "deep"}
 _HIGH_RISK_TERMS = (
     "security",
@@ -427,16 +490,18 @@ class AIModelRouter:
     def _call_profile(self, profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
         if profile.provider == "local":
             return _local_response(prompt)
-        if profile.provider == "openai":
-            return _call_openai(profile, prompt, max_tokens=max_tokens)
         if profile.provider == "anthropic":
             return _call_anthropic(profile, prompt, max_tokens=max_tokens)
-        if profile.provider == "deepseek":
+        if profile.provider == "cohere":
+            return _call_cohere(profile, prompt, max_tokens=max_tokens)
+        if profile.provider in _OPENAI_COMPAT_PROVIDERS:
+            provider = _OPENAI_COMPAT_PROVIDERS[profile.provider]
             return _call_chat_completions(
                 profile,
                 prompt,
-                endpoint="https://api.deepseek.com/v1/chat/completions",
-                default_model="deepseek-chat",
+                endpoint=_chat_completions_endpoint(profile.base_url, provider["endpoint"]),
+                default_env=provider["env"],
+                default_model=provider["default_model"],
                 max_tokens=max_tokens,
             )
         if profile.provider == "ollama":
@@ -527,6 +592,12 @@ def _api_key(profile: AIModelProfile, default_env: str) -> str:
     return key
 
 
+def _chat_completions_endpoint(base_url: str, default_endpoint: str) -> str:
+    if not base_url:
+        return default_endpoint
+    return base_url.rstrip("/") + "/chat/completions"
+
+
 def _read_json_response(req: urllib.request.Request, timeout: int) -> dict[str, Any]:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read(_MAX_MODEL_RESPONSE_BYTES)
@@ -543,10 +614,11 @@ def _call_chat_completions(
     prompt: str,
     *,
     endpoint: str,
+    default_env: str,
     default_model: str,
     max_tokens: int,
 ) -> str:
-    key = _api_key(profile, "OPENAI_API_KEY")
+    key = _api_key(profile, default_env)
     body = json.dumps(
         {
             "model": profile.model or default_model,
@@ -568,22 +640,6 @@ def _call_chat_completions(
     )
     data = _read_json_response(req, profile.timeout)
     return str(data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
-
-
-def _call_openai(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
-    endpoint = (
-        (profile.base_url.rstrip("/") + "/chat/completions")
-        if profile.base_url
-        else ("https://api.openai.com/v1/chat/completions")
-    )
-    return _call_chat_completions(
-        profile,
-        prompt,
-        endpoint=endpoint,
-        default_model="gpt-4o-mini",
-        max_tokens=max_tokens,
-    )
-
 
 def _call_anthropic(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
     key = _api_key(profile, "ANTHROPIC_API_KEY")
@@ -615,6 +671,37 @@ def _call_anthropic(profile: AIModelProfile, prompt: str, *, max_tokens: int) ->
     if isinstance(content, list) and content:
         return str(content[0].get("text", "")).strip()
     return ""
+
+
+def _call_cohere(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
+    key = _api_key(profile, "COHERE_API_KEY")
+    endpoint = profile.base_url.rstrip("/") if profile.base_url else "https://api.cohere.com/v2/chat"
+    body = json.dumps(
+        {
+            "model": profile.model or "command-a-03-2025",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a concise engineering council member. Return plain text.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    data = _read_json_response(req, profile.timeout)
+    raw_content = data.get("message", {}).get("content", "")
+    if isinstance(raw_content, list):
+        return "".join(
+            str(item.get("text", "")) for item in raw_content if isinstance(item, dict)
+        ).strip()
+    return str(raw_content).strip()
 
 
 def _call_ollama(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:

@@ -96,6 +96,22 @@ class TestApplyConfig:
             config_module.apply_config(project_dir=temp_project, context_budget_profile=profile)
             assert config_module.current_config()["context_budget_profile"] == profile
 
+    async def test_popular_ai_evaluator_providers_accepted(self, temp_project):
+        for provider in (
+            "minimax",
+            "google",
+            "groq",
+            "mistral",
+            "cohere",
+            "xai",
+            "together",
+            "openrouter",
+            "perplexity",
+            "fireworks",
+        ):
+            config_module.apply_config(project_dir=temp_project, ai_evaluator_provider=provider)
+            assert config_module.current_config()["ai_evaluator_provider"] == provider
+
 
 class TestResolveApprovalMode:
     def test_read_only(self):

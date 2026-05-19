@@ -55,9 +55,10 @@ result meet a professional quality bar?"
   critique, result quality review, creative alternatives, token optimization, and safe MCP config
   recommendations. The current `ai_evaluator` code is an early security-advisor slice, not the full
   target layer.
-- **Optional provider-backed advisor:** local deterministic provider plus Anthropic, OpenAI, Ollama,
-  and other provider interfaces where configured. Provider advice cannot override built-in hard
-  denies.
+- **Optional provider-backed advisor:** local deterministic provider plus Anthropic, OpenAI,
+  Ollama, DeepSeek, MiniMax, Google Gemini, Groq, Mistral, Cohere, xAI, Together AI, OpenRouter,
+  Perplexity, Fireworks, and other provider interfaces where configured. Provider advice cannot
+  override built-in hard denies.
 - **Team and compliance foundations:** policy-as-code, policy diff, role bundles, compliance
   readiness docs, and CI-oriented validation.
 
@@ -125,8 +126,9 @@ Completed or mostly implemented:
 - Shell/file/path hardening including symlink and traversal protections.
 - Rule-based anomaly detection and trust score MVP.
 - Team policy, policy diff, and policy-as-code documentation.
-- AI Advisor provider interface with local, Anthropic, OpenAI, and Ollama providers, currently
-  implemented under the `ai_evaluator` module name.
+- AI Advisor provider interface with local, Anthropic, OpenAI, Ollama, DeepSeek, MiniMax, Google
+  Gemini, Groq, Mistral, Cohere, xAI, Together AI, OpenRouter, Perplexity, and Fireworks providers,
+  currently implemented under the `ai_evaluator` module name.
 - Tool profiles for essential, standard, and full MCP surfaces.
 - Meta-agent MVP: plans, approach explorer, self-critique, checkpoints.
 - SSRF-constrained `read_url`.

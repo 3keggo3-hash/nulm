@@ -10,11 +10,13 @@ import pytest
 
 from claude_bridge.ai_evaluator import (
     AnthropicProvider,
+    CohereProvider,
     EvaluationAction,
     EvaluationRequest,
     EvaluationResponse,
     LocalEvaluatorProvider,
     OllamaProvider,
+    OpenAICompatibleProvider,
     OpenAIProvider,
     Provider,
     ProviderConfig,
@@ -189,6 +191,45 @@ class TestNetworkProviders:
         assert provider.api_key == "sk-test"
         assert provider.timeout == 7
 
+    @pytest.mark.parametrize(
+        ("provider_name", "env_name", "default_model", "endpoint_host"),
+        [
+            ("minimax", "MINIMAX_API_KEY", "MiniMax-M2.5", "api.minimax.io"),
+            ("google", "GEMINI_API_KEY", "gemini-2.5-flash", "generativelanguage"),
+            ("groq", "GROQ_API_KEY", "llama-3.1-8b-instant", "api.groq.com"),
+            ("mistral", "MISTRAL_API_KEY", "mistral-small-latest", "api.mistral.ai"),
+            ("xai", "XAI_API_KEY", "grok-4.3", "api.x.ai"),
+            ("together", "TOGETHER_API_KEY", "Llama-3.3-70B", "api.together.xyz"),
+            ("openrouter", "OPENROUTER_API_KEY", "openai/gpt-4o-mini", "openrouter.ai"),
+            ("perplexity", "PERPLEXITY_API_KEY", "sonar-pro", "api.perplexity.ai"),
+            ("fireworks", "FIREWORKS_API_KEY", "llama-v3p1", "api.fireworks.ai"),
+        ],
+    )
+    def test_create_openai_compatible_provider_defaults(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        provider_name: str,
+        env_name: str,
+        default_model: str,
+        endpoint_host: str,
+    ) -> None:
+        monkeypatch.setenv(env_name, "sk-test")
+
+        provider = create_provider(provider_name)
+
+        assert isinstance(provider, OpenAICompatibleProvider)
+        assert default_model in provider.model
+        assert endpoint_host in provider._endpoint
+
+    def test_create_cohere_provider_uses_env_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("COHERE_API_KEY", "co-test")
+
+        provider = create_provider("cohere")
+
+        assert isinstance(provider, CohereProvider)
+        assert provider.api_key == "co-test"
+        assert provider.model == "command-a-03-2025"
+
     def test_anthropic_provider_uses_configured_timeout(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -226,6 +267,22 @@ class TestNetworkProviders:
 
         assert response.action == EvaluationAction.DENY
         assert seen["timeout"] == 11
+
+    def test_cohere_provider_parses_v2_chat_response(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
+            return _DummyHttpResponse(
+                '{"message": {"content": [{"type": "text", '
+                '"text": "{\\"action\\": \\"allow\\", \\"reason\\": \\"ok\\"}"}]}}'
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        provider = CohereProvider(api_key="co-test")
+
+        response = provider.evaluate(EvaluationRequest(prompt="run git status"))
+
+        assert response.action == EvaluationAction.ALLOW
 
     def test_ollama_provider_uses_configured_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen: dict[str, object] = {}

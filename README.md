@@ -296,8 +296,10 @@ Route decisions include the selected profile, provider, quality tier, estimated 
 effective output-token cap, and estimated maximum cost. Cost values are estimates from configured
 profile metadata and are meant for transparency, not billing reconciliation.
 
-Provider API keys must be supplied through the named environment variables (`OPENAI_API_KEY`,
-`ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, etc.). Raw keys are not stored in Bridge config or returned
+Provider API keys must be supplied through named environment variables, such as `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`,
+`MISTRAL_API_KEY`, `COHERE_API_KEY`, `XAI_API_KEY`, `TOGETHER_API_KEY`, `OPENROUTER_API_KEY`,
+`PERPLEXITY_API_KEY`, and `FIREWORKS_API_KEY`. Raw keys are not stored in Bridge config or returned
 by `get_config`. Custom cloud provider `base_url` values must use HTTPS and must not point to
 private/internal hosts; Ollama routing is limited to localhost/loopback URLs.
 
@@ -404,8 +406,10 @@ An optional second-opinion layer for proposed agent actions. It can suggest `all
 `ask`, but its broader role is to critique whether the next step is necessary, scoped, safe, and
 aligned with the user's intent. It does not override built-in hard denies.
 
-Disabled by default. The local deterministic provider works without network access; Anthropic,
-OpenAI, and Ollama providers are optional and fail closed on invalid responses or provider errors.
+Disabled by default. The local deterministic provider works without network access. Anthropic,
+OpenAI, Ollama, DeepSeek, MiniMax, Google Gemini, Groq, Mistral, Cohere, xAI, Together AI,
+OpenRouter, Perplexity, and Fireworks providers are optional and fail closed on invalid responses
+or provider errors.
 The current Python module and environment variables still use the `ai_evaluator` name for backward
 compatibility.
 
