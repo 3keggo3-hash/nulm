@@ -754,6 +754,7 @@ send_feedback = _tool_or_disabled(_META_TOOLS, "send_feedback")
 anomaly_summary = _tool_or_disabled(_META_TOOLS, "anomaly_summary")
 generate_pr_description = _tool_or_disabled(_META_TOOLS, "generate_pr_description")
 get_trust_score = _tool_or_disabled(_META_TOOLS, "get_trust_score")
+nulm_assist = _tool_or_disabled(_META_TOOLS, "nulm_assist")
 
 
 _CONTROL_PLANE_TOOLS = register_control_plane_tools(

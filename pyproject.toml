@@ -73,6 +73,14 @@ multi-format = [
     "Pillow>=10.0.0",
     "PyPDF2>=3.0.0",
 ]
+recommended = [
+    "tree-sitter-language-pack>=0.2.0,<1.0",
+    "tiktoken>=0.7.0",
+    "charset-normalizer>=3.0.0",
+    "Pillow>=10.0.0",
+    "PyPDF2>=3.0.0",
+    "PyYAML>=6.0",
+]
 policy-yaml = [
     "PyYAML>=6.0",
 ]

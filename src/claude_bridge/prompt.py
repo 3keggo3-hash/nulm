@@ -20,12 +20,17 @@ Local project access:
 - Do not say you cannot see local files before checking the available Nulm tools.
 - For requests about this codebase, first call workspace_status(), then list_directory,
   find_relevant_files, read_file, or read_multiple_files as needed.
+- For AI Council, AI Evaluator, Guard Policy, plan review, quality review, setup, or token
+  questions, call nulm_assist(goal=..., target=...) first. It routes natural-language IDE
+  requests to the right Nulm tools.
 
 Key rules:
 - Always inspect files before editing (read_file or list_directory).
 - Prefer patch_file over write_file for existing files.
 - If a path fails with path_outside_project, call workspace_status() then switch_project_root().
 - Cross-check related files before concluding behavior is explained.
+- AI Evaluator and Guard Policy are runtime guard layers: inspect them with bridge_status/get_config,
+  then use guarded file or shell tools. Do not look for a separate "run evaluator" tool.
 - Treat MCP tool results as source of truth.
 - Use precise SEARCH/REPLACE blocks.
 

@@ -86,7 +86,8 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
     },
     "standard": {
         "description": (
-            "Commonly used tools without niche features. Good balance of capability and token cost."
+            "Common local development tools for IDE and desktop MCP clients. Good balance of "
+            "capability and token cost."
         ),
         "groups": {
             "agent_quality",
@@ -97,10 +98,13 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "workflow_core",
             "meta_core",
             "control_plane",
+            "ai_council",
             "skills_read",
             "smart",
             "insights_core",
             "git_read",
+            "multi_format",
+            "url",
         },
     },
     "full": {
@@ -196,6 +200,7 @@ TOOL_GROUPS: dict[str, set[str]] = {
         "compact_user_intent",
         "compress_context",
         "tools_overview",
+        "nulm_assist",
         "get_recent_tool_calls",
         "session_insights",
         "activity_summary",

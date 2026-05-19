@@ -180,6 +180,7 @@ def _autocomplete_suggestions(
                 "kill_process",
                 "interact_with_process",
                 "analyze_shell_command",
+                "nulm_assist",
                 "advise_next_step",
                 "improve_request",
                 "plan_quality_review",
@@ -322,11 +323,164 @@ def register_meta_tools(
     _enabled = enabled_names
     results: dict[str, Any] = {}
 
+    if _enabled is None or "nulm_assist" in _enabled:
+
+        @mcp.tool(
+            **tool_options(
+                "Start here for Nulm feature routing. Use when the user mentions AI Council, "
+                "AI Evaluator, plan quality review, Guard Policy, policy, quality, setup, "
+                "token use, or asks what Nulm can do.",
+                read_only=True,
+            )
+        )
+        async def nulm_assist(goal: str, target: str = ".") -> str:
+            started_at = time.perf_counter()
+            config_snapshot = current_config()
+            lower_goal = goal.lower()
+            tool_profile = str(config_snapshot.get("tool_profile", "standard"))
+            routes: list[dict[str, Any]] = []
+
+            def add_route(
+                intent: str,
+                tool: str,
+                why: str,
+                arguments: dict[str, Any] | None = None,
+            ) -> None:
+                routes.append(
+                    {
+                        "intent": intent,
+                        "tool": tool,
+                        "why": why,
+                        "arguments": arguments or {},
+                    }
+                )
+
+            if any(word in lower_goal for word in ("council", "konsey", "debate", "tartış")):
+                add_route(
+                    "ai_council",
+                    "run_council_session",
+                    "Runs a read-only multi-role planning debate and returns approval-gated steps.",
+                    {"task": goal, "target": target, "agent_count": 3, "rounds": 1},
+                )
+            if any(word in lower_goal for word in ("evaluator", "ai evaluator", "risk", "risky")):
+                add_route(
+                    "ai_evaluator",
+                    "bridge_status",
+                    (
+                        "AI Evaluator is a runtime guard for write/shell/move/copy tools, not a "
+                        "standalone action tool. Check status, then use guarded mutation tools."
+                    ),
+                )
+            if any(word in lower_goal for word in ("policy", "guard", "approval", "güvenlik")):
+                add_route(
+                    "guard_policy",
+                    "get_config",
+                    (
+                        "Guard Policy is enforced inside file/shell tools. get_config shows the "
+                        "loaded policy; denied calls return policy_denied with decision details."
+                    ),
+                )
+            if any(word in lower_goal for word in ("plan", "quality", "kalite", "review")):
+                add_route(
+                    "plan_quality",
+                    "plan_quality_review",
+                    "Reviews a proposed plan for scope, tests, validation, security, and tokens.",
+                    {"goal": goal, "target": target},
+                )
+            if any(word in lower_goal for word in ("done", "finished", "good enough", "sonuç")):
+                add_route(
+                    "result_quality",
+                    "review_result_quality",
+                    "Reviews completed work against goal, evidence, validation, and residual risk.",
+                    {"goal": goal},
+                )
+            if any(word in lower_goal for word in ("token", "context", "config", "setup", "kur")):
+                add_route(
+                    "safe_config",
+                    "suggest_bridge_config",
+                    "Suggests safe Nulm settings without changing secrets, roots, or approvals.",
+                    {"goal": goal},
+                )
+
+            if not routes:
+                add_route(
+                    "orientation",
+                    "tools_overview",
+                    "Lists Nulm tools by purpose and shows starter workflows.",
+                )
+                add_route(
+                    "first_safe_step",
+                    "advise_next_step",
+                    "Turns a rough goal into the next inspect/plan/validate step.",
+                    {"goal": goal, "target": target},
+                )
+
+            result = json_response(
+                True,
+                "Nulm feature route generated",
+                details={
+                    "schema_version": "nulm_assist.v1",
+                    "goal": goal,
+                    "target": target,
+                    "tool_profile": tool_profile,
+                    "why_skill_was_needed_before": [
+                        (
+                            "Some clients do not automatically include Nulm's setup prompt or "
+                            "MCP prompts in the chat context."
+                        ),
+                        (
+                            "AI Evaluator and Guard Policy are runtime enforcement layers, so "
+                            "models looked for a callable tool and missed that they activate "
+                            "through guarded file/shell operations."
+                        ),
+                        (
+                            "AI Council was previously outside the default standard profile, so "
+                            "most IDE installs did not expose it unless users selected full."
+                        ),
+                    ],
+                    "routes": routes,
+                    "default_workflow": [
+                        "Call workspace_status before project-specific work.",
+                        "Use find_relevant_files or list_directory before reading.",
+                        "Use plan_quality_review before broad edits.",
+                        "Use guarded file/shell tools for changes.",
+                        "Use review_result_quality after validation.",
+                    ],
+                    "runtime_layers": {
+                        "ai_evaluator": {
+                            "enabled": bool(config_snapshot.get("ai_evaluator_enabled", False)),
+                            "provider": config_snapshot.get("ai_evaluator_provider", "local"),
+                            "how_to_use": (
+                                "Enable via explicit local config, then invoke write/shell tools; "
+                                "their policy path calls the evaluator."
+                            ),
+                        },
+                        "guard_policy": {
+                            "how_to_use": (
+                                "Define JSON/YAML policy files or env config; runtime tools "
+                                "enforce policy automatically."
+                            ),
+                            "inspection_tool": "get_config",
+                        },
+                    },
+                },
+            )
+            return audit_tool_call(
+                "nulm_assist",
+                {"goal": goal, "target": target},
+                result,
+                started_at=started_at,
+            )
+
+        results["nulm_assist"] = nulm_assist
+
     if _enabled is None or "advise_next_step" in _enabled:
 
         @mcp.tool(
             **tool_options(
-                "Advise the next high-quality step for a rough user goal.", read_only=True
+                "Use for rough goals, public-readiness, code-quality, planning, testing, "
+                "risk, or token strategy. Returns the next high-quality Nulm step.",
+                read_only=True,
             )
         )
         async def advise_next_step(
@@ -402,7 +556,8 @@ def register_meta_tools(
 
         @mcp.tool(
             **tool_options(
-                "Rewrite a rough user request into a scoped execution prompt.",
+                "Use when the user's request is vague or too broad. Rewrites it into a scoped "
+                "Nulm execution prompt with acceptance criteria.",
                 read_only=True,
             )
         )
@@ -463,7 +618,8 @@ def register_meta_tools(
 
         @mcp.tool(
             **tool_options(
-                "Critique an implementation plan before editing files.",
+                "Use before edits for plan quality review. Critiques scope, missing context, "
+                "tests, security, guard-policy risk, and token cost.",
                 read_only=True,
             )
         )
@@ -543,7 +699,8 @@ def register_meta_tools(
 
         @mcp.tool(
             **tool_options(
-                "Suggest safe Bridge configuration changes for a user goal.",
+                "Use for Nulm setup, AI Evaluator, token use, tool profile, onboarding, or "
+                "configuration questions. Suggests safe chat-editable settings.",
                 read_only=True,
             )
         )
@@ -575,7 +732,8 @@ def register_meta_tools(
 
         @mcp.tool(
             **tool_options(
-                "Review completed work for result quality, validation, and risk.",
+                "Use after changes or when asked if work is good enough. Reviews result quality, "
+                "validation evidence, docs drift, security/config risk, and follow-up work.",
                 read_only=True,
             )
         )
@@ -916,7 +1074,13 @@ def register_meta_tools(
 
     if _enabled is None or "bridge_status" in _enabled:
 
-        @mcp.tool(**tool_options("Show current runtime status in one place.", read_only=True))
+        @mcp.tool(
+            **tool_options(
+                "Use for Nulm readiness, AI Evaluator status, Guard Policy status, approval "
+                "mode, tool profile, and agent-quality capability status.",
+                read_only=True,
+            )
+        )
         async def bridge_status() -> str:
             started_at = time.perf_counter()
             config_snapshot = current_config()
@@ -1003,6 +1167,7 @@ def register_meta_tools(
                     },
                     "agent_quality": {
                         "available_tools": {
+                            "feature_router": ["nulm_assist"],
                             "planning": [
                                 "advise_next_step",
                                 "improve_request",
@@ -1024,6 +1189,10 @@ def register_meta_tools(
                             "guarded_by": "SAFE_CHAT_CONFIG_KEYS",
                             "only_via": "apply_bridge_config_change",
                         },
+                        "ide_discovery_hint": (
+                            "Call nulm_assist when the user asks for AI Council, AI Evaluator, "
+                            "Guard Policy, plan review, or result review."
+                        ),
                     },
                     "skill_governance": {
                         "registered_count": len(skills),
@@ -1052,7 +1221,13 @@ def register_meta_tools(
 
     if _enabled is None or "tools_overview" in _enabled:
 
-        @mcp.tool(**tool_options("List Nulm tools grouped by purpose.", read_only=True))
+        @mcp.tool(
+            **tool_options(
+                "List Nulm tools grouped by purpose, including AI Council, AI Evaluator, "
+                "Guard Policy, plan quality review, and result quality review.",
+                read_only=True,
+            )
+        )
         async def tools_overview() -> str:
             started_at = time.perf_counter()
             result = json_response(
@@ -1093,6 +1268,7 @@ def register_meta_tools(
                         },
                     ],
                     "groups": {
+                        "feature_routing": ["nulm_assist", "bridge_status", "get_config"],
                         "orientation": [
                             "workspace_status",
                             "list_directory",
@@ -1100,6 +1276,7 @@ def register_meta_tools(
                             "bridge_status",
                         ],
                         "agent_quality": {
+                            "ai_council": ["run_council_session"],
                             "planning": [
                                 "advise_next_step",
                                 "improve_request",
@@ -1113,6 +1290,16 @@ def register_meta_tools(
                                 'run_workflow(mode="quality")',
                                 "run_agent_loop_session",
                                 "review_result_quality",
+                            ],
+                        },
+                        "runtime_guards": {
+                            "ai_evaluator": [
+                                "bridge_status",
+                                "guarded write_file/patch_file/move_file/copy_path/run_shell",
+                            ],
+                            "guard_policy": [
+                                "get_config",
+                                "guarded file and shell tools",
                             ],
                         },
                         "low_cost_context": [
@@ -1142,6 +1329,10 @@ def register_meta_tools(
                     "notes": [
                         "Agent quality tools turn rough goals into safer plans and config advice.",
                         (
+                            "AI Evaluator and Guard Policy are runtime layers, not standalone "
+                            "execution tools; use nulm_assist or bridge_status to route them."
+                        ),
+                        (
                             "Low-cost context tools (compact_user_intent, narrow_context) "
                             "reduce token usage for routine queries."
                         ),
@@ -1156,7 +1347,13 @@ def register_meta_tools(
 
     if _enabled is None or "get_config" in _enabled:
 
-        @mcp.tool(**tool_options("Show current runtime configuration.", read_only=True))
+        @mcp.tool(
+            **tool_options(
+                "Show current runtime configuration, loaded Guard Policy, AI Evaluator "
+                "settings, safe config keys, and restricted settings.",
+                read_only=True,
+            )
+        )
         async def get_config() -> str:
             started_at = time.perf_counter()
             snapshot = current_config()

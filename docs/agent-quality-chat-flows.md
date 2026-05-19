@@ -11,6 +11,12 @@ secret handling, and approval rules remain separate from advisory output.
 Current provider-response parsing is local and fail-safe: invalid or unsafe provider-shaped advice
 falls back to deterministic guidance, and parse telemetry is visible in `bridge_status`.
 
+For IDE MCP clients that do not automatically inject Nulm's setup prompt, start with
+`nulm_assist(goal=..., target=...)`. It exists so users do not need a separate IDE skill just to
+route requests such as "use AI Council", "enable AI Evaluator", "run plan quality review", or
+"check Guard Policy". AI Evaluator and Guard Policy are runtime guard layers rather than separate
+execution tools, so `nulm_assist`, `bridge_status`, and `get_config` explain how they are active.
+
 ## Public Readiness
 
 Simple prompt:

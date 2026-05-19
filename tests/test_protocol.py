@@ -2427,10 +2427,31 @@ class TestAuditTools:
         payload = parse_payload(await mcp_server.tools_overview())
 
         assert payload["ok"] is True
+        assert "nulm_assist" in payload["details"]["groups"]["feature_routing"]
+        assert "run_council_session" in payload["details"]["groups"]["agent_quality"]["ai_council"]
+        assert "guard_policy" in payload["details"]["groups"]["runtime_guards"]
         assert "compact_user_intent" in payload["details"]["groups"]["low_cost_context"]
         assert "narrow_context" in payload["details"]["groups"]["low_cost_context"]
         assert "list_tasks" in payload["details"]["groups"]["control_plane"]
         assert payload["details"]["notes"]
+
+    async def test_nulm_assist_routes_advanced_features_without_skill(self, temp_project):
+        payload = parse_payload(
+            await mcp_server.nulm_assist(
+                "Use AI Council, AI Evaluator, plan quality review, and Guard Policy",
+                target="src/",
+            )
+        )
+
+        assert payload["ok"] is True
+        details = payload["details"]
+        route_tools = {route["tool"] for route in details["routes"]}
+        assert "run_council_session" in route_tools
+        assert "bridge_status" in route_tools
+        assert "get_config" in route_tools
+        assert "plan_quality_review" in route_tools
+        assert details["runtime_layers"]["ai_evaluator"]["how_to_use"]
+        assert details["why_skill_was_needed_before"]
 
 
 class TestConfigTools:

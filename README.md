@@ -60,12 +60,16 @@ during the alpha cycle.
 ## Quick Start
 
 ```bash
-pipx install nulm
+pipx install "nulm[recommended]"
 nulm init
 nulm install
 ```
 
 Runs an interactive setup — choose detailed or simple, AI provider, approval mode, and more. Restart Claude Desktop and start a new conversation.
+
+The recommended extra is the easiest path for normal IDE/Desktop use: core file tools, guarded
+shell, URL reading, PDF/image reading, token helpers, and Tree-sitter indexing. You do not need
+Nulm skills for the basic read/list/search/shell/patch workflow.
 
 For quick setup with defaults:
 
@@ -105,10 +109,16 @@ shell commands unless you opt into local auto-approval, and records structured a
   `move_file`, `copy_path`, `search_in_files`
 - **Targeted edits**: `patch_file`, `preview_patch` with SEARCH/REPLACE patches
 - **Shell execution**: `run_shell` through a guarded `shell=False` execution path
+- **Common readers**: `read_url`, `read_pdf`, and `read_image` are in the default `standard`
+  profile; PDF/image readers need `nulm[recommended]` or `nulm[multi-format]`
 - **Code indexing**: `index_codebase`, `find_relevant_files` — symbolic source index and relevance
   ranking without embeddings
 - **Workflow helpers**: `run_workflow`, `run_agent_loop_step`, `run_agent_loop_session` —
   structured review, explain, test, todo, quality, and bounded agent-loop flows
+- **Feature routing for IDEs**: `nulm_assist` maps natural-language requests for AI Council,
+  AI Evaluator, Guard Policy, plan review, result review, setup, and token use to the right tools
+- **AI Council**: `run_council_session` is available in the default `standard` profile as a
+  read-only multi-role planning debate
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
 - **Audit logging**: tool calls recorded as structured JSONL
 - **Policy engine**: custom guard rules, team RBAC, deterministic policy replay, policy diff for
@@ -122,8 +132,8 @@ shell commands unless you opt into local auto-approval, and records structured a
 
 ### Optional Extras
 
-These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`, or
-`nulm[smart]`.
+These require installing extras such as `nulm[recommended]`, `nulm[treesitter]`,
+`nulm[multi-format]`, or `nulm[smart]`.
 
 - **Tree-sitter indexing**: optional parser-backed indexing for supported languages
 - **Multi-format readers**: `read_image`, `read_pdf`, `read_url` with optional image/PDF
@@ -134,8 +144,6 @@ These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`
 
 ### Planned / Experimental
 
-- **AI council**: `run_council_session` and `/council` run role-based planning prompts and return
-  `steps_json` for approval-gated execution. It is a planning aid, not an autonomous implementer.
 - **Bridge-internal AI routing**: optional model profiles and keyword/task rules choose providers
   for Bridge advisory calls while keeping API keys in environment variables.
 - **Adaptive proposals**: `list_pending_proposals`, `get_proposal_details`, `accept_proposal`, and
@@ -145,9 +153,8 @@ These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`
   not silently change policy decisions.
 - **Full-profile meta-agent tools**: local plans, approach exploration, deterministic self-critique,
   and git-backed checkpoints.
-- **Full-profile council and proposal tools**: role-based planning sessions, model routing
-  experiments, and adaptive proposal review stay out of the default tool profile until their
-  workflows are clearer.
+- **Full-profile proposal tools**: adaptive proposal review stays out of the default tool profile
+  until its workflow is clearer.
 - **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
   safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
   advice parsing telemetry.
@@ -157,7 +164,7 @@ These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`
 ## Installation
 
 ```bash
-pipx install nulm
+pipx install "nulm[recommended]"
 nulm install         # interactive setup
 nulm install --simple # quick setup with defaults
 ```
@@ -168,6 +175,7 @@ nulm install --simple # quick setup with defaults
 Optional extras are available when installing from an environment that supports extras:
 
 ```bash
+pip install "nulm[recommended]"  # practical local IDE/Desktop feature set
 pip install "nulm[treesitter]"    # optional Tree-sitter indexing
 pip install "nulm[multi-format]"  # optional image/PDF reading
 pip install "nulm[smart]"         # token-aware helpers
@@ -179,9 +187,10 @@ pip install "nulm[tracing]"       # experimental OpenTelemetry tracing plumbing
 pip install "nulm[streaming]"     # experimental SSE streaming helpers
 ```
 
-The first five extras above are the practical user-facing ones for most local installs. Redis,
-observability, tracing, and streaming are packaged for integration work, but they are not required
-for the normal MCP server path and should be treated as experimental in this alpha.
+The `recommended` extra bundles the practical user-facing extras for most local installs. Redis,
+observability, tracing, streaming, encrypted memory, and legacy FastAPI/Uvicorn support are packaged
+for integration work, but they are not required for the normal MCP server path and should be treated
+as experimental in this alpha.
 
 See [docs/optional-dependencies.md](docs/optional-dependencies.md) for the full extras matrix.
 

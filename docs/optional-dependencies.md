@@ -41,6 +41,7 @@ Install optional capabilities by selecting the extra that matches the feature yo
 | `treesitter` | `pip install "nulm[treesitter]"` | Tree-sitter-backed code indexing. |
 | `multi-format` | `pip install "nulm[multi-format]"` | Image/PDF reading through Pillow and PyPDF2. |
 | `smart` | `pip install "nulm[smart]"` | Token-aware helpers using tiktoken and charset detection. |
+| `recommended` | `pip install "nulm[recommended]"` | The practical local IDE set: Tree-sitter indexing, token helpers, image/PDF reading, and YAML policy files. |
 | `memory` | `pip install "nulm[memory]"` | Encrypted local memory support through cryptography. |
 | `policy-yaml` | `pip install "nulm[policy-yaml]"` | YAML guard-policy files through PyYAML. |
 | `redis` | `pip install "nulm[redis]"` | Experimental Redis-backed distributed cache support. |
@@ -48,6 +49,10 @@ Install optional capabilities by selecting the extra that matches the feature yo
 | `tracing` | `pip install "nulm[tracing]"` | OpenTelemetry tracing integration. |
 | `streaming` | `pip install "nulm[streaming]"` | SSE streaming helpers through sse-starlette. |
 | `legacy` | `pip install "nulm[legacy]"` | Legacy FastAPI/Uvicorn integration kept for compatibility. |
+
+For most desktop or IDE MCP users, `nulm[recommended]` is the easiest install path. It keeps
+experimental server features out of the default runtime while making the common readers and code
+indexing helpers available without picking extras one by one.
 
 The `redis` extra is optional and experimental for this alpha. Core Nulm usage must not require a
 Redis server, and Redis connection failures must fall back safely to local/no-cache behavior.
