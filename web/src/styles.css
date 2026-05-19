@@ -9,6 +9,7 @@
   --danger: #b91c1c;
   --success: #15803d;
   --pending: #1d4ed8;
+  --warning: #b45309;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -79,7 +80,8 @@ h2 {
 }
 
 .metric,
-section {
+section,
+.notice {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -108,6 +110,28 @@ section {
   padding: 14px;
 }
 
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.tab {
+  min-width: 92px;
+}
+
+.tab.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -131,6 +155,8 @@ code {
   font-size: 12px;
 }
 
+input,
+select,
 button {
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -139,6 +165,12 @@ button {
   padding: 5px 8px;
   cursor: pointer;
   font-size: 12px;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 30px;
 }
 
 button.primary {
@@ -155,6 +187,12 @@ button.danger {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.control-stack {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
 }
 
 .empty {
@@ -180,6 +218,15 @@ button.danger {
   background: var(--accent);
 }
 
+.status-queued,
+.status-planning,
+.status-in_progress,
+.status-approval_pending,
+.status-testing,
+.status-blocked {
+  background: var(--warning);
+}
+
 .status-completed {
   background: var(--success);
 }
@@ -195,6 +242,7 @@ button.danger {
 .timestamp {
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 textarea {
@@ -217,12 +265,41 @@ textarea {
   padding: 10px 0;
 }
 
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.notice {
+  color: var(--muted);
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+.notice.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 @media (max-width: 820px) {
   header {
     display: block;
   }
 
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 

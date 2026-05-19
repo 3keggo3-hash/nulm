@@ -12,12 +12,13 @@ import mimetypes
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from claude_bridge.control_plane import (
     ControlPlaneApproval,
     ControlPlaneTask,
+    TaskStatus,
     create_message,
     control_plane_dir,
     list_approvals,
@@ -32,9 +33,24 @@ from claude_bridge.config import update_runtime_config
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
 MAX_ACTION_BODY_BYTES = 8192
+_DASHBOARD_RECORD_LIMIT = 50
+_RECENT_TOOL_CALL_LIMIT = 30
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 _DASHBOARD_WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
 _DASHBOARD_INDEX = "index.html"
+_TASK_STATUSES: set[str] = {
+    "pending",
+    "queued",
+    "planning",
+    "running",
+    "in_progress",
+    "blocked",
+    "approval_pending",
+    "testing",
+    "failed",
+    "completed",
+    "cancelled",
+}
 
 
 class ControlPlaneDashboardError(ValueError):
@@ -51,12 +67,24 @@ def build_dashboard_payload(*, limit: int = 50) -> dict[str, Any]:
     tasks = list_tasks(limit=limit)
     approvals = list_approvals(limit=limit)
     return {
-        "schema_version": "control_plane.dashboard.v1",
+        "schema_version": "control_plane.dashboard.v2",
         "state_dir": str(control_plane_dir()),
         "summary": summarize_tasks(),
         "tasks": tasks,
         "approvals": approvals,
         "messages": list_messages(limit=limit),
+        "workspace": _dashboard_workspace(),
+        "activity": _safe_dashboard_section(_dashboard_activity, "activity"),
+        "usage": _safe_dashboard_section(_dashboard_usage, "usage"),
+        "recent_tool_calls": _safe_dashboard_section(
+            _dashboard_recent_tool_calls,
+            "recent_tool_calls",
+        ),
+        "health": {
+            "available": True,
+            "task_limit": limit,
+            "recent_tool_call_limit": _RECENT_TOOL_CALL_LIMIT,
+        },
     }
 
 
@@ -65,8 +93,25 @@ def apply_dashboard_action(
     record_id: str,
     *,
     reason: str = "",
+    status: str = "",
 ) -> ControlPlaneTask | ControlPlaneApproval | dict[str, Any]:
     """Apply a supported dashboard mutation to a task or approval."""
+    if action == "update-task-status":
+        if status not in _TASK_STATUSES:
+            raise ControlPlaneDashboardError(f"Unsupported task status '{status}'")
+        task = update_task_status(
+            record_id,
+            cast(TaskStatus, status),
+            summary=reason or None,
+            metadata=(
+                {"dashboard_reason": reason, "updated_by": "dashboard"}
+                if reason
+                else {"updated_by": "dashboard"}
+            ),
+        )
+        if task is None:
+            raise ControlPlaneDashboardError(f"Task '{record_id}' not found")
+        return task
     if action == "cancel-task":
         task = update_task_status(
             record_id,
@@ -216,6 +261,24 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 )
                 self._send_json({"ok": True, "record": message_record})
                 return
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "tasks":
+                _, collection, record_id, action = parts
+                if collection == "tasks" and action == "status":
+                    reason = _string_body_value(body, "reason")
+                    status_value = _string_body_value(body, "status")
+                    try:
+                        action_record = apply_dashboard_action(
+                            "update-task-status",
+                            record_id,
+                            reason=reason,
+                            status=status_value,
+                        )
+                    except ControlPlaneDashboardError as exc:
+                        error_status = 400 if "Unsupported task status" in str(exc) else 404
+                        self._send_json({"error": str(exc)}, status=error_status)
+                        return
+                    self._send_json({"ok": True, "record": action_record})
+                    return
             if len(parts) != 4 or parts[0] != "api":
                 self._send_json({"error": "not_found"}, status=404)
                 return
@@ -317,6 +380,119 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
             return True
 
     return ControlPlaneDashboardHandler
+
+
+def _dashboard_workspace() -> dict[str, Any]:
+    from claude_bridge.config import current_config
+
+    config = current_config()
+    return {
+        "available": True,
+        "active_project_dir": str(config.get("project_dir", "")),
+        "allowed_roots": [str(root) for root in config.get("allowed_roots", [])],
+        "approval": {
+            "auto_approve": bool(config.get("auto_approve", False)),
+            "client_managed_approval": bool(config.get("client_managed_approval", False)),
+            "approval_preset": str(config.get("approval_preset", "")),
+            "auto_approve_risk_level": str(config.get("auto_approve_risk_level", "")),
+        },
+        "profile": {
+            "tool_profile": str(config.get("tool_profile", "")),
+            "context_budget_profile": str(config.get("context_budget_profile", "")),
+            "max_parallel": int(config.get("max_parallel", 0) or 0),
+        },
+    }
+
+
+def _dashboard_activity() -> dict[str, Any]:
+    from claude_bridge.audit import summarize_session
+
+    summary = summarize_session(limit=_DASHBOARD_RECORD_LIMIT)
+    return {
+        "available": True,
+        "session_id": summary.get("session_id", ""),
+        "total_records": summary.get("total_records", 0),
+        "returned_records": summary.get("returned_records", 0),
+        "failure_count": summary.get("failure_count", 0),
+        "tool_counts": summary.get("tool_counts", {}),
+        "activity": summary.get("activity", {}),
+        "anomaly_counts": summary.get("anomaly_counts", {}),
+    }
+
+
+def _dashboard_usage() -> dict[str, Any]:
+    from claude_bridge.audit import summarize_session
+
+    summary = summarize_session(limit=_DASHBOARD_RECORD_LIMIT)
+    telemetry = summary.get("telemetry", {})
+    top_tools: list[dict[str, Any]] = []
+    if isinstance(telemetry, dict):
+        token_totals = telemetry.get("tool_estimated_tokens", {})
+        if isinstance(token_totals, dict):
+            top_tools = [
+                {"tool_name": str(tool_name), "estimated_tokens": int(tokens)}
+                for tool_name, tokens in sorted(
+                    token_totals.items(),
+                    key=lambda item: int(item[1]),
+                    reverse=True,
+                )
+            ][:10]
+    return {
+        "available": True,
+        "session_id": summary.get("session_id", ""),
+        "telemetry": telemetry if isinstance(telemetry, dict) else {},
+        "top_cost_tools": top_tools,
+    }
+
+
+def _dashboard_recent_tool_calls() -> dict[str, Any]:
+    from claude_bridge.audit import get_recent_tool_calls
+
+    recent = get_recent_tool_calls(limit=_RECENT_TOOL_CALL_LIMIT)
+    records = recent.get("records", [])
+    safe_records = [_summarize_tool_call(record) for record in records if isinstance(record, dict)]
+    return {
+        "available": True,
+        "session_id": recent.get("session_id", ""),
+        "total_records": recent.get("total_records", 0),
+        "returned_records": len(safe_records),
+        "query_strategy": recent.get("query_strategy", ""),
+        "records": safe_records,
+    }
+
+
+def _summarize_tool_call(record: dict[str, Any]) -> dict[str, Any]:
+    result = record.get("result", {})
+    result_summary = result if isinstance(result, dict) else {}
+    telemetry = record.get("telemetry", {})
+    telemetry_summary = telemetry if isinstance(telemetry, dict) else {}
+    return {
+        "record_id": record.get("record_id", ""),
+        "timestamp": record.get("timestamp", ""),
+        "session_id": record.get("session_id", ""),
+        "tool_name": record.get("tool_name", "unknown"),
+        "duration_ms": record.get("duration_ms", 0),
+        "ok": result_summary.get("ok"),
+        "message": result_summary.get("message", ""),
+        "code": result_summary.get("code", ""),
+        "decision_action": record.get("decision_action", ""),
+        "decision_source": record.get("decision_source", ""),
+        "decision_risk_level": record.get("decision_risk_level", ""),
+        "telemetry": {
+            "estimated_total_tokens": telemetry_summary.get("estimated_total_tokens", 0),
+            "result_truncated": bool(telemetry_summary.get("result_truncated", False)),
+        },
+    }
+
+
+def _safe_dashboard_section(builder: Callable[[], dict[str, Any]], name: str) -> dict[str, Any]:
+    try:
+        section = builder()
+    except Exception as exc:  # pragma: no cover - defensive local dashboard resilience
+        return {"available": False, "name": name, "error": str(exc)}
+    if isinstance(section, dict):
+        return section
+    return {"available": False, "name": name, "error": "invalid_dashboard_section"}
 
 
 def _string_body_value(body: dict[str, Any], key: str) -> str:

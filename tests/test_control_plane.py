@@ -174,10 +174,15 @@ def test_control_plane_dashboard_payload_and_actions(monkeypatch, tmp_path: Path
 
     payload = control_plane_dashboard.build_dashboard_payload()
     json.dumps(payload)
-    assert payload["schema_version"] == "control_plane.dashboard.v1"
+    assert payload["schema_version"] == "control_plane.dashboard.v2"
     assert payload["tasks"][0]["id"] == task["id"]
     assert payload["approvals"][0]["id"] == approval["id"]
     assert payload["messages"] == []
+    assert payload["workspace"]["available"] is True
+    assert "activity" in payload
+    assert "usage" in payload
+    assert "recent_tool_calls" in payload
+    assert payload["health"]["available"] is True
 
     cancelled = control_plane_dashboard.apply_dashboard_action(
         "cancel-task",
@@ -188,6 +193,37 @@ def test_control_plane_dashboard_payload_and_actions(monkeypatch, tmp_path: Path
 
     assert cancelled["status"] == "cancelled"
     assert approved["status"] == "approved"
+
+
+def test_control_plane_dashboard_updates_task_status(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    task = control_plane.create_task("Review status update")
+
+    updated = control_plane_dashboard.apply_dashboard_action(
+        "update-task-status",
+        task["id"],
+        status="blocked",
+        reason="waiting on review",
+    )
+
+    assert updated["status"] == "blocked"
+    assert updated["summary"] == "waiting on review"
+    assert updated["metadata"]["updated_by"] == "dashboard"
+    assert updated["metadata"]["dashboard_reason"] == "waiting on review"
+
+
+def test_control_plane_dashboard_rejects_invalid_task_status(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    task = control_plane.create_task("Reject bad status")
+
+    with pytest.raises(control_plane_dashboard.ControlPlaneDashboardError):
+        control_plane_dashboard.apply_dashboard_action(
+            "update-task-status",
+            task["id"],
+            status="not-a-status",
+        )
 
 
 def test_control_plane_dashboard_http_requires_token(monkeypatch, tmp_path: Path) -> None:
@@ -217,6 +253,22 @@ def test_control_plane_dashboard_http_requires_token(monkeypatch, tmp_path: Path
             payload = json.loads(response.read().decode("utf-8"))
         assert payload["tasks"][0]["title"] == "Watch dashboard"
         assert "messages" in payload
+        assert "workspace" in payload
+        assert "recent_tool_calls" in payload
+
+        task_id = payload["tasks"][0]["id"]
+        status_request = Request(
+            f"{base_url}/api/tasks/{task_id}/status?token={token}",
+            data=json.dumps({"status": "blocked", "reason": "dashboard validation"}).encode(
+                "utf-8"
+            ),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(status_request, timeout=2) as response:
+            status_payload = json.loads(response.read().decode("utf-8"))
+        assert status_payload["ok"] is True
+        assert status_payload["record"]["status"] == "blocked"
 
         message_request = Request(
             f"{base_url}/api/messages?token={token}",
