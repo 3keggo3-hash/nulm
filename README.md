@@ -454,7 +454,7 @@ nulm benchmark --query "login auth" --path src --json
 
 | Issue | Fix |
 |---|---|
-| No file access | Restart or reload the MCP client; try "Use `workspace_status`" |
+| Claude says it cannot access local files | Ask it to check the Nulm MCP tools and call `workspace_status()` first; restart or reload the MCP client if tools are missing. |
 | macOS: Operation not permitted | Use `/usr/bin/env` with the module command in config. |
 | Tools not appearing | Check the client MCP config is valid JSON; verify the Python environment. |
 | Claude Desktop logs | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |

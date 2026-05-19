@@ -201,6 +201,18 @@ def test_control_plane_dashboard_http_requires_token(monkeypatch, tmp_path: Path
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_address[1]}"
     try:
+        with urlopen(f"{base_url}/", timeout=2) as response:
+            html = response.read().decode("utf-8")
+        assert '<div id="app"></div>' in html
+
+        with urlopen(f"{base_url}/dashboard-config.js", timeout=2) as response:
+            config_script = response.read().decode("utf-8")
+        assert token in config_script
+
+        with urlopen(f"{base_url}/src/app.js", timeout=2) as response:
+            app_js = response.read().decode("utf-8")
+        assert "loadDashboard" in app_js
+
         with urlopen(f"{base_url}/api/status?token={token}", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
         assert payload["tasks"][0]["title"] == "Watch dashboard"

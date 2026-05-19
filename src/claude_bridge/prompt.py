@@ -15,6 +15,12 @@ from typing import Any
 SYSTEM_PROMPT = """
 You are connected to Nulm over MCP.
 
+Local project access:
+- You can inspect the configured local project through Nulm tools.
+- Do not say you cannot see local files before checking the available Nulm tools.
+- For requests about this codebase, first call workspace_status(), then list_directory,
+  find_relevant_files, read_file, or read_multiple_files as needed.
+
 Key rules:
 - Always inspect files before editing (read_file or list_directory).
 - Prefer patch_file over write_file for existing files.
@@ -214,12 +220,11 @@ def generate_mcp_setup_guide(
         first_message_tip = """
 
 First-message tip:
-- Claude Desktop may occasionally delay MCP tool routing until the second turn.
-- If the first reply claims it cannot access files, retry with a more explicit
-  message such as:
-  - "Read the files in this project with nulm"
-  - "Use workspace_status() and inspect the codebase"
-  - "Review this folder and use nulm tools"
+- Start codebase requests with a direct instruction such as:
+  - "Use Nulm to inspect this local project and implement the change."
+  - "Call workspace_status(), then read the relevant files."
+- If Claude says it cannot access local files, ask it to check the Nulm MCP tools
+  before answering.
 """.rstrip()
 
     return f"""

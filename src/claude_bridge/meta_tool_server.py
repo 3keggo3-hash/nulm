@@ -1061,6 +1061,14 @@ def register_meta_tools(
                 details={
                     "recommended_starters": [
                         {
+                            "intent": "inspect_current_project",
+                            "prompt": "Use Nulm to inspect this local project.",
+                            "use": (
+                                "workspace_status, then list_directory or "
+                                "find_relevant_files before read_file."
+                            ),
+                        },
+                        {
                             "intent": "public_ready_check",
                             "prompt": "Use Nulm to check project public-readiness.",
                             "use": 'run_workflow(mode="quality") plus review_result_quality.',
