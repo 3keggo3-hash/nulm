@@ -108,7 +108,10 @@ does not bypass file, shell, approval, or guard-policy checks.
 
 Model profiles store provider names, model names, and `api_key_env` references only. Raw provider
 keys must be supplied through environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-or `DEEPSEEK_API_KEY`. Config inspection redacts key presence and never returns secret values.
+`DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`,
+`COHERE_API_KEY`, `XAI_API_KEY`, `TOGETHER_API_KEY`, `OPENROUTER_API_KEY`,
+`PERPLEXITY_API_KEY`, or `FIREWORKS_API_KEY`. Config inspection redacts key presence and never
+returns secret values.
 
 Custom cloud provider `base_url` values must use HTTPS and must not point to private/internal hosts
 or hostnames resolving to private/internal addresses. Ollama routing is intentionally limited to

@@ -65,7 +65,7 @@ Feature matrix for Nulm v0.1.1. Tracks implementation maturity and test coverage
 | CLI commands | `cli.py` | Stable | High | install, doctor, benchmark, audit |
 | Control plane | `control_plane.py` | Beta | Medium | task/approval state management |
 | Dashboard | `control_plane_dashboard.py` | Beta | Medium | localhost operations UI with tasks, approvals, messages, workspace, and recent activity |
-| AI evaluator | `ai_evaluator.py` | Beta | Medium | local/anthropic/openai/ollama providers |
+| AI evaluator | `ai_evaluator.py` | Beta | Medium | local plus major cloud and OpenAI-compatible providers |
 
 ## Observability
 

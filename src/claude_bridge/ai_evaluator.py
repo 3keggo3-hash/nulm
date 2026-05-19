@@ -35,6 +35,77 @@ from claude_bridge.tool_utils import _mask_secrets
 
 _AI_PROVIDER_MAX_RESPONSE_BYTES = 65536
 _AI_LATENCY_SAMPLES_MS: deque[float] = deque(maxlen=100)
+_OPENAI_COMPAT_PROVIDER_CONFIG: dict[str, dict[str, str]] = {
+    "openai": {
+        "label": "OpenAI",
+        "env": "OPENAI_API_KEY",
+        "default_model": "gpt-4o-mini",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "env": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-chat",
+        "endpoint": "https://api.deepseek.com/v1/chat/completions",
+    },
+    "minimax": {
+        "label": "MiniMax",
+        "env": "MINIMAX_API_KEY",
+        "default_model": "MiniMax-M2.5",
+        "endpoint": "https://api.minimax.io/v1/chat/completions",
+    },
+    "google": {
+        "label": "Google Gemini",
+        "env": "GEMINI_API_KEY",
+        "default_model": "gemini-2.5-flash",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    },
+    "groq": {
+        "label": "Groq",
+        "env": "GROQ_API_KEY",
+        "default_model": "llama-3.1-8b-instant",
+        "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+    },
+    "mistral": {
+        "label": "Mistral",
+        "env": "MISTRAL_API_KEY",
+        "default_model": "mistral-small-latest",
+        "endpoint": "https://api.mistral.ai/v1/chat/completions",
+    },
+    "xai": {
+        "label": "xAI",
+        "env": "XAI_API_KEY",
+        "default_model": "grok-4.3",
+        "endpoint": "https://api.x.ai/v1/chat/completions",
+    },
+    "together": {
+        "label": "Together AI",
+        "env": "TOGETHER_API_KEY",
+        "default_model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "endpoint": "https://api.together.xyz/v1/chat/completions",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "env": "OPENROUTER_API_KEY",
+        "default_model": "openai/gpt-4o-mini",
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+    },
+    "perplexity": {
+        "label": "Perplexity",
+        "env": "PERPLEXITY_API_KEY",
+        "default_model": "sonar-pro",
+        "endpoint": "https://api.perplexity.ai/chat/completions",
+    },
+    "fireworks": {
+        "label": "Fireworks",
+        "env": "FIREWORKS_API_KEY",
+        "default_model": "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        "endpoint": "https://api.fireworks.ai/inference/v1/chat/completions",
+    },
+}
+AI_EVALUATOR_PROVIDERS: frozenset[str] = frozenset(
+    {"local", "anthropic", "ollama", "cohere", *_OPENAI_COMPAT_PROVIDER_CONFIG}
+)
 
 
 class _ResponseTruncatedError(Exception):
@@ -327,6 +398,7 @@ def create_provider(
     base_url: str = "",
     timeout: int = 30,
 ) -> Provider:
+    provider_name = provider_name.lower()
     if provider_name == "local":
         return LocalEvaluatorProvider()
     if provider_name == "anthropic":
@@ -341,28 +413,50 @@ def create_provider(
             model=model or "claude-3-haiku-20240307",
             timeout=timeout,
         )
-    if provider_name == "openai":
-        key = (api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
-        if not key:
-            raise ValueError(
-                "OpenAI provider requires an API key "
-                "(set OPENAI_API_KEY or ai_evaluator_api_key)"
-            )
-        return OpenAIProvider(api_key=key, model=model or "gpt-4o-mini", timeout=timeout)
     if provider_name == "ollama":
         return OllamaProvider(
             base_url=(base_url or "http://localhost:11434").strip(),
             model=model or "llama3",
             timeout=timeout,
         )
-    if provider_name == "deepseek":
-        key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
+    if provider_name == "cohere":
+        key = (api_key or os.environ.get("COHERE_API_KEY", "")).strip()
         if not key:
             raise ValueError(
-                "DeepSeek provider requires an API key "
-                "(set DEEPSEEK_API_KEY or ai_evaluator_api_key)"
+                "Cohere provider requires an API key "
+                "(set COHERE_API_KEY or ai_evaluator_api_key)"
             )
-        return DeepSeekProvider(api_key=key, model=model or "deepseek-chat", timeout=timeout)
+        return CohereProvider(api_key=key, model=model or "command-a-03-2025", timeout=timeout)
+    if provider_name in _OPENAI_COMPAT_PROVIDER_CONFIG:
+        info = _OPENAI_COMPAT_PROVIDER_CONFIG[provider_name]
+        key = (api_key or os.environ.get(info["env"], "")).strip()
+        if not key:
+            raise ValueError(
+                f"{info['label']} provider requires an API key "
+                f"(set {info['env']} or ai_evaluator_api_key)"
+            )
+        endpoint = _chat_completions_endpoint(base_url, info["endpoint"])
+        if provider_name == "openai":
+            return OpenAIProvider(
+                api_key=key,
+                model=model or info["default_model"],
+                timeout=timeout,
+                endpoint=endpoint,
+            )
+        if provider_name == "deepseek":
+            return DeepSeekProvider(
+                api_key=key,
+                model=model or info["default_model"],
+                timeout=timeout,
+                endpoint=endpoint,
+            )
+        return OpenAICompatibleProvider(
+            provider_label=info["label"],
+            api_key=key,
+            model=model or info["default_model"],
+            endpoint=endpoint,
+            timeout=timeout,
+        )
     raise ValueError(f"Unknown provider: {provider_name!r}")
 
 
@@ -476,17 +570,26 @@ class AnthropicProvider(Provider):
         return _parse_json_response(content)
 
 
-class OpenAIProvider(Provider):
+def _chat_completions_endpoint(base_url: str, default_endpoint: str) -> str:
+    if not base_url:
+        return default_endpoint
+    return base_url.rstrip("/") + "/chat/completions"
+
+
+class OpenAICompatibleProvider(Provider):
     def __init__(
         self,
         api_key: str,
         model: str = "gpt-4o-mini",
         timeout: int = 30,
+        endpoint: str = "https://api.openai.com/v1/chat/completions",
+        provider_label: str = "OpenAI",
     ):
         self.api_key = api_key.strip()
         self.model = model
         self.timeout = timeout
-        self._endpoint = "https://api.openai.com/v1/chat/completions"
+        self.provider_label = provider_label
+        self._endpoint = endpoint
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
         body = json.dumps(
@@ -514,7 +617,9 @@ class OpenAIProvider(Provider):
                 reason="AI evaluator response truncated (exceeded 65536 bytes)"
             )
         except Exception as exc:
-            return EvaluationResponse.fail_closed(reason=_provider_error_reason("OpenAI", exc))
+            return EvaluationResponse.fail_closed(
+                reason=_provider_error_reason(self.provider_label, exc)
+            )
 
     def _call_api(self, body: bytes) -> EvaluationResponse:
         req = urllib.request.Request(
@@ -535,6 +640,23 @@ class OpenAIProvider(Provider):
             data = json.loads(raw_read.decode("utf-8"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
         return _parse_json_response(content)
+
+
+class OpenAIProvider(OpenAICompatibleProvider):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        timeout: int = 30,
+        endpoint: str = "https://api.openai.com/v1/chat/completions",
+    ):
+        super().__init__(
+            api_key=api_key,
+            model=model,
+            timeout=timeout,
+            endpoint=endpoint,
+            provider_label="OpenAI",
+        )
 
 
 def _validate_provider_url(url: str) -> None:
@@ -620,17 +742,40 @@ class DeepSeekProvider(Provider):
         api_key: str,
         model: str = "deepseek-chat",
         timeout: int = 30,
+        endpoint: str = "https://api.deepseek.com/v1/chat/completions",
+    ):
+        self._provider = OpenAICompatibleProvider(
+            provider_label="DeepSeek",
+            api_key=api_key,
+            model=model,
+            timeout=timeout,
+            endpoint=endpoint,
+        )
+        self.api_key = self._provider.api_key
+        self.model = self._provider.model
+        self.timeout = self._provider.timeout
+        self._endpoint = self._provider._endpoint
+
+    def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+        return self._provider.evaluate(request)
+
+
+class CohereProvider(Provider):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "command-a-03-2025",
+        timeout: int = 30,
     ):
         self.api_key = api_key.strip()
         self.model = model
         self.timeout = timeout
-        self._endpoint = "https://api.deepseek.com/v1/chat/completions"
+        self._endpoint = "https://api.cohere.com/v2/chat"
 
     def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
         body = json.dumps(
             {
                 "model": self.model,
-                "max_tokens": 256,
                 "messages": [
                     {
                         "role": "system",
@@ -652,7 +797,7 @@ class DeepSeekProvider(Provider):
                 reason="AI evaluator response truncated (exceeded 65536 bytes)"
             )
         except Exception as exc:
-            return EvaluationResponse.fail_closed(reason=_provider_error_reason("DeepSeek", exc))
+            return EvaluationResponse.fail_closed(reason=_provider_error_reason("Cohere", exc))
 
     def _call_api(self, body: bytes) -> EvaluationResponse:
         req = urllib.request.Request(
@@ -671,7 +816,14 @@ class DeepSeekProvider(Provider):
                     f"Response exceeded {_AI_PROVIDER_MAX_RESPONSE_BYTES} bytes"
                 )
             data = json.loads(raw_read.decode("utf-8"))
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        message = data.get("message", {})
+        raw_content = message.get("content", "")
+        if isinstance(raw_content, list):
+            content = "".join(
+                str(item.get("text", "")) for item in raw_content if isinstance(item, dict)
+            )
+        else:
+            content = str(raw_content)
         return _parse_json_response(content)
 
 

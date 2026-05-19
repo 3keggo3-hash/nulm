@@ -16,6 +16,26 @@ from typing import Any, Sequence, cast
 from claude_bridge.ai_router import parse_model_profiles, parse_routing_rules
 
 _ENV_PREFIX = "CLAUDE_BRIDGE_"
+AI_EVALUATOR_PROVIDERS: frozenset[str] = frozenset(
+    {
+        "local",
+        "openai",
+        "anthropic",
+        "ollama",
+        "deepseek",
+        "minimax",
+        "google",
+        "groq",
+        "mistral",
+        "cohere",
+        "xai",
+        "together",
+        "openrouter",
+        "perplexity",
+        "fireworks",
+    }
+)
+_AI_EVALUATOR_PROVIDER_LIST = "/".join(sorted(AI_EVALUATOR_PROVIDERS))
 
 APPROVAL_PRESETS: dict[str, dict[str, Any]] = {
     "read-only": {
@@ -360,10 +380,8 @@ def validate_config_value(key: str, value: Any) -> None:
         if not isinstance(value, int) or value <= 0:
             raise ValueError(f"{key} must be a positive integer")
     elif key == "ai_evaluator_provider":
-        if value not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
-            raise ValueError(
-                "ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek"
-            )
+        if value not in AI_EVALUATOR_PROVIDERS:
+            raise ValueError(f"ai_evaluator_provider must be one of {_AI_EVALUATOR_PROVIDER_LIST}")
     elif key == "ai_evaluator_fallback_action":
         if value not in {"deny", "ask"}:
             raise ValueError("ai_evaluator_fallback_action must be one of deny/ask")
@@ -499,9 +517,9 @@ def apply_config(
         raise ValueError(f"Unknown tool profile: {tool_profile}. " f"Available profiles: {valid}.")
     if not isinstance(shell_timeout, int) or shell_timeout <= 0:
         raise ValueError(f"shell_timeout must be a positive integer, got {shell_timeout!r}")
-    if ai_evaluator_provider not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
+    if ai_evaluator_provider not in AI_EVALUATOR_PROVIDERS:
         raise ValueError(
-            f"ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek, "
+            f"ai_evaluator_provider must be one of {_AI_EVALUATOR_PROVIDER_LIST}, "
             f"got {ai_evaluator_provider!r}"
         )
     if not isinstance(ai_evaluator_timeout, int) or ai_evaluator_timeout <= 0:
@@ -997,9 +1015,9 @@ def update_runtime_config(key: str, value: Any) -> dict[str, Any]:
 
         if key == "ai_evaluator_provider":
             provider = str(value).lower()
-            if provider not in {"local", "openai", "anthropic", "ollama", "deepseek"}:
+            if provider not in AI_EVALUATOR_PROVIDERS:
                 raise ValueError(
-                    "ai_evaluator_provider must be one of local/openai/anthropic/ollama/deepseek"
+                    f"ai_evaluator_provider must be one of {_AI_EVALUATOR_PROVIDER_LIST}"
                 )
             _CONFIG[key] = provider
             return current_config()

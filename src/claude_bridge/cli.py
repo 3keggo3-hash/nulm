@@ -1294,7 +1294,12 @@ def init(
         None, "--roots", "-r", help="Comma-separated allowed root paths"
     ),
     ai_provider: str | None = typer.Option(
-        None, "--ai-provider", help="AI evaluator: local|openai|anthropic|ollama"
+        None,
+        "--ai-provider",
+        help=(
+            "AI evaluator: local|openai|anthropic|ollama|deepseek|minimax|google|groq|"
+            "mistral|cohere|xai|together|openrouter|perplexity|fireworks"
+        ),
     ),
     non_interactive: bool = typer.Option(
         False, "--non-interactive", "-y", help="Skip prompts, use defaults/options"
@@ -1345,13 +1350,29 @@ def init(
 
         provider = ai_provider or "local"
         if not non_interactive:
+            provider_options = {
+                "1": "local",
+                "2": "openai",
+                "3": "anthropic",
+                "4": "ollama",
+                "5": "deepseek",
+                "6": "minimax",
+                "7": "google",
+                "8": "groq",
+                "9": "mistral",
+                "10": "cohere",
+                "11": "xai",
+                "12": "together",
+                "13": "openrouter",
+                "14": "perplexity",
+                "15": "fireworks",
+            }
             console.print("\n[b]AI evaluator provider:[/b]")
-            console.print("  1. local (default, no API key)")
-            console.print("  2. openai")
-            console.print("  3. anthropic")
-            console.print("  4. ollama (local)")
-            choice = Prompt.ask("Choose", default="1", choices=["1", "2", "3", "4"])
-            provider = {"1": "local", "2": "openai", "3": "anthropic", "4": "ollama"}[choice]
+            for key, name in provider_options.items():
+                suffix = " (default, no API key)" if name == "local" else ""
+                console.print(f"  {key}. [cyan]{name}[/cyan]{suffix}")
+            choice = Prompt.ask("Choose", default="1", choices=list(provider_options))
+            provider = provider_options[choice]
 
         guard_config: dict[str, Any] = {
             "default_deny": False,
@@ -1691,12 +1712,32 @@ def install(
                 "2": "openai",
                 "3": "anthropic",
                 "4": "deepseek",
+                "5": "minimax",
+                "6": "google",
+                "7": "groq",
+                "8": "mistral",
+                "9": "cohere",
+                "10": "xai",
+                "11": "together",
+                "12": "openrouter",
+                "13": "perplexity",
+                "14": "fireworks",
             }
             provider_names = {
                 "1": "Local (free, no API key)",
                 "2": "OpenAI",
                 "3": "Anthropic (Claude)",
                 "4": "DeepSeek",
+                "5": "MiniMax",
+                "6": "Google Gemini",
+                "7": "Groq",
+                "8": "Mistral",
+                "9": "Cohere",
+                "10": "xAI",
+                "11": "Together AI",
+                "12": "OpenRouter",
+                "13": "Perplexity",
+                "14": "Fireworks",
             }
             if is_detailed:
                 console.print("\n[b]AI provider:[/b]")
@@ -1716,6 +1757,16 @@ def install(
                         "openai": "OPENAI_API_KEY",
                         "anthropic": "ANTHROPIC_API_KEY",
                         "deepseek": "DEEPSEEK_API_KEY",
+                        "minimax": "MINIMAX_API_KEY",
+                        "google": "GEMINI_API_KEY",
+                        "groq": "GROQ_API_KEY",
+                        "mistral": "MISTRAL_API_KEY",
+                        "cohere": "COHERE_API_KEY",
+                        "xai": "XAI_API_KEY",
+                        "together": "TOGETHER_API_KEY",
+                        "openrouter": "OPENROUTER_API_KEY",
+                        "perplexity": "PERPLEXITY_API_KEY",
+                        "fireworks": "FIREWORKS_API_KEY",
                     }
                     env_name = env_names.get(resolved_provider, "PROVIDER_API_KEY")
                     console.print(
@@ -1814,6 +1865,16 @@ def install(
                 "openai": "OPENAI_API_KEY",
                 "anthropic": "ANTHROPIC_API_KEY",
                 "deepseek": "DEEPSEEK_API_KEY",
+                "minimax": "MINIMAX_API_KEY",
+                "google": "GEMINI_API_KEY",
+                "groq": "GROQ_API_KEY",
+                "mistral": "MISTRAL_API_KEY",
+                "cohere": "COHERE_API_KEY",
+                "xai": "XAI_API_KEY",
+                "together": "TOGETHER_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY",
+                "perplexity": "PERPLEXITY_API_KEY",
+                "fireworks": "FIREWORKS_API_KEY",
             }
             env_name_optional = env_names.get(resolved_provider)
             if env_name_optional:

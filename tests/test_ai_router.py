@@ -40,6 +40,29 @@ def test_parse_model_profiles_accepts_cost_metadata() -> None:
 
 
 @pytest.mark.parametrize(
+    "provider",
+    [
+        "minimax",
+        "google",
+        "groq",
+        "mistral",
+        "cohere",
+        "xai",
+        "together",
+        "openrouter",
+        "perplexity",
+        "fireworks",
+    ],
+)
+def test_parse_model_profiles_accepts_popular_providers(provider: str) -> None:
+    profiles = parse_model_profiles(
+        {"remote": {"provider": provider, "model": "model-test", "api_key_env": "API_KEY"}}
+    )
+
+    assert profiles["remote"].provider == provider
+
+
+@pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("input_cost_per_mtok", -0.1, "input_cost_per_mtok"),
