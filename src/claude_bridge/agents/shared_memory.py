@@ -9,36 +9,33 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from claude_bridge._memory_store import MemoryStore
+
 
 class SharedMemorySpace:
-    """Thread-safe shared memory for inter-agent communication."""
+    """Thread-safe shared memory with optional disk persistence."""
 
-    def __init__(self) -> None:
+    def __init__(self, use_persistence: bool = False, persistence_namespace: str = "shared") -> None:
         self._data: dict[str, Any] = {}
         self._lock = threading.RLock()
         self._agent_views: dict[str, dict[str, Any]] = {}
+        self._use_persistence = use_persistence
+        self._persistence_namespace = persistence_namespace
+        self._store = MemoryStore() if use_persistence else None
 
     def write(self, key: str, value: Any) -> None:
-        """Write a value to the shared memory.
-
-        Args:
-            key: The key to write to.
-            value: The value to store.
-        """
         with self._lock:
             self._data[key] = value
+            if self._store is not None:
+                self._store.set(key, value, self._persistence_namespace)
 
     def read(self, key: str) -> Any | None:
-        """Read a value from the shared memory.
-
-        Args:
-            key: The key to read.
-
-        Returns:
-            The stored value or None if not found.
-        """
         with self._lock:
-            return self._data.get(key)
+            if key in self._data:
+                return self._data.get(key)
+            if self._store is not None:
+                return self._store.get(key, self._persistence_namespace)
+            return None
 
     def get_agent_view(self, agent: str) -> dict[str, Any]:
         """Get a view of shared memory from a specific agent's perspective.

@@ -51,6 +51,7 @@ anomaly_app = typer.Typer(help="Anomaly detection on audit sessions")
 audit_app = typer.Typer(help="Audit session management and export")
 doctor_app = typer.Typer(help="Environment and security checks")
 skill_app = typer.Typer(help="Skill discovery, inspection, import, and export")
+scan_app = typer.Typer(help="Security scan for tools, skills, and config")
 control_plane_app = typer.Typer(help="Inspect local control-plane state")
 tasks_app = typer.Typer(help="Inspect local task state")
 approvals_app = typer.Typer(help="Inspect local approval state")
@@ -59,6 +60,7 @@ app.add_typer(anomaly_app, name="anomaly")
 app.add_typer(audit_app, name="audit")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(skill_app, name="skill")
+app.add_typer(scan_app, name="scan")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(control_plane_app, name="control-plane")
@@ -2969,6 +2971,22 @@ def security(
         console.print("[bold]Quick fixes:[/bold]")
         for fix in report.quick_fixes:
             console.print(f"  - {fix}")
+
+
+@scan_app.command("scan")
+def scan_cmd(
+    path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Directory to scan"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text|json|yaml"),
+) -> None:
+    """Run a security scan on tools, skills, and config."""
+    from claude_bridge.scanner import generate_scan_report, scan_all
+
+    result = scan_all(path.resolve())
+    report = generate_scan_report(result, format=output)
+    if output == "json":
+        console.print(report)
+    else:
+        console.print(Panel.fit(report, title="Security Scan", border_style="cyan"))
 
 
 def main() -> None:

@@ -17,6 +17,7 @@ from claude_bridge._audit_core import (
     _session_file,
     _append_audit_record,
     ensure_session_start_logged,
+    _compute_hmac_signature,
 )
 from claude_bridge._audit_index import append_audit_index_record
 from claude_bridge._audit_redaction import (
@@ -26,6 +27,7 @@ from claude_bridge._audit_redaction import (
     _telemetry_summary,
 )
 from claude_bridge._audit_activity import _extract_policy_decision
+from claude_bridge._event_bus import EventType, get_event_bus
 
 
 def log_tool_call(
@@ -42,18 +44,24 @@ def log_tool_call(
     summary = _redact_sensitive_values(summary)
     params_summary = _summarize_value(params)
     params_redacted = _redact_sensitive_values(params_summary)
+    record_id = uuid.uuid4().hex
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    params_hash = sha256(
+        json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
     record: dict[str, Any] = {
-        "record_id": uuid.uuid4().hex,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "record_id": record_id,
+        "timestamp": timestamp,
         "session_id": session_id,
         "tool_name": tool_name,
         "params": params_redacted,
-        "params_hash": sha256(
-            json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        "params_hash": params_hash,
         "duration_ms": round(duration_ms, 3),
         "result": summary,
         "result_hash": result_hash,
+        "hmac_signature": _compute_hmac_signature(
+            record_id, timestamp, session_id, tool_name, params_hash, result_hash
+        ),
         "telemetry": _telemetry_summary(params, result),
         "replay_context": {
             "tool_name": tool_name,
@@ -69,3 +77,7 @@ def log_tool_call(
     path = _session_file(session_id)
     offset = _append_audit_record(path, record, session_id=session_id)
     append_audit_index_record(session_id, record, offset=offset)
+    get_event_bus().publish(
+        EventType.TOOL_CALL,
+        {"tool_name": tool_name, "params": params_redacted, "result": summary, "duration_ms": duration_ms, "agent_id": agent_id},
+    )

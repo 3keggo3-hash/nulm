@@ -46,10 +46,10 @@ jobs:
       - run: python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_TOKEN }}
 ```
 
-Add to `.github/workflows/` and configure `PYPI_API_TOKEN` in repository secrets.
+Add to `.github/workflows/` and configure `PYPI_TOKEN` in repository secrets.
 
 Use the existing `ci.yml` workflow on every push and PR:
 

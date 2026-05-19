@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import re
+import regex  # type: ignore[import-untyped]
 
 _INTERACTIVE_COMMANDS = {
     "python",
@@ -27,10 +27,10 @@ _INTERACTIVE_COMMANDS = {
 _DESTRUCTIVE_GIT_SUBCOMMANDS = {"reset", "clean", "checkout", "restore", "revert"}
 _COMPOUND_CONTROL_COMMANDS = frozenset({"&&", "||", ";"})
 _DANGEROUS_GLOB_COMMANDS = {"rm", "rmdir", "mkdir", "mv", "cp", "find"}
-_FORK_BOMB_RE = re.compile(
+_FORK_BOMB_RE = regex.compile(
     r""":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"""
     r"""|(\w+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""
-    r"""|(\$\d+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1"""
+    r"""|(\$\d+)\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;\s*\1""",
 )
 _INLINE_INTERPRETER_FLAGS = {
     "bash": {"-c"},
@@ -170,9 +170,9 @@ _BLOCKED_DIRECT_COMMANDS = frozenset(
     }
 )
 
-_PIPE_TARGET_REGEX = re.compile(
+_PIPE_TARGET_REGEX = regex.compile(
     rf"(?:[|;]|&&)\s*(?:\S*/)?({'|'.join(sorted(_BLOCKED_PIPE_TARGETS))})\b",
-    re.IGNORECASE,
+    regex.IGNORECASE,
 )
-_COMPOUND_OPERATOR_REGEX = re.compile(r"\s*(?:&&|\|\|)\s*")
+_COMPOUND_OPERATOR_REGEX = regex.compile(r"\s*(?:&&|\|\|)\s*")
 _UNQUOTED_GLOB_CHARS = frozenset({"*", "?", "["})

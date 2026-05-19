@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nulm-pdb
+  labels:
+    app: nulm
+    app.kubernetes.io/name: nulm
+    app.kubernetes.io/component: core
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: nulm

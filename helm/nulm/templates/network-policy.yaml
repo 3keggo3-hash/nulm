@@ -1,0 +1,34 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nulm.fullname" . }}-egress
+  labels:
+    app: nulm
+    app.kubernetes.io/name: {{ include "nulm.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: core
+spec:
+  podSelector:
+    matchLabels:
+      app: nulm
+  policyTypes:
+    - Egress
+  egress:
+    {{- range .Values.networkPolicy.egress }}
+    - to:
+        {{- if .toNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              name: {{ .toNamespace }}
+        {{- else }}
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        {{- end }}
+      ports:
+        - protocol: {{ .protocol | default "TCP" }}
+          port: {{ .port }}
+    {{- end }}
+{{- end }}

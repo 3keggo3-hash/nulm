@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nulm
+  labels:
+    app: nulm
+    app.kubernetes.io/name: nulm
+    app.kubernetes.io/component: core
+spec:
+  type: ClusterIP
+  selector:
+    app: nulm
+  ports:
+    - name: dashboard
+      port: 8765
+      targetPort: 8765
+      protocol: TCP
+    - name: health
+      port: 8766
+      targetPort: 8766
+      protocol: TCP

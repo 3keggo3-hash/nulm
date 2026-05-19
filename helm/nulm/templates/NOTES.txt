@@ -1,0 +1,17 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about Nulm, visit:
+https://github.com/3keggo3-hash/nulm
+
+**Getting started:**
+1. The dashboard is available at http://localhost:8765 (port-forward required)
+2. Health endpoints: /healthz/live, /healthz/ready
+3. Metrics: /metrics (Prometheus format)
+
+**Port forward to access dashboard:**
+kubectl port-forward svc/{{ include "nulm.fullname" . }} 8765:8765
+
+**Check status:**
+kubectl get pods -l app=nulm

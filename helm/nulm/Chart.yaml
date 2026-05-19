@@ -1,0 +1,15 @@
+apiVersion: v2
+name: nulm
+description: Local-first MCP agent quality and execution layer
+type: application
+version: 0.1.0
+appVersion: "0.1.2"
+keywords:
+  - mcp
+  - security
+  - ai
+  - agent
+maintainers:
+  - name: Nulm Contributors
+sources:
+  - https://github.com/3keggo3-hash/nulm

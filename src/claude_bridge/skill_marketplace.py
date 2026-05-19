@@ -9,11 +9,30 @@ from __future__ import annotations
 import json
 import tarfile
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from claude_bridge.skill_registry import SKILLS_DIR, get_registry
 from claude_bridge.skill_schema import load_skill_json, validate_skill_json
+
+
+@dataclass
+class PackageRiskProfile:
+    overall_score: float
+    code_markers_found: list[str]
+    dependency_risk: str
+    typosquat_score: float
+    supply_chain_indicators: list[str]
+    permission_requests: list[str]
+
+    @property
+    def risk_level(self) -> str:
+        if self.overall_score >= 4.0:
+            return "high"
+        elif self.overall_score >= 2.0:
+            return "medium"
+        return "low"
 
 MANIFEST_FILE = "skill.json"
 SKILL_CODE_FILE = "skill.py"

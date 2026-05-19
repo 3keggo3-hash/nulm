@@ -24,6 +24,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from claude_bridge._event_bus import EventType
 from claude_bridge.guard_policy import (
     DecisionAction,
     DecisionSource,
@@ -31,6 +32,7 @@ from claude_bridge.guard_policy import (
     RiskLevel,
     ToolRequestContext,
 )
+from claude_bridge.hooks import get_hook_registry
 from claude_bridge.tool_utils import _mask_secrets
 
 _AI_PROVIDER_MAX_RESPONSE_BYTES = 65536
@@ -944,7 +946,20 @@ async def evaluate_tool_with_ai(
             decision.metadata["ai_budget_monthly_limit"] = budget.monthly_limit
             return decision
     try:
+        registry = get_hook_registry()
+        prompt_context = {"prompt": request.prompt, "tool_name": request.tool_name, "params": request.tool_params}
+        prompt_result = registry.invoke_hooks(EventType.PROMPT_SEND, prompt_context)
+        if not prompt_result.allow:
+            return evaluation_response_to_policy_decision(
+                EvaluationResponse(action=EvaluationAction.DENY, reason=prompt_result.message or "Prompt hooks denied"),
+                ctx=ctx,
+            )
+        if prompt_result.modified_params and "prompt" in prompt_result.modified_params:
+            request.prompt = prompt_result.modified_params["prompt"]
+
         resp = await evaluate_with_timeout(provider, request, timeout=timeout)
+        result_context = {"response": resp.to_dict(), "tool_name": request.tool_name}
+        registry.invoke_hooks(EventType.RESULT_RECEIVE, result_context)
     except Exception:
         resp = EvaluationResponse.fail_closed(reason="AI evaluator failed unexpectedly")
     if budget is not None:

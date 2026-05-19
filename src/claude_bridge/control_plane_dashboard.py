@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import ipaddress
 import json
@@ -38,6 +39,30 @@ from claude_bridge.control_plane import (
     update_task_status,
 )
 from claude_bridge.config import update_runtime_config
+
+try:
+    import websockets
+except ImportError:
+    websockets = None
+
+_SSE_CLIENTS: set[Any] = set()
+_SSE_CLIENTS_LOCK = threading.Lock()
+_SSE_BROADCAST_EVENT = threading.Event()
+_PENDING_EVENTS: list[tuple[str, dict[str, Any]]] = []
+_PENDING_EVENTS_LOCK = threading.Lock()
+
+
+def _queue_event(event_name: str, data: dict[str, Any]) -> None:
+    with _PENDING_EVENTS_LOCK:
+        _PENDING_EVENTS.append((event_name, data))
+    _SSE_BROADCAST_EVENT.set()
+
+
+def _consume_pending_events() -> list[tuple[str, dict[str, Any]]]:
+    with _PENDING_EVENTS_LOCK:
+        events = list(_PENDING_EVENTS)
+        _PENDING_EVENTS.clear()
+    return events
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
@@ -193,6 +218,7 @@ def apply_dashboard_action(
         )
         if approval is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
+        _queue_event("approval", {"id": record_id, "status": "approved", "action": action})
         return approval
     if action == "reject":
         approval = resolve_approval(
@@ -207,6 +233,7 @@ def apply_dashboard_action(
         )
         if approval is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
+        _queue_event("approval", {"id": record_id, "status": "denied", "action": action})
         return approval
     if action == "allow_always":
         from claude_bridge.control_plane import get_approval
@@ -246,6 +273,7 @@ def apply_dashboard_action(
         )
         if resolved is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
+        _queue_event("approval", {"id": record_id, "status": "approved", "action": action, "allow_always": True})
         return {"approval": resolved, "pattern": {"tool": tool, "pattern": pattern}}
     raise ControlPlaneDashboardError(f"Unsupported dashboard action '{action}'")
 
@@ -490,7 +518,82 @@ def create_dashboard_server(
         )
     resolved_token = token or generate_dashboard_token()
     handler = _make_handler(resolved_token, expose_token_in_config=expose_token_in_config)
-    return ThreadingHTTPServer((host, port), handler), resolved_token
+    http_server = ThreadingHTTPServer((host, port), handler)
+    _start_terminal_ws(host, port + 1, resolved_token)
+    return http_server, resolved_token
+
+
+def _start_terminal_ws(host: str, port: int, token: str) -> None:
+    if websockets is None:
+        return
+    from claude_bridge.web.terminal import create_terminal_session
+
+    async def _ws_handler(websocket: Any, path: str) -> None:
+        if path != "/api/terminal":
+            await websocket.close(4004, "Invalid path")
+            return
+        auth_header = websocket.request_headers.get("X-Claude-Bridge-Token", "")
+        if not auth_header or not hmac.compare_digest(auth_header, token):
+            await websocket.close(4003, "Unauthorized")
+            return
+        session_id = str(id(websocket))
+        session = create_terminal_session(session_id, token)
+        if not session.start():
+            await websocket.close(4005, "Failed to start shell")
+            return
+        output_thread = threading.Thread(
+            target=_read_ws_output,
+            args=(session, websocket),
+            daemon=True,
+        )
+        output_thread.start()
+        try:
+            async for message in websocket:
+                if isinstance(message, bytes):
+                    session.write(message)
+                else:
+                    try:
+                        data = json.loads(message)
+                        if data.get("type") == "resize":
+                            rows = data.get("rows", 24)
+                            cols = data.get("cols", 80)
+                            session.resize(rows, cols)
+                        elif data.get("type") == "input":
+                            input_data = data.get("data", "")
+                            if isinstance(input_data, str):
+                                session.write(input_data.encode("utf-8"))
+                            elif isinstance(input_data, bytes):
+                                session.write(input_data)
+                    except (json.JSONDecodeError, KeyError):
+                        session.write(message.encode("utf-8") if isinstance(message, str) else message)
+        except Exception:
+            pass
+        finally:
+            from claude_bridge.web.terminal import close_terminal_session
+            close_terminal_session(session_id)
+
+    def _read_ws_output(session: Any, websocket: Any) -> None:
+        while session.is_alive():
+            data = session.read(timeout=0.05)
+            if data:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(websocket.send(data))
+                    else:
+                        loop.run_until_complete(websocket.send(data))
+                except Exception:
+                    pass
+
+    async def _run_ws() -> None:
+        async with websockets.serve(_ws_handler, host, port):
+            await asyncio.Future()
+
+    def _bg_ws() -> None:
+        asyncio.run(_run_ws())
+
+    thread = threading.Thread(target=_bg_ws, daemon=True)
+    thread.start()
 
 
 def _dashboard_host_allowed(host: str, *, allow_network_bind: bool) -> bool:
@@ -564,6 +667,12 @@ def _make_handler(
                     from claude_bridge._dashboard_task_runner import get_dashboard_task_status
                     self._send_json(get_dashboard_task_status(task_id))
                     return
+            if parsed.path == "/api/events":
+                if not self._is_authorized(parsed.query):
+                    self._send_json({"error": "unauthorized"}, status=401)
+                    return
+                self._send_sse_stream()
+                return
             if self._send_static_file(parsed.path.lstrip("/")):
                 return
             self._send_json({"error": "not_found"}, status=404)
@@ -647,6 +756,34 @@ def _make_handler(
                 self._send_json({"error": str(exc)}, status=404)
                 return
             self._send_json({"ok": True, "record": action_record})
+
+        def _send_sse_stream(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            client = self.wfile
+            with _SSE_CLIENTS_LOCK:
+                _SSE_CLIENTS.add(client)
+            try:
+                while True:
+                    if _SSE_BROADCAST_EVENT.wait(timeout=30):
+                        _SSE_BROADCAST_EVENT.clear()
+                        events = _consume_pending_events()
+                        for event_name, event_data in events:
+                            encoded = f"event: {event_name}\ndata: {json.dumps(event_data)}\n\n".encode("utf-8")
+                            try:
+                                client.write(encoded)
+                                client.flush()
+                            except OSError:
+                                break
+            except OSError:
+                pass
+            finally:
+                with _SSE_CLIENTS_LOCK:
+                    _SSE_CLIENTS.discard(client)
 
         def log_message(self, format: str, *args: Any) -> None:
             return

@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  nulm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      CLAUDE_BRIDGE_TRACING: "detailed"
+      CLAUDE_BRIDGE_OTLP_ENDPOINT: "http://jaeger:4317"
+      CLAUDE_BRIDGE_CONTROL_PLANE_DIR: "/data/control-plane"
+    ports:
+      - "8765:8765"
+      - "8766:8766"
+    volumes:
+      - ./data/control-plane:/data/control-plane
+    depends_on:
+      - jaeger
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nulm-config
+  labels:
+    app: nulm
+    app.kubernetes.io/name: nulm
+    app.kubernetes.io/component: core
+data:
+  CLAUDE_BRIDGE_TRACING: "detailed"
+  CLAUDE_BRIDGE_TOOL_PROFILE: "standard"
+  CLAUDE_BRIDGE_CONTROL_PLANE_DIR: "/data/control-plane"

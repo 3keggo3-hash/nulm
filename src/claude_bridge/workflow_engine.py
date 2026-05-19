@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from claude_bridge._event_bus import EventType, get_event_bus
 from claude_bridge._shell_analysis import risk_score_category
 from claude_bridge.checkpoint import create_checkpoint, restore_checkpoint
 from claude_bridge.agent_advisor import ResultQualityReviewRequest, review_result_quality
@@ -700,7 +701,6 @@ class WorkflowEngine:
         return emoji_map.get(category, "⚠️")
 
     def _log_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Log workflow event with timestamp."""
         self.execution_log.append(
             {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -709,6 +709,22 @@ class WorkflowEngine:
                 **data,
             }
         )
+        event_map = {
+            "plan_created": EventType.WORKFLOW_PLAN_CREATED,
+            "approval_pending": EventType.WORKFLOW_APPROVAL_PENDING,
+            "step_executed": EventType.WORKFLOW_STEP_EXECUTED,
+            "self_review_failed": EventType.WORKFLOW_STATE_TRANSITION,
+            "state_transition": EventType.WORKFLOW_STATE_TRANSITION,
+            "checkpoint_created": EventType.WORKFLOW_STEP_EXECUTED,
+            "permission_denied": EventType.WORKFLOW_STATE_TRANSITION,
+            "self_review_warnings": EventType.VERIFICATION_PASS,
+            "transition_to_reporting": EventType.WORKFLOW_STEP_EXECUTED,
+            "rollback": EventType.VERIFICATION_FAIL,
+            "workflow_paused": EventType.WORKFLOW_STATE_TRANSITION,
+            "reset": EventType.WORKFLOW_STATE_TRANSITION,
+        }
+        event_type_enum = event_map.get(event_type, EventType.WORKFLOW_STATE_TRANSITION)
+        get_event_bus().publish(event_type_enum, data)
 
     def get_status(self) -> dict[str, Any]:
         """Return current workflow status."""

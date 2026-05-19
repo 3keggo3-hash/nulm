@@ -21,6 +21,9 @@ try:
         BatchSpanProcessor,
         ConsoleSpanExporter,
     )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
+        OTLPSpanExporter,
+    )
     from opentelemetry.trace import Span, Status, StatusCode  # type: ignore[import-not-found]
     from opentelemetry.trace.propagation.tracecontext import (  # type: ignore[import-not-found]
         TraceContextTextMapPropagator,
@@ -28,7 +31,7 @@ try:
 except ImportError:
     trace = None
     Span = Status = StatusCode = None
-    TracerProvider = BatchSpanProcessor = ConsoleSpanExporter = None
+    TracerProvider = BatchSpanProcessor = ConsoleSpanExporter = OTLPSpanExporter = None
     TraceContextTextMapPropagator = None
 
 
@@ -132,8 +135,19 @@ class TracingManager:
         if trace is None:
             return
         self._provider = TracerProvider()
-        exporter = ConsoleSpanExporter()
-        self._provider.add_span_processor(BatchSpanProcessor(exporter))
+        endpoint = os.environ.get(
+            "CLAUDE_BRIDGE_OTLP_ENDPOINT"
+        ) or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if endpoint and OTLPSpanExporter:
+            try:
+                exporter = OTLPSpanExporter(endpoint=endpoint)
+                self._provider.add_span_processor(BatchSpanProcessor(exporter))
+            except Exception:
+                exporter = ConsoleSpanExporter()
+                self._provider.add_span_processor(BatchSpanProcessor(exporter))
+        else:
+            exporter = ConsoleSpanExporter()
+            self._provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(self._provider)
         self._tracer = trace.get_tracer("nulm", "0.1.0")
 

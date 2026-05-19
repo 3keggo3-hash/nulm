@@ -11,9 +11,61 @@ import os
 import re
 import threading
 from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any, Sequence, cast
 
 from claude_bridge.ai_router import parse_model_profiles, parse_routing_rules
+
+
+@dataclass
+class ScopedCredential:
+    provider: str
+    scopes: set[str]
+    allowed_agents: set[str]
+    denied_resources: set[str]
+    expires_at: float | None
+    _token: str
+    _credentials: dict = field(default_factory=dict)
+    _credentials_lock = threading.Lock()
+
+    @staticmethod
+    def register(cred: ScopedCredential) -> None:
+        with ScopedCredential._credentials_lock:
+            key = f"{cred.provider}:{':'.join(sorted(cred.scopes))}"
+            ScopedCredential._credentials[key] = cred
+
+    @staticmethod
+    def get(provider: str, scopes: set[str], agent_id: str) -> str | None:
+        with ScopedCredential._credentials_lock:
+            for cred in ScopedCredential._credentials.values():
+                if cred.provider == provider and cred.is_operation_allowed(agent_id, scopes):
+                    return cred._token if not cred.is_expired() else None
+        return None
+
+    def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
+        import time
+        return time.time() > self.expires_at
+
+    def get_token(self) -> str | None:
+        return self._token if not self.is_expired() else None
+
+    def is_operation_allowed(
+        self, agent_id: str, scope: str | set[str], resource: str | None = None
+    ) -> bool:
+        if self.is_expired():
+            return False
+        if agent_id not in self.allowed_agents:
+            return False
+        if isinstance(scope, str):
+            if scope not in self.scopes:
+                return False
+        elif not scope.issubset(self.scopes):
+            return False
+        if resource is not None and resource in self.denied_resources:
+            return False
+        return True
 
 _ENV_PREFIX = "CLAUDE_BRIDGE_"
 AI_EVALUATOR_PROVIDERS: frozenset[str] = frozenset(
@@ -1156,3 +1208,64 @@ def update_safe_chat_config(key: str, value: Any) -> dict[str, Any]:
         if timeout > 30:
             raise ValueError("ai_evaluator_timeout cannot exceed 30 seconds through chat config")
     return update_runtime_config(key, value)
+
+
+_CREDENTIALS: dict[str, ScopedCredential] = {}
+_CREDENTIALS_LOCK = threading.Lock()
+
+
+def register_scoped_credential(
+    name: str,
+    provider: str,
+    token: str,
+    scopes: list[str],
+    allowed_agents: list[str],
+    denied_resources: list[str] | None = None,
+    ttl_seconds: float | None = None,
+) -> None:
+    """Register a scoped credential."""
+    import time as _time
+    expires_at = _time.time() + ttl_seconds if ttl_seconds is not None else None
+    cred = ScopedCredential(
+        provider=provider,
+        scopes=set(scopes),
+        allowed_agents=set(allowed_agents),
+        denied_resources=set(denied_resources) if denied_resources else set(),
+        expires_at=expires_at,
+        _token=token,
+    )
+    with _CREDENTIALS_LOCK:
+        _CREDENTIALS[name] = cred
+
+
+def get_scoped_credential(
+    name: str,
+    agent_id: str,
+    scope: str,
+    resource: str | None = None,
+) -> str | None:
+    """Get a scoped credential if valid for agent/scope/resource."""
+    with _CREDENTIALS_LOCK:
+        cred = _CREDENTIALS.get(name)
+    if cred is None:
+        return None
+    if cred.is_operation_allowed(agent_id, scope, resource):
+        return cred.get_token()
+    return None
+
+
+def list_scoped_credentials() -> list[dict[str, Any]]:
+    """List credentials without exposing tokens."""
+    with _CREDENTIALS_LOCK:
+        return [
+            {
+                "name": name,
+                "provider": cred.provider,
+                "scopes": sorted(cred.scopes),
+                "allowed_agents": sorted(cred.allowed_agents),
+                "denied_resources": sorted(cred.denied_resources),
+                "expires_at": cred.expires_at,
+                "expired": cred.is_expired(),
+            }
+            for name, cred in _CREDENTIALS.items()
+        ]

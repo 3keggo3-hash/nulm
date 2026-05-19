@@ -19,6 +19,11 @@ behavior, or operational flow.
 - `roadmap.md`
   Technical implementation phases and current technical status. Links to
   `product-vision.md` for the updated product vision.
+- `multi-agent-architecture-audit.md`
+  Deep technical audit of the current Master/Sub-Agent architecture and proposed production-grade
+  orchestration design.
+- `multi-agent-execution-roadmap.md`
+  Prioritized 3-6 month execution roadmap for measurable multi-agent runtime improvements.
 - `known-issues-and-improvements.md`
   Known gaps, risks, and improvement suggestions.
 - `optional-dependencies.md`

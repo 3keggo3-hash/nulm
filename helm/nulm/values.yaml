@@ -1,0 +1,59 @@
+replicaCount: 2
+
+image:
+  repository: nulm/nulm
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  ports:
+    dashboard: 8765
+    health: 8766
+
+resources:
+  limits:
+    memory: 512Mi
+    cpu: 500m
+  requests:
+    memory: 256Mi
+    cpu: 100m
+
+healthCheck:
+  liveness:
+    path: /healthz/live
+    port: 8766
+  readiness:
+    path: /healthz/ready
+    port: 8766
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: true
+
+config:
+  tracing: detailed
+  toolProfile: standard
+  controlPlaneDir: /data/control-plane
+
+env: {}
+#  CLAUDE_BRIDGE_OTLP_ENDPOINT: ""
+
+networkPolicy:
+  enabled: true
+  egress:
+    - port: 4317  # OTLP
+      toNamespace: monitoring
+    - port: 53   # DNS
+      protocol: UDP
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+secret: {}
+#  otlpEndpoint: "<BASE64_PLACEHOLDER>"
+#  aiEvaluatorApiKey: "<BASE64_PLACEHOLDER>"

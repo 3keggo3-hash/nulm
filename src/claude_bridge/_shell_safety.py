@@ -6,8 +6,12 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
+import threading
+import time
+from collections import deque
 from pathlib import Path
 
 from claude_bridge._shell_constants import (
@@ -695,4 +699,43 @@ def check_skill_metadata_blocked(skill_meta: dict) -> str | None:
         if perm not in allowed_permissions:
             return f"skill permission {perm!r} is not in allowed set"
 
+    return None
+
+
+def _load_rate_limit_config() -> None:
+    env_max = os.environ.get("CLAUDE_BRIDGE_SHELL_RATE_LIMIT_MAX")
+    if env_max:
+        try:
+            _COMMAND_RATE_LIMIT["max_commands"] = max(1, int(env_max))
+        except ValueError:
+            pass
+    env_window = os.environ.get("CLAUDE_BRIDGE_SHELL_RATE_LIMIT_WINDOW")
+    if env_window:
+        try:
+            _COMMAND_RATE_LIMIT["window_seconds"] = max(1.0, float(env_window))
+        except ValueError:
+            pass
+
+
+_COMMAND_RATE_LIMIT: dict[str, int | float] = {
+    "window_seconds": 10.0,
+    "max_commands": 20,
+}
+_command_timestamps: dict[str, deque[float]] = {}
+_command_timestamps_lock = threading.Lock()
+
+
+def check_command_velocity(command: str, agent_id: str) -> str | None:
+    window = _COMMAND_RATE_LIMIT["window_seconds"]
+    max_cmds = _COMMAND_RATE_LIMIT["max_commands"]
+    now = time.monotonic()
+    with _command_timestamps_lock:
+        if agent_id not in _command_timestamps:
+            _command_timestamps[agent_id] = deque()
+        agent_times = _command_timestamps[agent_id]
+        while agent_times and now - agent_times[0] > window:
+            agent_times.popleft()
+        if len(agent_times) >= max_cmds:
+            return "command_rate_limit_exceeded"
+        agent_times.append(now)
     return None

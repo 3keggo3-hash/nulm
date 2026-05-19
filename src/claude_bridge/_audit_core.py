@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -32,6 +33,28 @@ _LAST_RECORD_HASH: dict[str, str] = {}
 _GENESIS_HASH = sha256(b"GENESIS").hexdigest()
 
 _VALID_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+_DEFAULT_AUDIT_KEY = sha256(b"claude-bridge-audit-v1-default-key-do-not-use-in-production").digest()
+
+
+@lru_cache(maxsize=1)
+def _audit_key() -> bytes:
+    key_env = os.environ.get("CLAUDE_BRIDGE_AUDIT_KEY", "").strip()
+    if key_env:
+        return sha256(key_env.encode("utf-8")).digest()
+    return _DEFAULT_AUDIT_KEY
+
+
+def _compute_hmac_signature(
+    record_id: str,
+    timestamp: str,
+    session_id: str,
+    tool_name: str,
+    params_hash: str,
+    result_hash: str,
+) -> str:
+    message = f"{record_id}|{timestamp}|{session_id}|{tool_name}|{params_hash}|{result_hash}"
+    return hmac.new(_audit_key(), message.encode("utf-8"), sha256).hexdigest()
 
 
 @lru_cache(maxsize=1)
@@ -65,18 +88,25 @@ def current_session_id() -> str:
 
 
 def log_session_start(session_id: str, agent_id: str | None = None) -> int | None:
+    record_id = uuid.uuid4().hex
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    params_hash = sha256(
+        json.dumps({"agent_id": agent_id}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    result_hash = sha256(b"session_start").hexdigest()
     record: dict[str, Any] = {
-        "record_id": uuid.uuid4().hex,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "record_id": record_id,
+        "timestamp": timestamp,
         "session_id": session_id,
         "tool_name": "session_start",
         "params": {"agent_id": agent_id} if agent_id else {},
-        "params_hash": sha256(
-            json.dumps({"agent_id": agent_id}, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        "params_hash": params_hash,
         "duration_ms": 0.0,
         "result": {"ok": True, "message": "session started"},
-        "result_hash": sha256(b"session_start").hexdigest(),
+        "result_hash": result_hash,
+        "hmac_signature": _compute_hmac_signature(
+            record_id, timestamp, session_id, "session_start", params_hash, result_hash
+        ),
         "telemetry": {
             "input_chars": 0,
             "output_chars": 0,
@@ -91,18 +121,25 @@ def log_session_start(session_id: str, agent_id: str | None = None) -> int | Non
 
 
 def log_session_end(session_id: str, reason: str = "normal") -> int | None:
+    record_id = uuid.uuid4().hex
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    params_hash = sha256(
+        json.dumps({"reason": reason}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    result_hash = sha256(f"session_end:{reason}".encode("utf-8")).hexdigest()
     record: dict[str, Any] = {
-        "record_id": uuid.uuid4().hex,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "record_id": record_id,
+        "timestamp": timestamp,
         "session_id": session_id,
         "tool_name": "session_end",
         "params": {"reason": reason},
-        "params_hash": sha256(
-            json.dumps({"reason": reason}, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        "params_hash": params_hash,
         "duration_ms": 0.0,
         "result": {"ok": True, "message": f"session ended: {reason}"},
-        "result_hash": sha256(f"session_end:{reason}".encode("utf-8")).hexdigest(),
+        "result_hash": result_hash,
+        "hmac_signature": _compute_hmac_signature(
+            record_id, timestamp, session_id, "session_end", params_hash, result_hash
+        ),
         "telemetry": {
             "input_chars": 0,
             "output_chars": 0,
@@ -324,22 +361,28 @@ def log_policy_change(
         params["reason"] = reason
 
     params_redacted = _redact_sensitive_values(_summarize_value(params))
-
+    record_id = uuid.uuid4().hex
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    params_hash = sha256(
+        json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    result_hash = sha256(f"policy_change:{policy_name}:{action}".encode("utf-8")).hexdigest()
     record: dict[str, Any] = {
-        "record_id": uuid.uuid4().hex,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "record_id": record_id,
+        "timestamp": timestamp,
         "session_id": session_id,
         "tool_name": "policy_change",
         "params": params_redacted,
-        "params_hash": sha256(
-            json.dumps(params_redacted, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        "params_hash": params_hash,
         "duration_ms": 0.0,
         "result": {
             "ok": True,
             "message": f"policy {action}: {policy_name}",
         },
-        "result_hash": sha256(f"policy_change:{policy_name}:{action}".encode("utf-8")).hexdigest(),
+        "result_hash": result_hash,
+        "hmac_signature": _compute_hmac_signature(
+            record_id, timestamp, session_id, "policy_change", params_hash, result_hash
+        ),
         "telemetry": {
             "input_chars": len(json.dumps(params_redacted, ensure_ascii=False, sort_keys=True)),
             "output_chars": 0,
@@ -402,3 +445,37 @@ def verify_audit_integrity(
         expected_prev_hash = computed_hash
 
     return {"valid": True, "error": None, "record_index": -1, "expected_hash": None}
+
+
+def verify_audit_chain(session_id: str) -> dict[str, Any]:
+    """Verify HMAC signatures in audit records for a session.
+
+    Args:
+        session_id: The session ID to verify.
+
+    Returns:
+        A dict with 'valid' (bool), 'error' (str or None), and 'record_index' (int).
+    """
+    records = _load_records(session_id)
+    if not records:
+        return {"valid": False, "error": "no records found", "record_index": -1}
+
+    for i, record in enumerate(records):
+        stored_sig = record.get("hmac_signature")
+        if not stored_sig:
+            return {"valid": False, "error": "missing hmac_signature", "record_index": i}
+
+        record_id = record.get("record_id", "")
+        timestamp = record.get("timestamp", "")
+        sess_id = record.get("session_id", "")
+        tool_name = record.get("tool_name", "")
+        params_hash = record.get("params_hash", "")
+        result_hash = record.get("result_hash", "")
+
+        expected_sig = _compute_hmac_signature(
+            record_id, timestamp, sess_id, tool_name, params_hash, result_hash
+        )
+        if not hmac.compare_digest(stored_sig, expected_sig):
+            return {"valid": False, "error": "hmac_signature mismatch", "record_index": i}
+
+    return {"valid": True, "error": None, "record_index": -1}
