@@ -145,6 +145,9 @@ These require installing extras such as `nulm[treesitter]`, `nulm[multi-format]`
   not silently change policy decisions.
 - **Full-profile meta-agent tools**: local plans, approach exploration, deterministic self-critique,
   and git-backed checkpoints.
+- **Full-profile council and proposal tools**: role-based planning sessions, model routing
+  experiments, and adaptive proposal review stay out of the default tool profile until their
+  workflows are clearer.
 - **Agent Quality tools**: deterministic prompt improvement, context strategy, plan critique,
   safe config suggestions, workflow quality gates, result quality review, and fail-safe provider
   advice parsing telemetry.

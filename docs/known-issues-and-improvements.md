@@ -26,10 +26,19 @@ one of:
   explainable.
 
 **Open decision:**
-- Which full-profile and Agent Quality tools should be hidden from default docs until they have
-  stronger user workflows?
-- Which roadmap/control-plane ideas need explicit "planned" labels to avoid implying hosted sync,
-  mobile access, or remote monitoring exists today?
+- **Keep in the default `standard` profile:** core file/shell/index/workspace tools, bounded
+  workflow helpers, local control-plane task/approval/message tools, read-only skill discovery,
+  smart/context helpers, core insights, git read helpers, and deterministic Agent Quality advisory
+  tools. These are implemented, local-first, and useful in normal development sessions.
+- **Hide from the default `standard` profile and expose only in `full`:** skill execution,
+  meta-agent plan/checkpoint tools, URL and multi-format readers, extra insight scans, fun note
+  helpers, git commit mutation, adaptive proposal mutation, and AI council/model-routing flows.
+  These are either optional, niche, higher-noise, or easier to misunderstand before stronger
+  workflows exist.
+- **Keep explicitly labeled as planned or experimental in public docs:** hosted sync, remote
+  monitoring, mobile-first access, remote skill marketplace, remote policy marketplace, unbounded
+  autonomous execution, and any provider-backed Agent Quality behavior that would imply automatic
+  enforcement rather than advisory review.
 
 **Affected files:** `README.md`, `docs/*`, tool profile registration tests
 

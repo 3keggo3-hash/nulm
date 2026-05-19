@@ -165,8 +165,12 @@ Exit criteria:
 
 External confirmation still required before a broad launch:
 
-- GitHub Actions matrix must pass after push.
-- First external source/PyPI install smoke should be checked.
+- GitHub Actions matrix must pass after push. As of 2026-05-19, local `main` matches
+  `origin/main` at `79613f5`, but this environment could not read private-repo Actions run
+  results.
+- First external source/PyPI install smoke should pass. As of 2026-05-19,
+  `pip install nulm==0.1.1` and `pip index versions nulm` returned no matching PyPI
+  distributions, so publishing/visibility remains a release blocker.
 
 ## Deferred
 

@@ -191,115 +191,233 @@ CLI deneyimi, gürültüsüz ve yönlendirici olmalıdır:
 
 ## 11. API Endpoint Listesi ve Response Şemaları
 
-Nulm, AI ajanları ile etkileşimi ve kullanıcı arayüzü (dashboard) için bir dizi RESTful API endpointi sunacaktır. Temel endpointler ve örnek yanıt şemaları aşağıda belirtilmiştir:
+Bu bölüm mevcut backend ile hizalıdır. Dashboard HTTP sunucusu
+`src/claude_bridge/control_plane_dashboard.py` içinde yerel ve token korumalı olarak çalışır.
+Endpointler `/api/v1` prefixi kullanmaz. Token, URL query parametresi (`?token=...`) veya
+`X-Claude-Bridge-Token` headerı ile gönderilir.
 
-### 11.1. `GET /api/v1/status`
+### 11.1. `GET /api/status`
 
-Sistemin genel durumunu ve bağlantı bilgilerini döndürür.
-
-**Açıklama:** Nulm sunucusunun ve bağlı ajanların anlık durumunu kontrol eder.
+Dashboard'un tekil okuma modelini döndürür: görevler, onaylar, kullanıcı mesajları ve görev özeti.
 
 **Yanıt Şeması (JSON):**
 ```json
 {
-  "status": "online",
-  "agent_connected": true,
-  "current_project_id": "proj_abc123",
-  "pending_approvals_count": 2,
-  "last_activity_at": "2026-05-19T10:30:00Z"
+  "schema_version": "control_plane.dashboard.v1",
+  "state_dir": "/Users/example/.claude-bridge/control-plane",
+  "summary": {
+    "schema_version": "control_plane.v1",
+    "total": 1,
+    "by_status": {
+      "pending": 0,
+      "queued": 0,
+      "planning": 0,
+      "running": 1,
+      "in_progress": 0,
+      "blocked": 0,
+      "approval_pending": 0,
+      "testing": 0,
+      "failed": 0,
+      "completed": 0,
+      "cancelled": 0
+    }
+  },
+  "tasks": [
+    {
+      "schema_version": "control_plane.v1",
+      "id": "task_abc123",
+      "title": "Review release notes",
+      "status": "running",
+      "created_at": "2026-05-19T10:20:00Z",
+      "updated_at": "2026-05-19T10:25:00Z",
+      "summary": "Checking docs and validation output.",
+      "metadata": {"source": "workflow"}
+    }
+  ],
+  "approvals": [
+    {
+      "schema_version": "control_plane.v1",
+      "id": "approval_xyz789",
+      "title": "Run shell command",
+      "status": "pending",
+      "tool": "run_shell",
+      "command": "pytest tests/test_config.py -q",
+      "reason": "Validation requested",
+      "created_at": "2026-05-19T10:25:15Z",
+      "updated_at": "2026-05-19T10:25:15Z",
+      "expires_at": "2026-05-19T10:55:15Z",
+      "metadata": {"risk": "low"}
+    }
+  ],
+  "messages": [
+    {
+      "schema_version": "control_plane.v1",
+      "id": "message_def456",
+      "status": "queued",
+      "message": "Please continue with the release checklist.",
+      "created_at": "2026-05-19T10:28:30Z",
+      "updated_at": "2026-05-19T10:28:30Z",
+      "metadata": {"source": "dashboard"}
+    }
+  ]
 }
 ```
 
-### 11.2. `GET /api/v1/approvals`
+### 11.2. `GET /api/messages`
 
-Bekleyen onay listesini döndürür.
-
-**Açıklama:** Kullanıcıdan onay bekleyen tüm eylemleri listeler.
+Dashboard üzerinden yazılmış kullanıcı mesajlarını listeler.
 
 **Yanıt Şeması (JSON):**
 ```json
-[
-  {
-    "approval_id": "app_xyz789",
-    "agent_id": "agent_001",
-    "action_type": "shell_command",
-    "payload": {
-      "command": "rm -rf /tmp/cache",
-      "cwd": "/home/ubuntu/project"
-    },
-    "requested_at": "2026-05-19T10:25:15Z",
-    "status": "pending"
-  },
-  {
-    "approval_id": "app_def456",
-    "agent_id": "agent_002",
-    "action_type": "file_write",
-    "payload": {
-      "path": "/home/ubuntu/project/config.py",
-      "content_preview": "import os\nDEBUG = True\n...",
-      "diff": "-DEBUG = False\n+DEBUG = True"
-    },
-    "requested_at": "2026-05-19T10:28:30Z",
-    "status": "pending"
-  }
-]
+{
+  "schema_version": "control_plane.messages.v1",
+  "messages": [
+    {
+      "schema_version": "control_plane.v1",
+      "id": "message_def456",
+      "status": "queued",
+      "message": "Please continue with the release checklist.",
+      "created_at": "2026-05-19T10:28:30Z",
+      "updated_at": "2026-05-19T10:28:30Z",
+      "metadata": {"source": "dashboard"}
+    }
+  ]
+}
 ```
 
-### 11.3. `POST /api/v1/approvals/{approval_id}/decide`
+### 11.3. `POST /api/messages`
 
-Belirli bir onayı onaylar veya reddeder.
-
-**Açıklama:** Kullanıcının bekleyen bir eylem için kararını iletir.
+Dashboard'dan ajanların daha sonra alabileceği bir kullanıcı mesajı kuyruğa ekler.
 
 **İstek Şeması (JSON):**
 ```json
 {
-  "decision": "approved"
+  "message": "Please continue with the release checklist."
 }
 ```
 
 **Yanıt Şeması (JSON):**
 ```json
 {
-  "approval_id": "app_xyz789",
-  "status": "approved",
-  "decided_at": "2026-05-19T10:31:00Z"
+  "ok": true,
+  "record": {
+    "schema_version": "control_plane.v1",
+    "id": "message_def456",
+    "status": "queued",
+    "message": "Please continue with the release checklist.",
+    "created_at": "2026-05-19T10:28:30Z",
+    "updated_at": "2026-05-19T10:28:30Z",
+    "metadata": {"source": "dashboard"}
+  }
 }
 ```
 
-### 11.4. `GET /api/v1/activity`
+### 11.4. `POST /api/tasks/{task_id}/cancel`
 
-Son aktivite akışını (shell komutları, tool çağrıları vb.) döndürür.
+Bir kontrol düzlemi görevini iptal eder.
 
-**Açıklama:** Ajanların gerçekleştirdiği veya gerçekleştirmeye çalıştığı eylemlerin geçmişini sunar.
+**İstek Şeması (JSON):**
+```json
+{
+  "reason": "Superseded by a newer release task."
+}
+```
 
 **Yanıt Şeması (JSON):**
 ```json
-[
-  {
-    "activity_id": "act_111",
-    "agent_id": "agent_001",
-    "type": "shell_command_executed",
-    "details": {
-      "command": "ls -la",
-      "output": "total 16\ndrwxr-xr-x ...",
-      "exit_code": 0
-    },
-    "timestamp": "2026-05-19T10:20:00Z"
-  },
-  {
-    "activity_id": "act_222",
-    "agent_id": "agent_001",
-    "type": "tool_called",
-    "details": {
-      "tool_name": "read_file",
-      "args": {"path": "/home/ubuntu/project/main.py"},
-      "result_preview": "def main():\n  print('Hello')\n..."
-    },
-    "timestamp": "2026-05-19T10:22:00Z"
+{
+  "ok": true,
+  "record": {
+    "schema_version": "control_plane.v1",
+    "id": "task_abc123",
+    "title": "Review release notes",
+    "status": "cancelled",
+    "created_at": "2026-05-19T10:20:00Z",
+    "updated_at": "2026-05-19T10:31:00Z",
+    "summary": "Superseded by a newer release task.",
+    "metadata": {
+      "source": "workflow",
+      "dashboard_reason": "Superseded by a newer release task.",
+      "cancelled_by": "dashboard"
+    }
   }
-]
+}
 ```
+
+### 11.5. `POST /api/approvals/{approval_id}/approve`
+
+Bir bekleyen onayı onaylar.
+
+**İstek Şeması (JSON):**
+```json
+{
+  "reason": "User reviewed command."
+}
+```
+
+**Yanıt Şeması (JSON):**
+```json
+{
+  "ok": true,
+  "record": {
+    "schema_version": "control_plane.v1",
+    "id": "approval_xyz789",
+    "title": "Run shell command",
+    "status": "approved",
+    "tool": "run_shell",
+    "command": "pytest tests/test_config.py -q",
+    "reason": "User reviewed command.",
+    "created_at": "2026-05-19T10:25:15Z",
+    "updated_at": "2026-05-19T10:31:00Z",
+    "expires_at": "2026-05-19T10:55:15Z",
+    "metadata": {
+      "risk": "low",
+      "dashboard_reason": "User reviewed command.",
+      "decided_by": "dashboard"
+    }
+  }
+}
+```
+
+### 11.6. `POST /api/approvals/{approval_id}/reject`
+
+Bir bekleyen onayı reddeder. Yanıt yapısı approve ile aynıdır; `status` değeri `denied` olur.
+
+### 11.7. `POST /api/approvals/{approval_id}/allow_always`
+
+Onayı onaylar ve ilgili araç için komutun ilk tokenını `auto_approve_patterns` listesine ekler.
+Bu aksiyon sadece approval kaydında hem `tool` hem `command` bulunduğunda uygulanabilir.
+
+**Yanıt Şeması (JSON):**
+```json
+{
+  "ok": true,
+  "record": {
+    "approval": {
+      "schema_version": "control_plane.v1",
+      "id": "approval_xyz789",
+      "status": "approved",
+      "tool": "run_shell",
+      "command": "pytest tests/test_config.py -q",
+      "metadata": {
+        "decided_by": "dashboard",
+        "allow_always_pattern": "pytest"
+      }
+    },
+    "pattern": {
+      "tool": "run_shell",
+      "pattern": "pytest"
+    }
+  }
+}
+```
+
+### 11.8. Henüz Backend'de Olmayan Yüzeyler
+
+`GET /api/v1/activity`, `GET /api/v1/approvals`, `POST /api/v1/approvals/{id}/decide` ve WebSocket
+endpointleri mevcut backend'de yoktur. Aktivite özeti MCP tarafındaki `activity_summary` aracıyla,
+stream geçmişi ise full profildeki notification araçlarıyla temsil edilir; dashboard HTTP API'si
+şu an ayrı bir activity feed endpointi sunmaz.
 
 ---
 
@@ -319,7 +437,13 @@ Sunucu ve istemci arasında kalıcı, çift yönlü bir iletişim kanalı kurar.
 - **Avantajları:** Gerçek zamanlı güncellemeler, daha az ağ trafiği (gereksiz istek yok), daha iyi kullanıcı deneyimi.
 - **Dezavantajları:** Daha karmaşık implementasyon, sunucu tarafında WebSocket desteği gerektirir.
 
-**Karar:** `nulm` gibi ajan kontrol düzlemi ve onay akışlarının kritik olduğu bir sistemde **WebSocket** kullanımı tercih edilmelidir. Özellikle `pending_approvals` ve `activity` akışları için WebSocket üzerinden anlık bildirimler sağlanmalı, diğer daha az kritik veriler (örn. `status` endpointi) için daha uzun aralıklarla polling veya WebSocket üzerinden periyodik güncellemeler düşünülebilir.
+**Mevcut durum:** Dashboard backend şu an token korumalı HTTP polling modeliyle çalışır. Ana okuma
+endpointi `GET /api/status`, mesaj okuma/yazma endpointi `GET/POST /api/messages`, mutasyon
+endpointleri ise görev iptali ve approval kararlarıdır.
+
+**İleriki karar:** WebSocket veya SSE, pending approvals ve activity feed için daha iyi bir kullanıcı
+deneyimi sağlayabilir; ancak bu, mevcut backend sözleşmesi değil, UI sonrası ayrı bir geliştirme
+konusu olarak ele alınmalıdır.
 
 ---
 

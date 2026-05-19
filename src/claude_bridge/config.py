@@ -101,7 +101,6 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "smart",
             "insights_core",
             "git_read",
-            "ai_council",
         },
     },
     "full": {

@@ -31,8 +31,11 @@ Generated MCP configs should include:
 ```
 
 Use `CLAUDE_BRIDGE_TOOL_PROFILE=essential` for low-token sessions that only need file, shell,
-workspace, and indexing tools. Switch to `full` only for meta-agent, fun, URL, multi-format, or
-extra insights work.
+workspace, and indexing tools. The default `standard` profile adds bounded workflows, local
+control-plane helpers, read-only skill discovery, smart/context helpers, core insights, git read
+helpers, and deterministic Agent Quality advisory tools. Switch to `full` only for skill
+execution, meta-agent tools, AI council/model-routing experiments, adaptive proposal mutation,
+fun, URL, multi-format, git commit, or extra insights work.
 
 ## Collaboration Rules
 
