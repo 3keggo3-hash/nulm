@@ -1,8 +1,7 @@
-# Release Notes — nulm v0.1.1
+# Release Notes — nulm v0.1.2
 
-**Date:** 2026-05-10
-**Status:** Public alpha candidate; broad launch should wait for GitHub CI confirmation and first
-external install feedback
+**Date:** 2026-05-19
+**Status:** Public alpha
 **Python:** 3.10+
 
 ---
@@ -103,6 +102,21 @@ pip install -e ".[dev]"
 ---
 
 ## Changelog
+
+### v0.1.2 (2026-05-19)
+
+**Added:**
+- Web CLI tab (formerly Messages) with output UX: exit badge, stdout/stderr blocks,
+  copy, rerun, collapse, and filter controls
+- Backend CLI streaming via subprocess.Popen and `GET /api/cli/{id}/stream` polling
+- CLI permission levels: `read_only`, `safe_local`, `needs_approval`, and blocked commands
+  enforced server-side in the dashboard runner
+- Agent task runner: `POST /api/agent` to submit tasks, `GET /api/agent/task/{task_id}` to poll
+- Guarded CLI runner security properties documented in `docs/security-model.md`
+
+**Changed:**
+- Dashboard CLI runner now captures and stores stdout/stderr separately in message metadata
+- Background CLI jobs tracked by session ID with process lifecycle management
 
 ### v0.1.0 (2026-05-10)
 
