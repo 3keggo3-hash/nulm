@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import mimetypes
 import os
@@ -44,6 +45,8 @@ _RECENT_TOOL_CALL_LIMIT = 30
 _CLI_TIMEOUT_SECONDS = 20
 _CLI_OUTPUT_LIMIT = 12000
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_UNSPECIFIED_HOSTS = {"0.0.0.0", "::"}
+_TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 _DASHBOARD_WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
 _DASHBOARD_INDEX = "index.html"
 _TASK_STATUSES: set[str] = {
@@ -339,16 +342,44 @@ def create_dashboard_server(
     host: str = DEFAULT_DASHBOARD_HOST,
     port: int = DEFAULT_DASHBOARD_PORT,
     token: str | None = None,
+    expose_token_in_config: bool = True,
+    allow_network_bind: bool = False,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Create a local-only dashboard server and return it with the active token."""
-    if host not in _LOOPBACK_HOSTS:
-        raise ValueError("Control-plane dashboard only binds to localhost or loopback hosts")
+    if not _dashboard_host_allowed(host, allow_network_bind=allow_network_bind):
+        raise ValueError(
+            "Control-plane dashboard binds to loopback by default. Use --lan, --vpn, "
+            "or --public for explicit remote access."
+        )
     resolved_token = token or generate_dashboard_token()
-    handler = _make_handler(resolved_token)
+    handler = _make_handler(resolved_token, expose_token_in_config=expose_token_in_config)
     return ThreadingHTTPServer((host, port), handler), resolved_token
 
 
-def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
+def _dashboard_host_allowed(host: str, *, allow_network_bind: bool) -> bool:
+    if host in _LOOPBACK_HOSTS:
+        return True
+    if not allow_network_bind:
+        return False
+    if host in _UNSPECIFIED_HOSTS:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return bool(
+        address.is_loopback
+        or address.is_private
+        or address.is_link_local
+        or address in _TAILSCALE_NETWORK
+    )
+
+
+def _make_handler(
+    token: str,
+    *,
+    expose_token_in_config: bool,
+) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneDashboardHandler(BaseHTTPRequestHandler):
         server_version = "ClaudeBridgeControlPlane/1.0"
 
@@ -489,7 +520,7 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
 
         def _send_dashboard_config(self) -> None:
             payload = {
-                "token": token,
+                "token": token if expose_token_in_config else "",
                 "apiBaseUrl": "",
             }
             script = "window.__NULM_DASHBOARD__ = " + json.dumps(payload) + ";\n"

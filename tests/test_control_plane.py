@@ -332,6 +332,62 @@ def test_control_plane_dashboard_rejects_network_bind() -> None:
         raise AssertionError("Dashboard accepted a non-loopback bind")
 
 
+def test_control_plane_dashboard_network_bind_policy() -> None:
+    assert control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "127.0.0.1",
+        allow_network_bind=False,
+    )
+    assert control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "0.0.0.0",
+        allow_network_bind=True,
+    )
+    assert control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "192.168.1.20",
+        allow_network_bind=True,
+    )
+    assert control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "100.64.0.10",
+        allow_network_bind=True,
+    )
+    assert not control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "0.0.0.0",
+        allow_network_bind=False,
+    )
+    assert not control_plane_dashboard._dashboard_host_allowed(  # noqa: SLF001
+        "8.8.8.8",
+        allow_network_bind=True,
+    )
+
+
+def test_control_plane_dashboard_can_hide_config_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
+    try:
+        server, token = control_plane_dashboard.create_dashboard_server(
+            port=0,
+            expose_token_in_config=False,
+        )
+    except PermissionError as exc:
+        pytest.skip(f"local socket unavailable in this sandbox: {exc}")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        with urlopen(f"{base_url}/dashboard-config.js", timeout=2) as response:
+            config_script = response.read().decode("utf-8")
+        assert token not in config_script
+        assert '"token": ""' in config_script
+
+        with urlopen(f"{base_url}/api/status?token={token}", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        assert payload["schema_version"] == "control_plane.dashboard.v2"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_approval_has_expires_at_field(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
     approval = control_plane.create_approval("Test approval", tool="run_shell", command="ls")

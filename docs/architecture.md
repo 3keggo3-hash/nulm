@@ -97,8 +97,14 @@ See `docs/security-model.md` for full details.
 ## Local Control Plane Dashboard
 
 The dashboard provides a responsive localhost interface for monitoring and managing Nulm
-operations from the same machine. Phone access is available only when the user explicitly starts a
-tunnel and opens the token-protected tunnel URL.
+operations from the same machine. Remote access is opt-in:
+
+- `nulm dashboard --lan` binds to the local network for trusted same-Wi-Fi access.
+- `nulm dashboard --vpn` binds to the local Tailscale IPv4 address for recommended remote access.
+- `nulm dashboard --public` opens a temporary Cloudflare tunnel for convenience.
+
+In LAN, VPN, and public modes, the dashboard serves the static app without embedding the API token
+in `dashboard-config.js`; the token must come from the printed URL query string.
 
 ### Approvals
 
@@ -108,12 +114,13 @@ The approval workflow enables real-time decision-making on pending operations:
 - **Approve/deny**: Resolve individual requests; approvals are durable and survive server restarts
 - **Audit trail**: Resolution actions are written back to durable control-plane state
 
-### Messages Queue
+### CLI
 
-Asynchronous message handling for dashboard-to-agent communication:
+Guarded dashboard-to-CLI execution for local operations:
 
-- **Enqueue**: Submit a text instruction from the dashboard into the local message queue
-- **Consume**: MCP tools can list, acknowledge, and complete queued dashboard messages
+- **Run**: Submit an allowlisted `nulm ...` or `claude-bridge ...` command from the dashboard
+- **Record**: Store the command, exit status, and output in durable control-plane messages
+- **Boundaries**: Reject arbitrary shell commands and stop long-running commands with a timeout
 
 ### Config/Status
 
@@ -124,7 +131,7 @@ Runtime state visibility:
 ### Mobile-Friendly Layout
 
 The interface uses responsive CSS so the same token-protected dashboard remains usable on narrow
-screens when exposed through an explicit tunnel:
+screens when exposed through LAN, VPN, or a temporary tunnel:
 
 - **Responsive layout**: Adapts to phone, tablet, and desktop viewports
 - **Touch-friendly controls**: Action buttons and message input do not depend on hover

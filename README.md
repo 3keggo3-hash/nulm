@@ -361,11 +361,31 @@ For a browser view on the same computer:
 nulm dashboard
 ```
 
+For phone access on the same trusted Wi-Fi:
+
+```bash
+nulm dashboard --lan
+```
+
+For safer remote access, put the phone and computer on the same Tailscale network and bind only to
+the VPN address:
+
+```bash
+nulm dashboard --vpn
+```
+
+For temporary convenience when VPN is not available, start an explicit Cloudflare tunnel:
+
+```bash
+nulm dashboard --public
+```
+
 The dashboard binds to `127.0.0.1` by default, uses a per-session token in the URL, and can list
-tasks, list approvals, list queued dashboard messages, cancel tasks, approve actions, reject
-actions, and enqueue text instructions for agents to pick up without requiring a remote server.
-Phone access requires an explicit tunnel URL plus the active dashboard token; the default loopback
-server is intentionally reachable only from the same machine.
+tasks, list approvals, run guarded `nulm ...` CLI commands, cancel tasks, approve actions, and
+reject actions without requiring a hosted server. LAN, VPN, and public modes print a tokenized URL
+and keep the dashboard API token out of the static browser config. Prefer `--vpn` for remote access.
+Use `--public` only briefly; anyone who has the URL can control the local dashboard while the tunnel
+process is running.
 
 ## Feature Evaluation
 

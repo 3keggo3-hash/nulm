@@ -1,5 +1,6 @@
 const config = window.__NULM_DASHBOARD__ || {};
-const token = config.token || "";
+const urlParams = new URLSearchParams(window.location.search);
+const token = urlParams.get("token") || config.token || "";
 const apiBaseUrl = config.apiBaseUrl || "";
 
 const app = document.getElementById("app");

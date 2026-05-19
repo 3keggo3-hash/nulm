@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import socket
+import subprocess
 from typing import Any
+from urllib.parse import urlencode
 
 import typer
 from rich.console import Console
@@ -27,36 +31,79 @@ def register_control_plane_cli(
 
     @app.command("dashboard")
     def control_plane_dashboard(
-        host: str = typer.Option("127.0.0.1", "--host", help="Loopback host to bind"),
+        host: str = typer.Option("127.0.0.1", "--host", help="Host or interface to bind"),
         port: int = typer.Option(8765, "--port", help="Local dashboard port"),
         token: str | None = typer.Option(None, "--token", help="Optional dashboard token"),
         json_output: bool = typer.Option(
             False, "--json", help="Print machine-readable startup info"
         ),
+        lan: bool = typer.Option(
+            False,
+            "--lan",
+            help="Expose dashboard only on the local network",
+        ),
+        vpn: bool = typer.Option(
+            False,
+            "--vpn",
+            help="Expose dashboard only on the local Tailscale VPN address",
+        ),
         tunnel: bool = typer.Option(
-            False, "--tunnel", help="Expose dashboard via Cloudflare tunnel"
+            False,
+            "--tunnel",
+            "--public",
+            help="Expose dashboard through a temporary Cloudflare tunnel",
         ),
     ) -> None:
         """Serve the local control-plane dashboard on a loopback address."""
         from claude_bridge._tunnel_manager import TunnelManager
         from claude_bridge.control_plane_dashboard import create_dashboard_server
 
+        selected_modes = [name for name, enabled in (("lan", lan), ("vpn", vpn), ("public", tunnel)) if enabled]
+        if len(selected_modes) > 1:
+            _dashboard_start_error(
+                f"Choose only one remote access mode: {', '.join(selected_modes)}",
+                json_output,
+                console,
+            )
+        access_mode = selected_modes[0] if selected_modes else "local"
+        bind_host = host
+        if lan and host == "127.0.0.1":
+            bind_host = "0.0.0.0"
+        if vpn and host == "127.0.0.1":
+            try:
+                bind_host = _tailscale_ipv4()
+            except RuntimeError as exc:
+                _dashboard_start_error(str(exc), json_output, console)
+
         try:
-            server, resolved_token = create_dashboard_server(host=host, port=port, token=token)
+            server, resolved_token = create_dashboard_server(
+                host=bind_host,
+                port=port,
+                token=token,
+                expose_token_in_config=access_mode == "local",
+                allow_network_bind=access_mode in {"lan", "vpn"},
+            )
         except ValueError as exc:
-            if json_output:
-                console.print_json(data={"error": str(exc)})
-            else:
-                console.print(f"[red]{escape(str(exc))}[/red]")
-            raise typer.Exit(code=1) from exc
+            _dashboard_start_error(str(exc), json_output, console, cause=exc)
         actual_port = server.server_address[1]
-        local_url = f"http://{host}:{actual_port}/?token={resolved_token}"
+        local_url = _dashboard_url(f"http://127.0.0.1:{actual_port}/", resolved_token)
+        lan_url: str | None = None
+        vpn_url: str | None = None
         tunnel_url: str | None = None
-        if tunnel:
+        public_url: str | None = None
+        if access_mode == "lan":
+            lan_host = _best_lan_display_host(bind_host)
+            lan_url = _dashboard_url(f"http://{lan_host}:{actual_port}/", resolved_token)
+            display_url = lan_url
+        elif access_mode == "vpn":
+            vpn_url = _dashboard_url(f"http://{bind_host}:{actual_port}/", resolved_token)
+            display_url = vpn_url
+        elif access_mode == "public":
             try:
                 with TunnelManager() as tm:
                     tunnel_url = tm.start(actual_port)
-                    display_url = tunnel_url
+                    public_url = _dashboard_url(tunnel_url, resolved_token)
+                    display_url = public_url
             except RuntimeError as exc:
                 if json_output:
                     console.print_json(data={"error": str(exc)})
@@ -70,21 +117,52 @@ def register_control_plane_cli(
                 data={
                     "schema_version": "control_plane.dashboard_start.v1",
                     "host": host,
+                    "bind_host": bind_host,
                     "port": actual_port,
+                    "access_mode": access_mode,
                     "url": display_url,
                     "local_url": local_url,
+                    "lan_url": lan_url,
+                    "vpn_url": vpn_url,
                     "tunnel_url": tunnel_url,
+                    "public_url": public_url,
+                    "token_required": True,
                 }
             )
         else:
-            if tunnel and tunnel_url:
+            if access_mode == "public" and tunnel_url:
                 console.print(
                     Panel.fit(
-                        f"[bold link={tunnel_url}]Tunnel URL:[/bold link] "
-                        f"[cyan]{tunnel_url}[/cyan]\n\n"
+                        f"[bold link={display_url}]Phone URL:[/bold link] "
+                        f"[cyan]{display_url}[/cyan]\n\n"
                         f"[dim]Local URL:[/dim] {local_url}\n\n"
+                        "[yellow]Keep this URL private; it can control this local dashboard.[/yellow]\n\n"
                         "Press Ctrl-C to stop.",
                         title="Tunnel Active",
+                        border_style="green",
+                    )
+                )
+            elif access_mode == "lan":
+                console.print(
+                    Panel.fit(
+                        f"[bold link={display_url}]LAN URL:[/bold link] "
+                        f"[cyan]{display_url}[/cyan]\n\n"
+                        f"[dim]Local URL:[/dim] {local_url}\n\n"
+                        "[yellow]Only use on trusted Wi-Fi. Keep this URL private.[/yellow]\n\n"
+                        "Press Ctrl-C to stop.",
+                        title="LAN Dashboard",
+                        border_style="yellow",
+                    )
+                )
+            elif access_mode == "vpn":
+                console.print(
+                    Panel.fit(
+                        f"[bold link={display_url}]VPN URL:[/bold link] "
+                        f"[cyan]{display_url}[/cyan]\n\n"
+                        f"[dim]Local URL:[/dim] {local_url}\n\n"
+                        "[green]Recommended for remote access; not exposed to the public internet.[/green]\n\n"
+                        "Press Ctrl-C to stop.",
+                        title="VPN Dashboard",
                         border_style="green",
                     )
                 )
@@ -322,3 +400,69 @@ def _resolve_control_plane_approval(
         console.print_json(data=payload)
         return
     console.print(f"[green]{escape(status)}[/green] {escape(approval['id'])}")
+
+
+def _dashboard_url(base_url: str, token: str) -> str:
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}{urlencode({'token': token})}"
+
+
+def _dashboard_start_error(
+    message: str,
+    json_output: bool,
+    console: Console,
+    *,
+    cause: Exception | None = None,
+) -> None:
+    if json_output:
+        console.print_json(data={"error": message})
+    else:
+        console.print(f"[red]{escape(message)}[/red]")
+    raise typer.Exit(code=1) from cause
+
+
+def _best_lan_display_host(bind_host: str) -> str:
+    if bind_host not in {"0.0.0.0", "::"}:
+        return bind_host
+    detected = _detect_lan_ipv4()
+    return detected or "localhost"
+
+
+def _detect_lan_ipv4() -> str | None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        address = str(sock.getsockname()[0])
+    except OSError:
+        return None
+    finally:
+        sock.close()
+    if address.startswith("127."):
+        return None
+    return address
+
+
+def _tailscale_ipv4() -> str:
+    if shutil.which("tailscale") is None:
+        raise RuntimeError(
+            "Tailscale is not installed. Install it, connect this computer and phone to the "
+            "same tailnet, then run 'nulm dashboard --vpn'."
+        )
+    try:
+        result = subprocess.run(
+            ["tailscale", "ip", "-4"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            shell=False,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("Could not read Tailscale IPv4 address") from exc
+    address = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+    if result.returncode != 0 or not address:
+        raise RuntimeError(
+            "Tailscale is not connected. Connect this computer and phone to the same tailnet, "
+            "then run 'nulm dashboard --vpn'."
+        )
+    return address

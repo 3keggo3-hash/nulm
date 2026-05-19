@@ -52,8 +52,6 @@ class TunnelManager:
                 "tunnel",
                 "--url",
                 f"http://localhost:{port}",
-                "--logfile",
-                "STDOUT",
                 "--metrics",
                 "localhost:0",
             ]

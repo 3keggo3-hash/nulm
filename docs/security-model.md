@@ -131,13 +131,21 @@ as invalid for recommendation purposes.
 
 ---
 
-## Mobile Dashboard and Tunnel Safety
+## Mobile Dashboard and Remote Access Safety
 
 The dashboard binds to `localhost`/`127.0.0.1` by default, restricting access to the local machine only.
 
-### Tunnel Access
+### Access Modes
 
-Enabling the tunnel exposes the dashboard externally, increasing the attack surface. External access requires a mandatory token — requests without a valid token are rejected.
+- `nulm dashboard` is local-only and safest.
+- `nulm dashboard --lan` binds to the local network and should be used only on trusted Wi-Fi.
+- `nulm dashboard --vpn` binds to the local Tailscale IPv4 address and is the recommended remote
+  mode because it is not exposed to the public internet.
+- `nulm dashboard --public` starts a temporary Cloudflare tunnel and should be used only briefly.
+
+LAN, VPN, and public access require a mandatory token — requests without a valid token are rejected.
+In remote modes, the API token is not embedded in `dashboard-config.js`; the printed tokenized URL is
+the credential.
 
 ### Token Security Risks
 
@@ -148,14 +156,18 @@ Enabling the tunnel exposes the dashboard externally, increasing the attack surf
 
 ### Mitigation Recommendations
 
-- Use **short-lived tokens** with automatic expiry
+- Use the default per-session token and stop the dashboard when remote access is no longer needed
+- Prefer `--vpn` over `--public` for remote access
 - Apply `Cache-Control: no-store` headers to prevent browser caching of pages containing tokens
 - Redact tokens from log output before sharing diagnostics
 - Avoid sending tokens via chat or screenshot-based communication channels
 
 ### Mutating Actions
 
-Write operations and destructive tool calls over tunnel connections require explicit confirmation and are logged to the audit trail with user identity.
+Dashboard CLI execution is allowlisted to guarded `nulm ...` / `claude-bridge ...` commands and
+does not run arbitrary shell commands. Write operations and destructive tool calls over tunnel
+connections should require explicit confirmation and be logged to the audit trail with user
+identity.
 
 ## Threat Model Summary
 

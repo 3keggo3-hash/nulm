@@ -57,3 +57,26 @@ def test_wait_for_url_extracts_trycloudflare_url() -> None:
     url = manager._wait_for_url(_FakeProcess(_UrlStdout()))  # noqa: SLF001
 
     assert url == "https://mobile-control.trycloudflare.com"
+
+
+def test_start_does_not_create_stdout_logfile(monkeypatch: pytest.MonkeyPatch) -> None:
+    commands: list[list[str]] = []
+
+    class FakePopen:
+        stdout = _UrlStdout()
+
+        def __init__(self, command: list[str], **kwargs: object) -> None:
+            commands.append(command)
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr(_tunnel_manager.TunnelManager, "is_available", staticmethod(lambda: True))
+    monkeypatch.setattr(_tunnel_manager.subprocess, "Popen", FakePopen)
+
+    url = _tunnel_manager.TunnelManager().start(8765)
+
+    assert url == "https://mobile-control.trycloudflare.com"
+    assert commands
+    assert "--logfile" not in commands[0]
+    assert "STDOUT" not in commands[0]
