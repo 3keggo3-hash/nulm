@@ -252,7 +252,9 @@ class TestToolsOverview:
         payload = json.loads(await mcp_server.tools_overview())
         assert payload["ok"] is True
         assert payload["details"]["recommended_starters"]
-        assert payload["details"]["recommended_starters"][0]["intent"] == "public_ready_check"
+        starters = payload["details"]["recommended_starters"]
+        assert starters[0]["intent"] == "inspect_current_project"
+        assert any(starter["intent"] == "public_ready_check" for starter in starters)
         agent_quality = payload["details"]["groups"]["agent_quality"]
         assert "improve_request" in agent_quality["planning"]
         assert "suggest_bridge_config" in agent_quality["config"]

@@ -24,6 +24,12 @@ class TestSystemPrompt:
         assert "workspace_status()" in SYSTEM_PROMPT
         assert "switch_project_root()" in SYSTEM_PROMPT
 
+    def test_prompt_mentions_direct_local_project_access(self):
+        prompt_lower = SYSTEM_PROMPT.lower()
+        assert "configured local project" in prompt_lower
+        assert "do not say you cannot see local files" in prompt_lower
+        assert "find_relevant_files" in SYSTEM_PROMPT
+
 
 class TestMCPSetupGuide:
     """Test MCP setup guide content."""
@@ -48,3 +54,8 @@ class TestMCPSetupGuide:
     def test_guide_is_non_empty(self, tmp_path: Path):
         guide = self._guide(tmp_path)
         assert len(guide) > 200
+
+    def test_guide_encourages_direct_local_project_inspection(self, tmp_path: Path):
+        guide = self._guide(tmp_path)
+        assert "Use Nulm to inspect this local project" in guide
+        assert "check the Nulm MCP tools" in guide

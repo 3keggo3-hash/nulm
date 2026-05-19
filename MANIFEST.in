@@ -3,6 +3,7 @@ include LICENSE
 include pyproject.toml
 graft docs
 graft examples
+graft web
 graft src
 prune tests
 prune archive
