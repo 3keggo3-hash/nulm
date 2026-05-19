@@ -27,6 +27,8 @@ const tabs = [
 
 let activeTab = "overview";
 let lastError = "";
+let dashboardData = null;
+let isRefreshing = false;
 
 function apiUrl(path) {
   const separator = path.includes("?") ? "&" : "?";
@@ -58,7 +60,7 @@ async function postAction(path, body = { reason: "dashboard" }) {
     throw new Error(message);
   }
   lastError = "";
-  await render();
+  await refreshDashboard({ showLoading: false });
 }
 
 async function sendMessage() {
@@ -114,7 +116,7 @@ function renderMetrics(data) {
   const workspace = data.workspace || {};
   let html = metricCard(summary.total || 0, "Total Tasks");
   html += metricCard(pendingApprovals, "Pending Approvals", "approval_pending");
-  html += metricCard(failureCount, "Recent Failures", failureCount ? "failed" : "completed");
+  html += metricCard(failureCount, "Recent Failures", failureCount ? "failed" : "");
   html += metricCard(workspace.profile?.tool_profile || "unknown", "Tool Profile");
   for (const status of taskStatuses) {
     const count = byStatus[status.key] || 0;
@@ -123,6 +125,33 @@ function renderMetrics(data) {
     }
   }
   return html;
+}
+
+function pendingApprovals(data) {
+  return (data.approvals || []).filter((row) => row.status === "pending");
+}
+
+function renderApprovalStrip(data) {
+  const approvals = pendingApprovals(data);
+  if (!approvals.length) {
+    return "";
+  }
+  const first = approvals[0];
+  return `
+    <section class="approval-strip" aria-label="Pending approval action center">
+      <div>
+        <div class="label">Action Center</div>
+        <strong>${escapeHtml(approvals.length)} pending approval${approvals.length === 1 ? "" : "s"}</strong>
+        <div class="muted">
+          ${escapeHtml(first.title || first.tool || "Approval required")}
+          ${first.command ? ` · ${escapeHtml(first.command)}` : ""}
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" data-tab-jump="approvals">Review</button>
+      </div>
+    </section>
+  `;
 }
 
 function renderTabs() {
@@ -190,17 +219,19 @@ function renderTasks(tasks) {
             .map(
               (row) => `
                 <tr>
-                  <td><code>${escapeHtml(row.id)}</code></td>
-                  <td>
+                  <td data-label="ID"><code>${escapeHtml(row.id)}</code></td>
+                  <td data-label="Status">
                     <span class="status-dot status-${escapeHtml(row.status)}"></span>
                     ${escapeHtml(formatStatusLabel(row.status))}
                   </td>
-                  <td>
+                  <td data-label="Title">
                     <strong>${escapeHtml(row.title || "")}</strong>
                     <div class="muted">${escapeHtml(row.summary || "")}</div>
                   </td>
-                  <td class="timestamp">${escapeHtml(row.updated_at || row.created_at || "")}</td>
-                  <td>
+                  <td class="timestamp" data-label="Updated">
+                    ${escapeHtml(row.updated_at || row.created_at || "")}
+                  </td>
+                  <td data-label="Control">
                     <div class="control-stack">
                       <select data-status-for="${escapeHtml(row.id)}">
                         ${taskStatuses
@@ -261,22 +292,22 @@ function renderApprovals(approvals) {
             .map(
               (row) => `
                 <tr>
-                  <td><code>${escapeHtml(row.id)}</code></td>
-                  <td>
+                  <td data-label="ID"><code>${escapeHtml(row.id)}</code></td>
+                  <td data-label="Status">
                     <span class="status-dot status-${escapeHtml(row.status)}"></span>
                     ${escapeHtml(row.status)}
                     <div class="timestamp">${escapeHtml(row.expires_at || "")}</div>
                   </td>
-                  <td>
+                  <td data-label="Request">
                     <strong>${escapeHtml(row.title || "")}</strong>
                     <div class="muted">${escapeHtml(row.reason || row.summary || "")}</div>
                     <div class="timestamp">${escapeHtml(row.metadata?.task_id || "")}</div>
                   </td>
-                  <td>
+                  <td data-label="Command">
                     <div>${escapeHtml(row.tool || "")}</div>
                     <code>${escapeHtml(row.command || "")}</code>
                   </td>
-                  <td>
+                  <td data-label="Decision">
                     <div class="control-stack">
                       <input
                         type="text"
@@ -331,19 +362,19 @@ function renderRecentToolCalls(recent) {
             .map(
               (row) => `
                 <tr>
-                  <td class="timestamp">${escapeHtml(row.timestamp)}</td>
-                  <td><code>${escapeHtml(row.tool_name)}</code></td>
-                  <td>
+                  <td class="timestamp" data-label="Time">${escapeHtml(row.timestamp)}</td>
+                  <td data-label="Tool"><code>${escapeHtml(row.tool_name)}</code></td>
+                  <td data-label="Result">
                     <span class="status-dot status-${row.ok === false ? "failed" : "completed"}">
                     </span>
                     ${escapeHtml(row.ok === false ? "failed" : "ok")}
                     <div class="muted">${escapeHtml(row.message || row.code || "")}</div>
                   </td>
-                  <td>
+                  <td data-label="Policy">
                     ${escapeHtml(row.decision_action || "n/a")}
                     <div class="muted">${escapeHtml(row.decision_risk_level || "")}</div>
                   </td>
-                  <td>${escapeHtml(row.duration_ms || 0)} ms</td>
+                  <td data-label="Duration">${escapeHtml(row.duration_ms || 0)} ms</td>
                 </tr>
               `
             )
@@ -390,12 +421,12 @@ function renderMessages(messages) {
     .map(
       (row) => `
         <article class="message">
-          <div>
-            <strong>${escapeHtml(row.status)}</strong>
+          <div class="message-header">
+            <span class="message-status">${escapeHtml(row.status)}</span>
             <span class="timestamp">${escapeHtml(row.updated_at || row.created_at || "")}</span>
           </div>
-          <div>${escapeHtml(row.message || "")}</div>
-          <div class="muted">${escapeHtml(row.response || "")}</div>
+          <div class="message-body">${escapeHtml(row.message || "")}</div>
+          <div class="message-response">${escapeHtml(row.response || "")}</div>
         </article>
       `
     )
@@ -427,7 +458,7 @@ function renderTabContent(data) {
   }
   if (activeTab === "messages") {
     return `
-      <section class="messages">
+      <section>
         <h2>Messages</h2>
         <textarea
           id="messageText"
@@ -436,7 +467,9 @@ function renderTabContent(data) {
         <div class="actions">
           <button class="primary" id="sendMessage">Send</button>
         </div>
-        ${renderMessages(data.messages || [])}
+        <div class="messages-list">
+          ${renderMessages(data.messages || [])}
+        </div>
       </section>
     `;
   }
@@ -463,7 +496,7 @@ async function runAction(action) {
     await action();
   } catch (error) {
     lastError = error.message;
-    await render();
+    renderApp(dashboardData);
   }
 }
 
@@ -471,7 +504,13 @@ function bindActions() {
   document.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       activeTab = button.dataset.tab;
-      render();
+      renderApp(dashboardData);
+    });
+  });
+  document.querySelectorAll("[data-tab-jump]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeTab = button.dataset.tabJump;
+      renderApp(dashboardData);
     });
   });
   document.querySelectorAll("[data-action]").forEach((button) => {
@@ -493,56 +532,68 @@ function bindActions() {
       );
     });
   });
-  document.getElementById("refresh")?.addEventListener("click", render);
+  document.getElementById("refresh")?.addEventListener("click", () => {
+    refreshDashboard({ showLoading: false });
+  });
   document.getElementById("sendMessage")?.addEventListener("click", sendMessage);
 }
 
-async function render() {
+function renderShell(subtitle, mainContent) {
   app.innerHTML = `
     <header>
       <div>
-        <h1>Control Plane</h1>
-        <div class="muted">Loading dashboard state...</div>
+        <h1>nulm control plane</h1>
+        <div class="muted">${escapeHtml(subtitle)}</div>
       </div>
-      <button id="refresh">Refresh</button>
+      <button id="refresh" ${isRefreshing ? "disabled" : ""}>
+        ${isRefreshing ? "Refreshing" : "Refresh"}
+      </button>
     </header>
     <main>
-      <div class="empty">Loading...</div>
+      ${mainContent}
     </main>
   `;
-
-  try {
-    const data = await loadDashboard();
-    app.innerHTML = `
-      <header>
-        <div>
-          <h1>Control Plane</h1>
-          <div class="muted">${escapeHtml(data.state_dir || "")}</div>
-        </div>
-        <button id="refresh">Refresh</button>
-      </header>
-      <main>
-        ${lastError ? `<div class="notice danger">${escapeHtml(lastError)}</div>` : ""}
-        <div class="metrics">${renderMetrics(data)}</div>
-        ${renderTabs()}
-        ${renderTabContent(data)}
-      </main>
-    `;
-  } catch (error) {
-    app.innerHTML = `
-      <header>
-        <div>
-          <h1>Control Plane</h1>
-          <div class="muted">Dashboard API unavailable</div>
-        </div>
-        <button id="refresh">Refresh</button>
-      </header>
-      <main>
-        <div class="empty">${escapeHtml(error.message)}</div>
-      </main>
-    `;
-  }
   bindActions();
 }
 
-render();
+function renderApp(data) {
+  if (!data) {
+    renderShell("Loading dashboard state...", '<div class="empty">Loading...</div>');
+    return;
+  }
+  renderShell(
+    data.state_dir || "",
+    `
+      ${lastError ? `<div class="notice danger">${escapeHtml(lastError)}</div>` : ""}
+      ${renderApprovalStrip(data)}
+      <div class="metrics">${renderMetrics(data)}</div>
+      ${renderTabs()}
+      ${renderTabContent(data)}
+    `
+  );
+}
+
+async function refreshDashboard({ showLoading = true } = {}) {
+  if (showLoading && !dashboardData) {
+    renderApp(null);
+  } else if (dashboardData) {
+    isRefreshing = true;
+    renderApp(dashboardData);
+  }
+
+  try {
+    dashboardData = await loadDashboard();
+    lastError = "";
+  } catch (error) {
+    lastError = error.message;
+    if (!dashboardData) {
+      renderShell("Dashboard API unavailable", `<div class="empty">${escapeHtml(error.message)}</div>`);
+      return;
+    }
+  } finally {
+    isRefreshing = false;
+  }
+  renderApp(dashboardData);
+}
+
+refreshDashboard();
