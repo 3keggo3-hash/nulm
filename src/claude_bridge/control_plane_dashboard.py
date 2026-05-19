@@ -9,7 +9,11 @@ from __future__ import annotations
 import hmac
 import json
 import mimetypes
+import os
 import secrets
+import shlex
+import subprocess
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -17,6 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from claude_bridge.control_plane import (
     ControlPlaneApproval,
+    MessageStatus,
     ControlPlaneTask,
     TaskStatus,
     create_message,
@@ -26,6 +31,7 @@ from claude_bridge.control_plane import (
     list_tasks,
     resolve_approval,
     summarize_tasks,
+    update_message_status,
     update_task_status,
 )
 from claude_bridge.config import update_runtime_config
@@ -35,6 +41,8 @@ DEFAULT_DASHBOARD_PORT = 8765
 MAX_ACTION_BODY_BYTES = 8192
 _DASHBOARD_RECORD_LIMIT = 50
 _RECENT_TOOL_CALL_LIMIT = 30
+_CLI_TIMEOUT_SECONDS = 20
+_CLI_OUTPUT_LIMIT = 12000
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 _DASHBOARD_WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
 _DASHBOARD_INDEX = "index.html"
@@ -51,6 +59,32 @@ _TASK_STATUSES: set[str] = {
     "completed",
     "cancelled",
 }
+_ALLOWED_CLI_TOP_LEVEL: set[str] = {
+    "--help",
+    "--version",
+    "version",
+    "doctor",
+    "envdoctor",
+    "policy",
+    "control-plane",
+    "tasks",
+    "approvals",
+    "skill",
+    "audit",
+    "anomaly",
+    "sessions",
+    "workflow-preview",
+}
+_ALLOWED_SKILL_SUBCOMMANDS: set[str] = {
+    "list",
+    "trust-levels",
+    "inspect",
+    "recommend",
+    "packages",
+    "package-inspect",
+}
+_ALLOWED_AUDIT_SUBCOMMANDS: set[str] = {"summary", "export"}
+_ALLOWED_ANOMALY_SUBCOMMANDS: set[str] = {"scan"}
 
 
 class ControlPlaneDashboardError(ValueError):
@@ -196,6 +230,110 @@ def apply_dashboard_action(
     raise ControlPlaneDashboardError(f"Unsupported dashboard action '{action}'")
 
 
+def run_dashboard_cli_command(command: str) -> dict[str, Any]:
+    """Run a guarded Nulm CLI command submitted from the dashboard."""
+    message = create_message(
+        command,
+        metadata={"source": "dashboard", "kind": "cli"},
+    )
+    try:
+        args = _dashboard_cli_args(command)
+        acknowledged = update_message_status(
+            message["id"],
+            "acknowledged",
+            response="Running...",
+            metadata={"source": "dashboard", "kind": "cli", "argv": args},
+        )
+        result = subprocess.run(
+            [sys.executable, "-m", "claude_bridge", *args],
+            cwd=Path.cwd(),
+            env=dict(os.environ),
+            capture_output=True,
+            text=True,
+            timeout=_CLI_TIMEOUT_SECONDS,
+            shell=False,
+            check=False,
+        )
+        output = _format_cli_output(result.returncode, result.stdout, result.stderr)
+        status = cast(MessageStatus, "completed" if result.returncode == 0 else "failed")
+        completed = update_message_status(
+            message["id"],
+            status,
+            response=output,
+            metadata={
+                "source": "dashboard",
+                "kind": "cli",
+                "argv": args,
+                "returncode": result.returncode,
+            },
+        )
+        return {"ok": result.returncode == 0, "record": completed or acknowledged or message}
+    except (ControlPlaneDashboardError, ValueError) as exc:
+        failed = update_message_status(
+            message["id"],
+            "failed",
+            response=str(exc),
+            metadata={"source": "dashboard", "kind": "cli"},
+        )
+        return {"ok": False, "record": failed or message, "error": str(exc)}
+    except subprocess.TimeoutExpired:
+        failed = update_message_status(
+            message["id"],
+            "failed",
+            response=f"Command timed out after {_CLI_TIMEOUT_SECONDS} seconds.",
+            metadata={
+                "source": "dashboard",
+                "kind": "cli",
+                "timeout_seconds": _CLI_TIMEOUT_SECONDS,
+            },
+        )
+        return {"ok": False, "record": failed or message, "error": "command_timeout"}
+
+
+def _dashboard_cli_args(command: str) -> list[str]:
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        raise ControlPlaneDashboardError(f"Could not parse command: {exc}") from exc
+    if not parts:
+        raise ControlPlaneDashboardError("Command is required")
+    executable = Path(parts[0]).name
+    if executable not in {"nulm", "claude-bridge"}:
+        raise ControlPlaneDashboardError(
+            "Only 'nulm ...' and 'claude-bridge ...' commands run here"
+        )
+    args = parts[1:] or ["--help"]
+    _validate_dashboard_cli_args(args)
+    return args
+
+
+def _validate_dashboard_cli_args(args: list[str]) -> None:
+    top_level = args[0]
+    if top_level not in _ALLOWED_CLI_TOP_LEVEL:
+        allowed = ", ".join(sorted(_ALLOWED_CLI_TOP_LEVEL))
+        raise ControlPlaneDashboardError(
+            f"Unsupported dashboard CLI command '{top_level}'. Allowed: {allowed}"
+        )
+    if top_level == "skill" and len(args) > 1 and args[1] not in _ALLOWED_SKILL_SUBCOMMANDS:
+        raise ControlPlaneDashboardError(f"Unsupported dashboard skill command '{args[1]}'")
+    if top_level == "audit" and len(args) > 1 and args[1] not in _ALLOWED_AUDIT_SUBCOMMANDS:
+        raise ControlPlaneDashboardError(f"Unsupported dashboard audit command '{args[1]}'")
+    if top_level == "anomaly" and len(args) > 1 and args[1] not in _ALLOWED_ANOMALY_SUBCOMMANDS:
+        raise ControlPlaneDashboardError(f"Unsupported dashboard anomaly command '{args[1]}'")
+
+
+def _format_cli_output(returncode: int, stdout: str, stderr: str) -> str:
+    sections = [f"exit={returncode}"]
+    if stdout.strip():
+        sections.append(stdout.strip())
+    if stderr.strip():
+        sections.append("stderr:\n" + stderr.strip())
+    output = "\n\n".join(sections)
+    if len(output) > _CLI_OUTPUT_LIMIT:
+        return output[:_CLI_OUTPUT_LIMIT] + "\n\n[output truncated]"
+    return output
+
+
 def create_dashboard_server(
     *,
     host: str = DEFAULT_DASHBOARD_HOST,
@@ -261,13 +399,20 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 )
                 self._send_json({"ok": True, "record": message_record})
                 return
+            if len(parts) == 2 and parts == ["api", "cli"]:
+                command = body.get("command", "")
+                if not isinstance(command, str) or not command.strip():
+                    self._send_json({"error": "command_required"}, status=400)
+                    return
+                self._send_json(run_dashboard_cli_command(command.strip()))
+                return
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "tasks":
                 _, collection, record_id, action = parts
                 if collection == "tasks" and action == "status":
                     reason = _string_body_value(body, "reason")
                     status_value = _string_body_value(body, "status")
                     try:
-                        action_record = apply_dashboard_action(
+                        task_action_record = apply_dashboard_action(
                             "update-task-status",
                             record_id,
                             reason=reason,
@@ -277,7 +422,7 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                         error_status = 400 if "Unsupported task status" in str(exc) else 404
                         self._send_json({"error": str(exc)}, status=error_status)
                         return
-                    self._send_json({"ok": True, "record": action_record})
+                    self._send_json({"ok": True, "record": task_action_record})
                     return
             if len(parts) != 4 or parts[0] != "api":
                 self._send_json({"error": "not_found"}, status=404)

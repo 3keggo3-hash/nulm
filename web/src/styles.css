@@ -444,6 +444,8 @@ select {
   margin-top: 4px;
   line-height: 1.5;
   font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 textarea {

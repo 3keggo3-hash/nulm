@@ -69,7 +69,7 @@ async function sendMessage() {
   if (!message) {
     return;
   }
-  await runAction(() => postAction("/api/messages", { message }));
+  await runAction(() => postAction("/api/cli", { command: message }));
   box.value = "";
 }
 
@@ -459,13 +459,13 @@ function renderTabContent(data) {
   if (activeTab === "messages") {
     return `
       <section>
-        <h2>Messages</h2>
+        <h2>CLI</h2>
         <textarea
           id="messageText"
-          placeholder="Send an instruction or note to the agent"
+          placeholder="nulm doctor --json"
         ></textarea>
         <div class="actions">
-          <button class="primary" id="sendMessage">Send</button>
+          <button class="primary" id="sendMessage">Run</button>
         </div>
         <div class="messages-list">
           ${renderMessages(data.messages || [])}

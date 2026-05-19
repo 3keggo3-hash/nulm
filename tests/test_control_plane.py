@@ -286,6 +286,30 @@ def test_control_plane_dashboard_http_requires_token(monkeypatch, tmp_path: Path
             messages_payload = json.loads(response.read().decode("utf-8"))
         assert messages_payload["messages"][0]["message"] == "dashboard validation"
 
+        cli_request = Request(
+            f"{base_url}/api/cli?token={token}",
+            data=json.dumps({"command": "nulm --version"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(cli_request, timeout=5) as response:
+            cli_payload = json.loads(response.read().decode("utf-8"))
+        assert cli_payload["ok"] is True
+        assert cli_payload["record"]["status"] == "completed"
+        assert "exit=0" in cli_payload["record"]["response"]
+
+        blocked_cli_request = Request(
+            f"{base_url}/api/cli?token={token}",
+            data=json.dumps({"command": "python --version"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(blocked_cli_request, timeout=2) as response:
+            blocked_payload = json.loads(response.read().decode("utf-8"))
+        assert blocked_payload["ok"] is False
+        assert blocked_payload["record"]["status"] == "failed"
+        assert "Only 'nulm ...'" in blocked_payload["record"]["response"]
+
         request = Request(f"{base_url}/api/status", method="GET")
         try:
             urlopen(request, timeout=2)
