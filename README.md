@@ -117,8 +117,8 @@ shell commands unless you opt into local auto-approval, and records structured a
   structured review, explain, test, todo, quality, and bounded agent-loop flows
 - **Feature routing for IDEs**: `nulm_assist` maps natural-language requests for AI Council,
   AI Evaluator, Guard Policy, plan review, result review, setup, and token use to the right tools
-- **AI Council**: `run_council_session` is available in the default `standard` profile as a
-  read-only multi-role planning debate
+- **AI Council**: `run_council_session` is available in the explicit `full` profile as a read-only
+  multi-role planning debate
 - **Full-profile Git commit helper**: `commit_changes` for explicit local commits
 - **Audit logging**: tool calls recorded as structured JSONL
 - **Policy engine**: custom guard rules, team RBAC, deterministic policy replay, policy diff for

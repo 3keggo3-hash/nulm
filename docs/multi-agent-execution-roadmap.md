@@ -1,12 +1,15 @@
 # Multi-Agent Execution Roadmap
 
 Date: 2026-05-20
-Horizon: 3-6 months
-Status: Proposed implementation roadmap
+Horizon: 29 weeks
+Status: Updated implementation roadmap
 
 This roadmap translates the multi-agent architecture audit into an execution plan. It deliberately
 prioritizes observability, deterministic orchestration, tool mediation, and measurable progress over
 flashy autonomy.
+
+Phase 0 baseline evidence lives in `docs/multi-agent-runtime-baseline.md`. Phase 0.5 feature surface
+classification lives in `docs/multi-agent-feature-pruning-audit.md`.
 
 ## Guiding Rules
 
@@ -33,11 +36,81 @@ flashy autonomy.
 | P3 | Sandbox/worktree execution envelopes | High | Medium-high | Valuable but touches operational complexity |
 | P3 | Adaptive routing/skills in shadow mode | Medium later | High | Needs labeled run data first |
 
+## Updated Phase Timeline
+
+| Week | Phase | Objective | Risk |
+|---:|---|---|---|
+| 1 | Phase 0 | Stabilize baseline and test reality | Low |
+| 2 | Phase 0.5 | Classify unnecessary, early, or experimental surface | Low |
+| 3-4 | Phase 1 | Agent run observability | Low |
+| 5-6 | Phase 2 | Typed task/artifact contracts | Low-medium |
+| 7 | Phase 3 | Route decision telemetry | Low |
+| 8-11 | Phase 4 | Agent Tool Broker plus buffer | Medium |
+| 12-13 | Phase 5 | Context manifest plus budget ledger | Low-medium |
+| 14-16 | Phase 6 | Benchmark harness plus regression gates | Low-medium |
+| 17-21 | Phase 7 | Durable DAG records plus buffer | Medium |
+| 22 | Phase 7.5 | Wait, measure, and validate the state model | Low |
+| 23-26 | Phase 8 | Minimal deterministic DAG scheduler | Medium |
+| 27-29 | Phase 9 | Verification/adjudication MVP | Medium |
+
+## Phase 0: Baseline Stabilization
+
+Scope:
+
+- Run the existing test suite and record results.
+- Separate flaky, slow, skipped, and cache-sensitive tests.
+- Mark the agent-related test group as its own baseline.
+- Do not improve coverage during this phase; make gaps visible only.
+
+Exit criteria:
+
+- Test baseline report exists.
+- Agent-layer minimum regression commands are identified.
+- The starting system state is answerable from evidence.
+
+Current artifact: `docs/multi-agent-runtime-baseline.md`.
+
+## Phase 0.5: Feature Surface Pruning Audit
+
+Scope:
+
+- Classify current feature/module/tool surface as Keep, Rework, Hide, Deprecate, or Remove later.
+- Do not delete code in this phase.
+- Move risky, noisy, or experimental behavior away from default profiles only when compatibility is
+  preserved by keeping the implementation available in an explicit profile.
+- Keep the deferred list visible throughout the roadmap.
+
+Initial decisions:
+
+- `run_council_session`: keep but gate; hidden from `standard`, available in `full`.
+- Adaptive proposals: proposal-only/shadow; no automatic behavior.
+- `run_skill`: full profile only; not default runtime behavior.
+- `meta_agent_server`: hide/rework candidate for broad behavior.
+- `agents/messaging.py`: experimental/test-only until durable event logs exist.
+- `agents/shared_memory.py`: replacement candidate after context manifest/blackboard work.
+- `workflow_engine.py`: preserve as a future compatibility facade.
+- `VerificationAgent`: preserve and evolve into a real verifier node in Phase 9.
+
+Exit criteria:
+
+- Keep/Rework/Hide/Deprecate/Remove-later table exists.
+- Deferred list is visible and preserved.
+- Default tool-surface decisions are explicit.
+
+Current artifact: `docs/multi-agent-feature-pruning-audit.md`.
+
 ## Month 1: Make the Current Agent Layer Observable and Honest
 
 Objective: no new autonomy; make current orchestration inspectable, typed, and testable.
 
 ### 1. Add Agent Run Records
+
+Status: Phase 1 exit criteria met. `agent_run.v1` records exist for dispatcher-managed subtasks,
+direct `BaseAgent.execute_traced(...)` calls, and orchestrator-visible summaries. Records are
+appended to the current audit session/index as `agent_run` records. Compact summaries surface
+through orchestrator artifacts, `summarize_session`, MCP session-insight details, dashboard activity
+payloads, and `audit summary` CLI output. Remaining direct subprocess/tool mediation work belongs
+to Phase 4.
 
 Deliverables:
 
@@ -74,6 +147,11 @@ Primary tests:
 - malformed agent result still produces a failure record.
 
 ### 2. Introduce Typed Task Contracts Behind an Adapter
+
+Status: In progress. `TaskSpec`, `TaskBudget`, `TaskPermissions`, `AgentArtifact`, and
+`EvidenceRef` now exist. The dispatcher coerces legacy subtask dictionaries into `TaskSpec` at the
+boundary and also accepts typed `TaskSpec` inputs directly. Keyword decomposition and public
+orchestrator behavior are unchanged.
 
 Deliverables:
 

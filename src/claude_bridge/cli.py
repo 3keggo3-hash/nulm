@@ -2346,6 +2346,30 @@ def audit_summary(
         console.print("Tool counts:")
         for tool_name, count in sorted(summary["tool_counts"].items()):
             console.print(f"  {tool_name}: {count}")
+    agent_runs = summary.get("agent_runs", {})
+    if isinstance(agent_runs, dict) and int(agent_runs.get("run_count", 0) or 0) > 0:
+        console.print("\nAgent runs:")
+        console.print(f"  Runs: {agent_runs.get('run_count', 0)}")
+        status_counts = agent_runs.get("status_counts", {})
+        if isinstance(status_counts, dict) and status_counts:
+            status_text = ", ".join(
+                f"{escape(str(status))}={count}" for status, count in sorted(status_counts.items())
+            )
+            console.print(f"  Status: {status_text}")
+        agent_names = agent_runs.get("agent_names", [])
+        if isinstance(agent_names, list) and agent_names:
+            agents_text = ", ".join(escape(str(name)) for name in agent_names[:8])
+            console.print(f"  Agents: {agents_text}")
+        failures = agent_runs.get("failures", [])
+        if isinstance(failures, list) and failures:
+            console.print("  Failures:")
+            for failure in failures[:5]:
+                if not isinstance(failure, dict):
+                    continue
+                agent_name = escape(str(failure.get("agent_name", "unknown")))
+                task_id = escape(str(failure.get("task_id", "")))
+                error_class = escape(str(failure.get("error_class", "AgentFailure")))
+                console.print(f"    [{agent_name}] {task_id}: {error_class}")
     activity = summary.get("activity", {})
     if isinstance(activity, dict):
         touched_paths = activity.get("touched_paths", [])

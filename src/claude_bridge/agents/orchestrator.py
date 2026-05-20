@@ -15,6 +15,7 @@ from claude_bridge.ai_evaluator import EvaluationRequest, Provider
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.dispatcher import TaskDispatcher
 from claude_bridge.agents.result import AgentResult, AgentStatus
+from claude_bridge.agents.run_record import AgentRunRecord, compact_run_summary
 from claude_bridge.agents.shared_memory import SharedMemorySpace
 
 if TYPE_CHECKING:
@@ -35,6 +36,11 @@ class OrchestratorAgent(BaseAgent):
         self._dispatcher = TaskDispatcher(self._shared_memory)
         self._ai_provider = ai_provider
 
+    @property
+    def run_records(self) -> list[AgentRunRecord]:
+        """Return records from the most recent dispatched orchestration."""
+        return list(self._dispatcher.run_records)
+
     async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
         """Execute task through orchestration.
 
@@ -50,7 +56,9 @@ class OrchestratorAgent(BaseAgent):
         agents: list[BaseAgent] = context.get("agents", [])
         results = await self._dispatcher.distribute(subtasks, agents)
 
-        return await self.synthesize(results)
+        synthesized = await self.synthesize(results)
+        synthesized.artifacts["agent_run_summary"] = compact_run_summary(self.run_records)
+        return synthesized
 
     async def decompose(self, task: str) -> list[dict[str, Any]]:
         """Decompose task into subtasks using AI evaluation.

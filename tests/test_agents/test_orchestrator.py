@@ -20,6 +20,11 @@ class DummySubAgent(BaseAgent):
         )
 
 
+class FailingSubAgent(BaseAgent):
+    async def execute(self, task: str, context: dict) -> AgentResult:
+        return AgentResult.failure(error="simulated failure", agent_name=self.name)
+
+
 @pytest.mark.asyncio
 async def test_orchestrator_decompose_git_task():
     orchestrator = OrchestratorAgent()
@@ -114,6 +119,33 @@ async def test_orchestrator_orchestrate():
 
     assert result.status == AgentStatus.SUCCESS
     assert len(result.findings) > 0
+    assert len(orchestrator.run_records) == 1
+    assert orchestrator.run_records[0].agent_name == "research_agent"
+    assert result.artifacts["agent_run_summary"]["status_counts"] == {"success": 1}
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_partial_failure():
+    orchestrator = OrchestratorAgent()
+    agents = [FailingSubAgent("research_agent")]
+
+    result = await orchestrator.orchestrate("analyze the codebase", agents)
+
+    assert result.status == AgentStatus.PARTIAL
+    assert result.artifacts["agent_run_summary"]["run_count"] == 1
+    assert result.artifacts["agent_run_summary"]["status_counts"] == {"failure": 1}
+    assert result.artifacts["agent_run_summary"]["failures"][0]["error_class"] == "AgentFailure"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_missing_agent_failure():
+    orchestrator = OrchestratorAgent()
+
+    result = await orchestrator.orchestrate("analyze the codebase", [])
+
+    assert result.status == AgentStatus.PARTIAL
+    assert result.artifacts["agent_run_summary"]["run_count"] == 1
+    assert result.artifacts["agent_run_summary"]["failures"][0]["error_class"] == "AgentNotFound"
 
 
 @pytest.mark.asyncio
@@ -124,3 +156,4 @@ async def test_orchestrator_execute():
     result = await orchestrator.execute("find relevant files", context)
 
     assert result.status == AgentStatus.SUCCESS
+    assert result.artifacts["agent_run_summary"]["run_count"] == 1

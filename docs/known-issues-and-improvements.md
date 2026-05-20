@@ -25,16 +25,17 @@ one of:
 - **Remove** when it duplicates better paths, is mostly decorative, or cannot be made safe and
   explainable.
 
-**Open decision:**
+**Open decision:** The canonical Phase 0.5 classification table now lives in
+`docs/multi-agent-feature-pruning-audit.md`.
+
 - **Keep in the default `standard` profile:** core file/shell/index/workspace tools, bounded
   workflow helpers, local control-plane task/approval/message tools, read-only skill discovery,
   smart/context helpers, core insights, git read helpers, and deterministic Agent Quality advisory
   tools. These are implemented, local-first, and useful in normal development sessions.
 - **Hide from the default `standard` profile and expose only in `full`:** skill execution,
-  meta-agent plan/checkpoint tools, URL and multi-format readers, extra insight scans, fun note
-  helpers, git commit mutation, adaptive proposal mutation, and AI council/model-routing flows.
-  These are either optional, niche, higher-noise, or easier to misunderstand before stronger
-  workflows exist.
+  meta-agent plan/checkpoint tools, extra insight scans, fun note helpers, git commit mutation,
+  adaptive proposal mutation, and AI council/model-routing flows. URL and multi-format readers
+  remain a hide candidate pending compatibility review.
 - **Keep explicitly labeled as planned or experimental in public docs:** hosted sync, remote
   monitoring, mobile-first access, remote skill marketplace, remote policy marketplace, unbounded
   autonomous execution, and any provider-backed Agent Quality behavior that would imply automatic

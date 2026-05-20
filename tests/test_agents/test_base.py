@@ -8,6 +8,7 @@ import pytest
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.result import AgentResult
+from claude_bridge.audit import _load_records, current_session_id
 from claude_bridge.permissions import PermissionMatrix
 
 
@@ -44,3 +45,17 @@ def test_get_allowed_tools():
 def test_base_agent_abstract():
     with pytest.raises(TypeError):
         BaseAgent("abstract")  # Cannot instantiate abstract class
+
+
+@pytest.mark.asyncio
+async def test_execute_traced_records_direct_agent_run():
+    agent = DummyAgent("research_agent")
+
+    result, record = await agent.execute_traced("inspect", {}, task_id="direct_task")
+
+    assert result.agent_name == "research_agent"
+    assert record.task_id == "direct_task"
+    assert record.status == "success"
+    audit_records = _load_records(current_session_id())
+    agent_records = [item for item in audit_records if item.get("tool_name") == "agent_run"]
+    assert agent_records[-1]["params"]["task_id"] == "direct_task"

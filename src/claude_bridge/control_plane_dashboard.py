@@ -894,6 +894,7 @@ def _dashboard_activity() -> dict[str, Any]:
         "returned_records": summary.get("returned_records", 0),
         "failure_count": summary.get("failure_count", 0),
         "tool_counts": summary.get("tool_counts", {}),
+        "agent_runs": summary.get("agent_runs", {}),
         "activity": summary.get("activity", {}),
         "anomaly_counts": summary.get("anomaly_counts", {}),
     }

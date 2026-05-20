@@ -2351,6 +2351,7 @@ class TestAuditTools:
         assert telemetry["total_input_chars"] >= 1
         assert telemetry["total_output_chars"] >= 1
         assert "list_directory" in telemetry["tool_estimated_tokens"]
+        assert payload["details"]["agent_runs"]["run_count"] == 0
 
     async def test_activity_summary_returns_user_facing_activity(self, temp_project, monkeypatch):
         audit_dir = temp_project / ".audit"

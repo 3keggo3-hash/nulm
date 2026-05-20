@@ -470,6 +470,25 @@ class TestCLI:
         assert "Validation" in result.stdout
         assert "Changes have not been validated yet" in result.stdout
 
+    def test_audit_command_prints_agent_run_summary(self, monkeypatch, tmp_path: Path):
+        monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
+        mcp_server.set_config(project_dir=tmp_path, auto_approve=True)
+
+        import asyncio
+
+        from claude_bridge.agents.sub import ResearchAgent
+
+        agent = ResearchAgent()
+        asyncio.run(agent.execute_traced("analyze codebase", {}, task_id="research_task"))
+
+        result = runner.invoke(cli.app, ["audit", "summary", "--last", "--limit", "10"])
+
+        assert result.exit_code == 0
+        assert "Agent runs" in result.stdout
+        assert "Runs: 1" in result.stdout
+        assert "success=1" in result.stdout
+        assert "research_agent" in result.stdout
+
     def test_audit_command_filters_policy_decisions(self, monkeypatch, tmp_path: Path):
         monkeypatch.setenv("CLAUDE_BRIDGE_AUDIT_DIR", str(tmp_path / "audit"))
         policy_path = tmp_path / "policy.json"

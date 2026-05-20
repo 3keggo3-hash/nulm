@@ -434,8 +434,8 @@ def register_meta_tools(
                             "through guarded file/shell operations."
                         ),
                         (
-                            "AI Council was previously outside the default standard profile, so "
-                            "most IDE installs did not expose it unless users selected full."
+                            "AI Council is intentionally outside the default standard profile, so "
+                            "users select full when they want advisory debate tools."
                         ),
                     ],
                     "routes": routes,

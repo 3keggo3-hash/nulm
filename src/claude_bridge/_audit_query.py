@@ -21,6 +21,7 @@ from claude_bridge._audit_activity import (
     build_activity_summary,
 )
 from claude_bridge._audit_query_parser import AuditQueryParser, AuditQueryAST, QueryError
+from claude_bridge.agents.run_record import compact_run_summary_from_audit_records
 
 _VALID_DECISION_ACTIONS = {"allow", "deny", "ask"}
 _VALID_DECISION_SOURCES = {"default", "builtin_guard", "rule", "approval", "ai"}
@@ -200,6 +201,7 @@ def summarize_session(
         "tool_counts": counts,
         "failure_count": failure_count,
         "activity": build_activity_summary(recent["records"]),
+        "agent_runs": compact_run_summary_from_audit_records(recent["records"]),
         "anomaly_counts": anomaly_result["anomaly_counts"],
         "telemetry": {
             "total_duration_ms": round(total_duration_ms, 3),

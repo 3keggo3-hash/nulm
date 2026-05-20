@@ -170,7 +170,6 @@ TOOL_PROFILES: dict[str, dict[str, Any]] = {
             "workflow_core",
             "meta_core",
             "control_plane",
-            "ai_council",
             "skills_read",
             "smart",
             "insights_core",
