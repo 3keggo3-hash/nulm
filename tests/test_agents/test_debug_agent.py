@@ -7,8 +7,26 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from claude_bridge.agents.broker import AgentToolBroker
+from claude_bridge.agents.contracts import TaskPermissions
+from claude_bridge.agents.result import AgentResult, AgentStatus
+from claude_bridge.agents.run_record import start_agent_run
 from claude_bridge.agents.sub.debug_agent import DebugAgent
-from claude_bridge.agents.result import AgentStatus
+
+
+class RecordingDebugBroker(AgentToolBroker):
+    def __init__(self):
+        super().__init__(TaskPermissions(allowed_tools=frozenset({"test"})))
+        self.calls: list[str] = []
+
+    def python_syntax_check_available(self, record):
+        self.calls.append("python_syntax_check_available")
+        record.tool_calls.append({"tool": "python_syntax_check_available", "status": "success"})
+        return AgentResult.success(
+            findings=["Python syntax check available"],
+            artifacts={"diagnostics_run": True},
+            agent_name=record.agent_name,
+        )
 
 
 @pytest.mark.asyncio
@@ -71,3 +89,19 @@ async def test_run_diagnostics():
 
         assert result.status == AgentStatus.SUCCESS
         assert "diagnostics_run" in result.artifacts
+
+
+@pytest.mark.asyncio
+async def test_debug_agent_uses_broker_validation_path():
+    agent = DebugAgent()
+    broker = RecordingDebugBroker()
+    record = start_agent_run(task_id="debug-task", agent_name="debug_agent", task_kind="debug")
+
+    result = await agent.execute(
+        "run diagnostics",
+        {"agent_tool_broker": broker, "agent_run_record": record},
+    )
+
+    assert result.status == AgentStatus.SUCCESS
+    assert broker.calls == ["python_syntax_check_available"]
+    assert record.tool_calls[0]["tool"] == "python_syntax_check_available"
