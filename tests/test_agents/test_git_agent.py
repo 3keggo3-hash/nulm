@@ -7,8 +7,26 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from claude_bridge.agents.broker import AgentToolBroker
+from claude_bridge.agents.contracts import TaskPermissions
 from claude_bridge.agents.sub.git_agent import GitAgent
-from claude_bridge.agents.result import AgentStatus
+from claude_bridge.agents.result import AgentResult, AgentStatus
+from claude_bridge.agents.run_record import start_agent_run
+
+
+class RecordingGitBroker(AgentToolBroker):
+    def __init__(self):
+        super().__init__(TaskPermissions(allowed_tools=frozenset({"git"})))
+        self.calls: list[str] = []
+
+    def git_status(self, record):
+        self.calls.append("git_status")
+        record.tool_calls.append({"tool": "git_status", "status": "success"})
+        return AgentResult.success(
+            findings=["Git status: 0 file(s) changed"],
+            artifacts={"changed_files": 0, "details": []},
+            agent_name=record.agent_name,
+        )
 
 
 @pytest.mark.asyncio
@@ -87,3 +105,19 @@ async def test_git_log():
 
         assert result.status == AgentStatus.SUCCESS
         assert "commits" in result.artifacts
+
+
+@pytest.mark.asyncio
+async def test_git_agent_uses_broker_status_path():
+    agent = GitAgent()
+    broker = RecordingGitBroker()
+    record = start_agent_run(task_id="git-task", agent_name="git_agent", task_kind="git")
+
+    result = await agent.execute(
+        "git status",
+        {"agent_tool_broker": broker, "agent_run_record": record},
+    )
+
+    assert result.status == AgentStatus.SUCCESS
+    assert broker.calls == ["git_status"]
+    assert record.tool_calls[0]["tool"] == "git_status"

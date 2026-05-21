@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
-import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from claude_bridge.agents.base import BaseAgent
+from claude_bridge.agents.broker import AgentToolBroker
+from claude_bridge.agents.contracts import TaskPermissions
 from claude_bridge.agents.result import AgentResult
+from claude_bridge.agents.run_record import AgentRunRecord, start_agent_run
 
 if TYPE_CHECKING:
     from claude_bridge.permissions import PermissionMatrix
@@ -42,13 +43,17 @@ class ResearchAgent(BaseAgent):
         task_lower = task.lower()
 
         if "find" in task_lower or "search" in task_lower:
-            return await self.find_relevant(task)
+            return await self.find_relevant(task, context)
         if "analyze" in task_lower or "codebase" in task_lower:
-            return await self.analyze_codebase()
+            return await self.analyze_codebase(context)
 
-        return await self.analyze_codebase()
+        return await self.analyze_codebase(context)
 
-    async def find_relevant(self, task: str) -> AgentResult:
+    async def find_relevant(
+        self,
+        task: str,
+        context: dict[str, Any] | None = None,
+    ) -> AgentResult:
         """Find relevant files and code for a task.
 
         Args:
@@ -57,46 +62,36 @@ class ResearchAgent(BaseAgent):
         Returns:
             AgentResult with relevant file paths.
         """
-        findings: list[str] = []
-        artifacts: dict[str, Any] = {"files_found": []}
+        broker = self._broker(context)
+        record = self._record(context)
+        return broker.search_python_files(record, task, limit=20)
 
-        try:
-            result = subprocess.run(
-                ["find", ".", "-name", "*.py", "-type", "f"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            files = result.stdout.strip().split("\n")[:20]
-            findings.append(f"Found {len(files)} Python files")
-            artifacts["files_found"] = files
-        except Exception as e:
-            findings.append(f"Search completed with limited results: {e}")
-
-        return AgentResult.success(
-            findings=findings,
-            artifacts=artifacts,
-            agent_name=self.name,
-        )
-
-    async def analyze_codebase(self) -> AgentResult:
+    async def analyze_codebase(self, context: dict[str, Any] | None = None) -> AgentResult:
         """Analyze the codebase structure.
 
         Returns:
             AgentResult with codebase analysis.
         """
-        findings: list[str] = ["Codebase analysis complete"]
-        artifacts: dict[str, Any] = {"structure": {}}
+        broker = self._broker(context)
+        record = self._record(context)
+        return broker.count_python_files(record)
 
-        try:
-            py_files = list(Path(".").rglob("*.py"))
-            findings.append(f"Total Python files: {len(py_files)}")
-            artifacts["structure"]["py_file_count"] = len(py_files)
-        except Exception as e:
-            findings.append(f"Analysis completed: {e}")
+    def _broker(self, context: dict[str, Any] | None) -> AgentToolBroker:
+        if context:
+            broker = context.get("agent_tool_broker")
+            if isinstance(broker, AgentToolBroker):
+                return broker
+        return AgentToolBroker(self._task_permissions(context))
 
-        return AgentResult.success(
-            findings=findings,
-            artifacts=artifacts,
-            agent_name=self.name,
-        )
+    def _record(self, context: dict[str, Any] | None) -> AgentRunRecord:
+        record = context.get("agent_run_record") if context else None
+        if isinstance(record, AgentRunRecord):
+            return record
+        return start_agent_run(task_id="single", agent_name=self.name, task_kind="research")
+
+    def _task_permissions(self, context: dict[str, Any] | None) -> TaskPermissions:
+        subtask = context.get("subtask") if context else None
+        permissions = getattr(subtask, "permissions", None)
+        if isinstance(permissions, TaskPermissions) and permissions.allowed_tools:
+            return permissions
+        return TaskPermissions(allowed_tools=frozenset(self.get_allowed_tools()))

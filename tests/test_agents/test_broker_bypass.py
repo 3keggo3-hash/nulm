@@ -4,11 +4,21 @@
 # SPDX-License-Identifier: MIT
 
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from claude_bridge.agents.broker import AgentToolBroker
 from claude_bridge.agents.contracts import TaskPermissions
 from claude_bridge.agents.run_record import start_agent_run
+
+
+TARGET_SUBAGENTS = [
+    Path("src/claude_bridge/agents/sub/git_agent.py"),
+    Path("src/claude_bridge/agents/sub/research_agent.py"),
+    Path("src/claude_bridge/agents/sub/debug_agent.py"),
+]
 
 
 def make_record():
@@ -121,3 +131,42 @@ class TestBrokerFailClosed:
     def test_mutation_without_tools_raises_at_init(self):
         with pytest.raises(ValueError):
             TaskPermissions(allow_mutation=True)
+
+
+class TestSubAgentBypassSourceScans:
+    def test_targeted_subagents_do_not_call_direct_process_apis(self):
+        forbidden = {
+            ("subprocess", "run"),
+            ("subprocess", "Popen"),
+            ("os", "system"),
+        }
+        for path in TARGET_SUBAGENTS:
+            source = path.read_text(encoding="utf-8")
+            assert "subprocess" not in source, path
+            assert "Popen" not in source, path
+            assert "os.system" not in source, path
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                owner = node.func.value
+                if isinstance(owner, ast.Name):
+                    assert (owner.id, node.func.attr) not in forbidden, path
+
+    def test_research_and_debug_agents_do_not_walk_filesystem_with_rglob(self):
+        for path in TARGET_SUBAGENTS[1:]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    assert node.func.attr != "rglob", path
+
+    def test_broker_denies_new_methods_when_task_permissions_do_not_allow_tool(self):
+        broker = AgentToolBroker(TaskPermissions(allowed_tools=frozenset({"file_read"})))
+        record = make_record()
+
+        search_result = broker.search_python_files(record, "anything")
+        diagnostics_result = broker.python_syntax_check_available(record)
+
+        assert search_result.status.value == "failure"
+        assert diagnostics_result.status.value == "failure"
+        assert [call["status"] for call in record.tool_calls] == ["denied", "denied"]
