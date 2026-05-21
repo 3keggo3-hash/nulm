@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -94,6 +95,19 @@ _HIGH_RISK_TERMS = (
     "path boundaries",
 )
 _SIMPLE_TASK_TERMS = ("summarize", "summary", "explain", "classify", "describe")
+_ROUTE_DECISION_SCHEMA_VERSION = "ai_route_decision.v1"
+
+
+_route_telemetry_lock = threading.Lock()
+_route_telemetry: dict[str, Any] = {
+    "total_route_decisions": 0,
+    "selected_local_count": 0,
+    "selected_remote_count": 0,
+    "fallback_count": 0,
+    "provider_failure_count": 0,
+    "timeout_count": 0,
+    "selection_count_by_mode": {},
+}
 
 
 @dataclass(frozen=True)
@@ -151,10 +165,23 @@ class AIRouteDecision:
     estimated_input_tokens: int = 0
     effective_max_tokens: int = 0
     estimated_max_cost_usd: float = 0.0
+    schema_version: str = _ROUTE_DECISION_SCHEMA_VERSION
+    selected_profile: str = ""
+    candidate_profiles: tuple[str, ...] = ()
+    rejected_profiles: tuple[dict[str, str], ...] = ()
+    route_reason: str = ""
+    fallback_reason: str = ""
+    fallback_from_profile: str = ""
+    fallback_status: str = "none"
+    timeout_seconds: int = 0
+    provider_error: str = ""
+    provider_error_class: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": self.schema_version,
             "profile": self.profile_name,
+            "profile_name": self.profile_name,
             "provider": self.provider,
             "model": self.model,
             "mode": self.mode,
@@ -163,6 +190,16 @@ class AIRouteDecision:
             "estimated_input_tokens": self.estimated_input_tokens,
             "effective_max_tokens": self.effective_max_tokens,
             "estimated_max_cost_usd": round(self.estimated_max_cost_usd, 8),
+            "selected_profile": self.selected_profile or self.profile_name,
+            "candidate_profiles": list(self.candidate_profiles),
+            "rejected_profiles": [dict(item) for item in self.rejected_profiles],
+            "route_reason": self.route_reason or self.reason,
+            "fallback_reason": self.fallback_reason,
+            "fallback_from_profile": self.fallback_from_profile,
+            "fallback_status": self.fallback_status,
+            "timeout_seconds": self.timeout_seconds,
+            "provider_error": self.provider_error,
+            "provider_error_class": self.provider_error_class,
         }
 
 
@@ -343,6 +380,15 @@ class AIModelRouter:
         )
 
     def select_profile(self, task: str, context: dict[str, Any] | None = None) -> AIRouteDecision:
+        decision = self._select_profile_decision(task, context)
+        _record_route_decision(decision)
+        return decision
+
+    def _select_profile_decision(
+        self,
+        task: str,
+        context: dict[str, Any] | None = None,
+    ) -> AIRouteDecision:
         context = dict(context or {})
         mode = "off" if not self.enabled else self.mode
         profile_name = self.default_profile if self.default_profile in self.profiles else "local"
@@ -369,7 +415,14 @@ class AIModelRouter:
             reason = f"unsupported routing mode {mode!r}; using local"
 
         profile = self.profiles.get(profile_name, self.profiles["local"])
-        return _route_decision(profile, mode=mode, reason=reason, prompt=task, max_tokens=0)
+        return _route_decision(
+            profile,
+            mode=mode,
+            reason=reason,
+            prompt=task,
+            max_tokens=0,
+            candidate_profiles=_candidate_profile_names(self.profiles),
+        )
 
     def generate_text(
         self,
@@ -381,7 +434,7 @@ class AIModelRouter:
         max_tokens: int = 700,
     ) -> AIModelResponse:
         started_at = time.perf_counter()
-        decision = self.select_profile(task or prompt, context)
+        decision = self._select_profile_decision(task or prompt, context)
         if profile_name != "auto" and profile_name in self.profiles:
             profile = self.profiles[profile_name]
             decision = _route_decision(
@@ -390,6 +443,7 @@ class AIModelRouter:
                 reason="explicit profile",
                 prompt=prompt,
                 max_tokens=max_tokens,
+                candidate_profiles=_candidate_profile_names(self.profiles),
             )
         else:
             profile = self.profiles.get(decision.profile_name, self.profiles["local"])
@@ -399,7 +453,10 @@ class AIModelRouter:
                 reason=decision.reason,
                 prompt=prompt,
                 max_tokens=max_tokens,
+                candidate_profiles=decision.candidate_profiles,
+                rejected_profiles=decision.rejected_profiles,
             )
+        _record_route_decision(decision)
         effective_max_tokens = _effective_max_tokens(profile, max_tokens)
         try:
             text = self._call_profile(profile, prompt, max_tokens=effective_max_tokens)
@@ -411,19 +468,27 @@ class AIModelRouter:
             )
         except Exception as exc:
             fallback = self.profiles["local"]
+            provider_error = _provider_error_reason(exc)
             fallback_decision = _route_decision(
                 fallback,
                 mode="fallback",
-                reason=f"{profile.name} failed: {_provider_error_reason(exc)}",
+                reason=f"{profile.name} failed: {provider_error}",
                 prompt=prompt,
                 max_tokens=max_tokens,
+                candidate_profiles=_candidate_profile_names(self.profiles),
+                fallback_status="used",
+                fallback_reason=provider_error,
+                fallback_from_profile=profile.name,
+                provider_error=provider_error,
+                provider_error_class=type(exc).__name__,
             )
+            _record_route_decision(fallback_decision)
             return AIModelResponse(
                 ok=False,
                 text=_local_response(prompt),
                 decision=fallback_decision,
                 duration_ms=(time.perf_counter() - started_at) * 1000,
-                error=_provider_error_reason(exc),
+                error=provider_error,
             )
 
     def _match_rule(self, task: str, context: dict[str, Any]) -> AIRoutingRule | None:
@@ -534,6 +599,21 @@ def _effective_max_tokens(profile: AIModelProfile, requested_max_tokens: int) ->
     return requested_max_tokens
 
 
+def _candidate_profile_names(profiles: dict[str, AIModelProfile]) -> tuple[str, ...]:
+    return tuple(sorted(profiles))
+
+
+def _rejected_profiles(
+    selected_profile: str,
+    candidate_profiles: tuple[str, ...],
+) -> tuple[dict[str, str], ...]:
+    return tuple(
+        {"profile": name, "reason": "not selected"}
+        for name in candidate_profiles
+        if name != selected_profile
+    )
+
+
 def _estimated_max_cost_usd(
     profile: AIModelProfile, *, estimated_input_tokens: int, effective_max_tokens: int
 ) -> float:
@@ -550,9 +630,17 @@ def _route_decision(
     reason: str,
     prompt: str,
     max_tokens: int,
+    candidate_profiles: tuple[str, ...] = (),
+    rejected_profiles: tuple[dict[str, str], ...] = (),
+    fallback_status: str = "none",
+    fallback_reason: str = "",
+    fallback_from_profile: str = "",
+    provider_error: str = "",
+    provider_error_class: str = "",
 ) -> AIRouteDecision:
     estimated_input_tokens = _estimate_token_count(prompt) if prompt else 0
     effective_max_tokens = _effective_max_tokens(profile, max_tokens)
+    candidates = candidate_profiles or (profile.name,)
     return AIRouteDecision(
         profile_name=profile.name,
         provider=profile.provider,
@@ -567,7 +655,66 @@ def _route_decision(
             estimated_input_tokens=estimated_input_tokens,
             effective_max_tokens=effective_max_tokens,
         ),
+        selected_profile=profile.name,
+        candidate_profiles=candidates,
+        rejected_profiles=rejected_profiles or _rejected_profiles(profile.name, candidates),
+        route_reason=reason,
+        fallback_reason=fallback_reason,
+        fallback_from_profile=fallback_from_profile,
+        fallback_status=fallback_status,
+        timeout_seconds=profile.timeout,
+        provider_error=provider_error,
+        provider_error_class=provider_error_class,
     )
+
+
+def _record_route_decision(decision: AIRouteDecision) -> None:
+    with _route_telemetry_lock:
+        _route_telemetry["total_route_decisions"] += 1
+        if decision.provider == "local":
+            _route_telemetry["selected_local_count"] += 1
+        else:
+            _route_telemetry["selected_remote_count"] += 1
+        if decision.fallback_status != "none":
+            _route_telemetry["fallback_count"] += 1
+        if decision.provider_error:
+            _route_telemetry["provider_failure_count"] += 1
+        if _is_timeout_error(decision.provider_error, decision.provider_error_class):
+            _route_telemetry["timeout_count"] += 1
+        by_mode = _route_telemetry["selection_count_by_mode"]
+        by_mode[decision.mode] = by_mode.get(decision.mode, 0) + 1
+
+
+def _is_timeout_error(provider_error: str, provider_error_class: str) -> bool:
+    haystack = f"{provider_error} {provider_error_class}".lower()
+    return "timeout" in haystack or "timed out" in haystack
+
+
+def route_telemetry_summary() -> dict[str, Any]:
+    """Return compact in-memory AI route telemetry counters."""
+    with _route_telemetry_lock:
+        return {
+            "schema_version": "ai_route_telemetry.v1",
+            "total_route_decisions": int(_route_telemetry["total_route_decisions"]),
+            "selected_local_count": int(_route_telemetry["selected_local_count"]),
+            "selected_remote_count": int(_route_telemetry["selected_remote_count"]),
+            "fallback_count": int(_route_telemetry["fallback_count"]),
+            "provider_failure_count": int(_route_telemetry["provider_failure_count"]),
+            "timeout_count": int(_route_telemetry["timeout_count"]),
+            "selection_count_by_mode": dict(_route_telemetry["selection_count_by_mode"]),
+        }
+
+
+def reset_route_telemetry() -> None:
+    """Reset in-memory AI route telemetry counters for tests and diagnostics."""
+    with _route_telemetry_lock:
+        _route_telemetry["total_route_decisions"] = 0
+        _route_telemetry["selected_local_count"] = 0
+        _route_telemetry["selected_remote_count"] = 0
+        _route_telemetry["fallback_count"] = 0
+        _route_telemetry["provider_failure_count"] = 0
+        _route_telemetry["timeout_count"] = 0
+        _route_telemetry["selection_count_by_mode"] = {}
 
 
 def _profile_cost_sort_key(profile: AIModelProfile) -> tuple[float, str]:
@@ -738,6 +885,7 @@ def router_status(router: AIModelRouter) -> dict[str, Any]:
         "enabled": router.enabled,
         "mode": router.mode,
         "default_profile": router.default_profile,
+        "telemetry": route_telemetry_summary(),
         "profiles": {
             name: profile.to_redacted_dict() for name, profile in sorted(router.profiles.items())
         },
