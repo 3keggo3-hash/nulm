@@ -4,9 +4,13 @@
 # SPDX-License-Identifier: MIT
 
 
+import ast
+from pathlib import Path
 import time
 
+from claude_bridge.agents.context_manifest import build_context_manifest, duplicate_context_ratio
 from claude_bridge.agents.contracts import BudgetLedger, ContextManifest
+from claude_bridge.agents.contracts import TaskSpec
 
 
 def test_budget_ledger_from_allocated_within_budget():
@@ -131,3 +135,157 @@ def test_context_manifest_to_dict_has_all_fields():
     assert d["selected_files"] == []
     assert d["file_signatures"] == []
     assert d["budget_ledger"]["within_budget"] is True
+
+
+def test_builder_creates_deterministic_digest_for_same_goal_and_files(tmp_path):
+    source = tmp_path / "a.py"
+    source.write_text("print('hi')\n", encoding="utf-8")
+    spec = TaskSpec(
+        task_id="t",
+        kind="research",
+        goal="analyze",
+        agent_name="research_agent",
+        read_set=(str(source),),
+    )
+
+    first = build_context_manifest(task=spec, run_id="run1", session_id="sess")
+    second = build_context_manifest(task=spec, run_id="run2", session_id="sess")
+
+    assert first.digest == second.digest
+    assert first.manifest_id != second.manifest_id
+    assert first.selected_files == (str(source),)
+    assert first.source_reason == "task_read_set"
+
+
+def test_builder_handles_missing_files_without_crashing(tmp_path):
+    missing = tmp_path / "missing.py"
+    spec = TaskSpec(
+        task_id="t",
+        kind="research",
+        goal="analyze missing",
+        agent_name="research_agent",
+        read_set=(str(missing),),
+    )
+
+    manifest = build_context_manifest(task=spec, run_id="run", session_id="sess")
+
+    assert manifest.selected_files == (str(missing),)
+    assert manifest.file_signatures[0]["exists"] == "false"
+    assert manifest.digest
+
+
+def test_builder_uses_context_files_when_read_set_empty(tmp_path):
+    source = tmp_path / "b.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    spec = TaskSpec(
+        task_id="t",
+        kind="research",
+        goal="analyze context",
+        agent_name="research_agent",
+    )
+
+    manifest = build_context_manifest(
+        task=spec,
+        run_id="run",
+        session_id="sess",
+        context={"selected_files": [str(source)]},
+    )
+
+    assert manifest.selected_files == (str(source),)
+    assert manifest.source_reason == "context_selected_files"
+
+
+def test_builder_budget_ledger_within_and_over_budget(tmp_path):
+    small = tmp_path / "small.py"
+    small.write_text("x = 1\n", encoding="utf-8")
+    big = tmp_path / "big.py"
+    big.write_text("x = '" + ("a" * 1000) + "'\n", encoding="utf-8")
+    small_spec = TaskSpec(
+        task_id="small",
+        kind="research",
+        goal="small",
+        agent_name="research_agent",
+        read_set=(str(small),),
+    )
+    big_spec = TaskSpec(
+        task_id="big",
+        kind="research",
+        goal="big",
+        agent_name="research_agent",
+        read_set=(str(big),),
+    )
+
+    within = build_context_manifest(
+        task=small_spec,
+        run_id="run1",
+        session_id="sess",
+        context={"token_budget": 1000},
+    )
+    over = build_context_manifest(
+        task=big_spec,
+        run_id="run2",
+        session_id="sess",
+        context={"token_budget": 1},
+    )
+
+    assert within.budget_ledger.within_budget is True
+    assert within.budget_ledger.budget_remaining >= 0
+    assert over.budget_ledger.within_budget is False
+    assert over.budget_ledger.budget_remaining == 0
+
+
+def test_duplicate_context_ratio_novel_and_repeated():
+    novel = duplicate_context_ratio(
+        selected_files=("a.py", "b.py"),
+        previous_selected_files=("c.py",),
+    )
+    repeated = duplicate_context_ratio(
+        selected_files=("a.py", "b.py"),
+        previous_selected_files=("a.py", "c.py"),
+    )
+
+    assert novel == 0.0
+    assert repeated == 0.5
+
+
+def test_builder_computes_duplicate_ratio_from_parent(tmp_path):
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("x = 1\n", encoding="utf-8")
+    second.write_text("y = 2\n", encoding="utf-8")
+    parent = ContextManifest(
+        manifest_id="parent",
+        session_id="sess",
+        created_at=1.0,
+        goal="parent",
+        target=".",
+        selected_files=(str(first),),
+    )
+    spec = TaskSpec(
+        task_id="child",
+        kind="research",
+        goal="child",
+        agent_name="research_agent",
+        read_set=(str(first), str(second)),
+    )
+
+    manifest = build_context_manifest(
+        task=spec,
+        run_id="run",
+        session_id="sess",
+        parent_manifest=parent,
+    )
+
+    assert manifest.parent_manifest_id == "parent"
+    assert manifest.duplicate_ratio == 0.5
+
+
+def test_context_manifest_builder_does_not_use_broad_filesystem_scans():
+    path = Path("src/claude_bridge/agents/context_manifest.py")
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    forbidden_calls = {"glob", "rglob", "walk"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            assert node.func.attr not in forbidden_calls

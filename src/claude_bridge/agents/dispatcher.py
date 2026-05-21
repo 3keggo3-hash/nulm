@@ -11,10 +11,12 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from claude_bridge.agents.base import BaseAgent
+from claude_bridge.agents.context_manifest import build_context_manifest
 from claude_bridge.agents.contracts import TaskSpec, coerce_task_spec
 from claude_bridge.agents.result import AgentResult
 from claude_bridge.agents.run_record import AgentRunRecord, finish_agent_run, start_agent_run
 from claude_bridge.agents.shared_memory import SharedMemorySpace
+from claude_bridge.audit import current_session_id
 
 
 class TaskDispatcher:
@@ -66,11 +68,19 @@ class TaskDispatcher:
                 )
                 return result
 
+            manifest = build_context_manifest(
+                task=subtask,
+                run_id=record.run_id,
+                session_id=current_session_id(),
+            )
+            record.context_manifest_id = manifest.manifest_id
             context = {
                 "shared_memory": self.shared_memory,
                 "subtask": subtask,
                 "subtask_id": subtask.task_id,
                 "agent_run_record": record,
+                "context_manifest": manifest,
+                "context_manifest_id": manifest.manifest_id,
             }
 
             try:

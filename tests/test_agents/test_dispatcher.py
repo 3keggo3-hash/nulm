@@ -24,6 +24,16 @@ class DummyAgent(BaseAgent):
         )
 
 
+class ContextCapturingAgent(BaseAgent):
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.last_context: dict | None = None
+
+    async def execute(self, task: str, context: dict) -> AgentResult:
+        self.last_context = context
+        return AgentResult.success(findings=[task], agent_name=self.name)
+
+
 @pytest.mark.asyncio
 async def test_distribute_single_task():
     dispatcher = TaskDispatcher()
@@ -210,3 +220,45 @@ async def test_distribute_accepts_typed_task_spec():
     assert results[0].status == AgentStatus.SUCCESS
     assert dispatcher.run_records[0].task_id == "typed_task"
     assert dispatcher.run_records[0].task_kind == "research"
+
+
+@pytest.mark.asyncio
+async def test_distribute_attaches_context_manifest_id_for_typed_task(tmp_path):
+    source = tmp_path / "target.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    dispatcher = TaskDispatcher()
+    agent = ContextCapturingAgent("research_agent")
+    spec = TaskSpec(
+        task_id="typed_context",
+        kind="research",
+        goal="inspect context",
+        agent_name="research_agent",
+        read_set=(str(source),),
+    )
+
+    results = await dispatcher.distribute([spec], [agent])
+
+    record = dispatcher.run_records[0]
+    assert results[0].status == AgentStatus.SUCCESS
+    assert record.context_manifest_id
+    assert agent.last_context is not None
+    assert agent.last_context["context_manifest_id"] == record.context_manifest_id
+    assert agent.last_context["context_manifest"].selected_files == (str(source),)
+
+
+@pytest.mark.asyncio
+async def test_distribute_legacy_dict_subtask_gets_context_manifest():
+    dispatcher = TaskDispatcher()
+    agent = ContextCapturingAgent("research_agent")
+
+    results = await dispatcher.distribute(
+        [{"id": "legacy_context", "task": "legacy", "agent_name": "research_agent"}],
+        [agent],
+    )
+
+    record = dispatcher.run_records[0]
+    assert results[0].status == AgentStatus.SUCCESS
+    assert record.context_manifest_id
+    assert agent.last_context is not None
+    assert agent.last_context["context_manifest_id"] == record.context_manifest_id
+    assert agent.last_context["context_manifest"].selected_files == ()
