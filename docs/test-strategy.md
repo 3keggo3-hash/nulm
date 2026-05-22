@@ -43,6 +43,23 @@ pytest tests/ -k "control_plane"             # by keyword
 pytest tests/ --tb=short                      # short tracebacks
 ```
 
+## Agent Benchmark Release Gates
+
+Phase 6 agent release gates convert the deterministic agent benchmark into a local pass/fail
+payload. Run them from Python:
+
+```bash
+python3 -c "\
+from claude_bridge.agents.benchmark_gates import evaluate_agent_benchmark_gates; \
+print(evaluate_agent_benchmark_gates().to_json())"
+```
+
+The gate checks benchmark success, trace completeness, context-manifest presence for context
+scenarios, route telemetry, expected fallback counts, broker denial behavior, direct subprocess
+bypass absence, and duplicate context ratio. The MVP intentionally does not add DAG scheduling,
+verifier/adjudication nodes, recursive delegation, learned routing, provider requirements, or
+historical baseline comparison. JSON is only written when `save_json(path)` is called explicitly.
+
 ## Naming Conventions
 
 - **Files**: `test_<module>.py` (unit), `test_<feature>.py` (integration/e2e)
