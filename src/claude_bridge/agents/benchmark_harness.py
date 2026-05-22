@@ -20,6 +20,15 @@ from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.broker import AgentToolBroker
 from claude_bridge.agents.context_manifest import build_context_manifest
 from claude_bridge.agents.contracts import ContextManifest, TaskPermissions, TaskSpec
+from claude_bridge.agents.dag_records import (
+    AgentDagArtifactRecord,
+    AgentDagNodeRecord,
+    AgentDagRunRecord,
+    make_artifact_id,
+    make_node_id,
+    make_node_idempotency_key,
+)
+from claude_bridge.agents.dag_store import AgentDagStore
 from claude_bridge.agents.dispatcher import TaskDispatcher
 from claude_bridge.agents.result import AgentResult, AgentStatus
 from claude_bridge.agents.run_record import AgentRunRecord, start_agent_run
@@ -172,6 +181,7 @@ def default_scenarios() -> tuple[AgentBenchmarkScenario, ...]:
         AgentBenchmarkScenario("route_telemetry_local_disabled", _scenario_route_local_disabled),
         AgentBenchmarkScenario("route_telemetry_provider_fallback", _scenario_provider_fallback),
         AgentBenchmarkScenario("context_manifest_token_budget_overrun", _scenario_budget_overrun),
+        AgentBenchmarkScenario("durable_dag_reconstruct_run", _scenario_durable_dag_reconstruct),
         AgentBenchmarkScenario("no_direct_subagent_subprocess_bypass", _scenario_no_bypass),
     )
 
@@ -272,7 +282,7 @@ def _scenario_permission_denied() -> AgentBenchmarkMetrics:
     record = _record("permission_denied", "git_agent", "git")
     broker = AgentToolBroker(TaskPermissions(allowed_tools=frozenset({"file_read"})))
     result = broker.git_status(record)
-    ok = (
+    ok = bool(
         result.status == AgentStatus.FAILURE
         and record.error_class == "PermissionDenied"
         and record.tool_calls
@@ -382,6 +392,82 @@ def _scenario_budget_overrun() -> AgentBenchmarkMetrics:
         )
         ok = manifest.estimated_tokens > 1 and manifest.budget_ledger.within_budget is False
         return _metrics_from_manifest(manifest, verified_success=ok)
+
+
+def _scenario_durable_dag_reconstruct() -> AgentBenchmarkMetrics:
+    with TemporaryDirectory(prefix="claude-bridge-agent-dag-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        node_id = make_node_id(
+            run_id="run_bench",
+            task_id="task_bench",
+            agent_name="research_agent",
+            kind="research",
+            read_set=("src",),
+            write_set=("docs",),
+        )
+        artifact_id = make_artifact_id(
+            run_id="run_bench",
+            node_id=node_id,
+            kind="findings",
+            digest="sha256:test",
+        )
+        store.append_run(
+            AgentDagRunRecord(
+                run_id="run_bench",
+                goal="reconstruct durable records",
+                status="completed",
+                created_at=1.0,
+                updated_at=2.0,
+                root_node_ids=(node_id,),
+            )
+        )
+        store.append_node(
+            AgentDagNodeRecord(
+                node_id=node_id,
+                run_id="run_bench",
+                task_id="task_bench",
+                agent_name="research_agent",
+                kind="research",
+                status="completed",
+                read_set=("src",),
+                write_set=("docs",),
+                artifact_ids=(artifact_id,),
+                idempotency_key=make_node_idempotency_key(
+                    run_id="run_bench",
+                    task_id="task_bench",
+                    agent_name="research_agent",
+                    kind="research",
+                    read_set=("src",),
+                    write_set=("docs",),
+                ),
+                created_at=1.0,
+                updated_at=2.0,
+            )
+        )
+        store.append_artifact(
+            AgentDagArtifactRecord(
+                artifact_id=artifact_id,
+                run_id="run_bench",
+                node_id=node_id,
+                kind="findings",
+                digest="sha256:test",
+                summary="bench",
+                path="",
+                created_at=2.0,
+            )
+        )
+        view = store.reconstruct_run("run_bench")
+        ok = (
+            view.run.status == "completed"
+            and len(view.nodes) == 1
+            and view.nodes[0].artifact_ids == (artifact_id,)
+            and len(view.artifacts) == 1
+            and view.artifacts[0].node_id == node_id
+        )
+        return AgentBenchmarkMetrics(
+            verified_success=ok,
+            trace_complete=ok,
+        )
 
 
 def _scenario_no_bypass() -> AgentBenchmarkMetrics:

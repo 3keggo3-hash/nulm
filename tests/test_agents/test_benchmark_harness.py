@@ -28,8 +28,8 @@ def test_all_default_scenarios_pass() -> None:
     run = run_agent_benchmark()
 
     assert run.failed == 0
-    assert run.passed == 10
-    assert run.to_dict()["scenario_count"] == 10
+    assert run.passed == 11
+    assert run.to_dict()["scenario_count"] == 11
 
 
 def test_result_payload_is_json_serializable() -> None:

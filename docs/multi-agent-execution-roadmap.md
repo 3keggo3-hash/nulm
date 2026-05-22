@@ -411,6 +411,21 @@ Objective: move from parallel calls to resumable orchestration without changing 
 
 ### 8. Persist Runs, Nodes, and Artifacts
 
+Status: Phase 7 Durable DAG Records MVP implemented as a record/reconstruction layer only.
+`AgentDagRunRecord`, `AgentDagNodeRecord`, `AgentDagArtifactRecord`, and
+`AgentDagConflictRecord` provide versioned schemas, deterministic node/artifact/idempotency ids,
+and fail-closed `from_dict` validation. `AgentDagStore` writes append-only JSONL under an explicit
+caller-provided base path (`runs.jsonl`, `nodes.jsonl`, `artifacts.jsonl`, `conflicts.jsonl`) and
+materializes latest records to reconstruct a run from disk.
+
+The existing control-plane task, approval, and message APIs remain the compatibility facade. The
+DAG store is not a default global state directory and does not replace the control plane. Dispatcher
+integration is opt-in and record-only: supplying a DAG store can append node state for work the
+dispatcher already executes, but it does not select ready nodes or create a new execution path.
+
+Intentionally not implemented yet: DAG scheduling, worker loops, active leases, verifier or
+adjudication nodes, recursive delegation, learned routing, and provider-backed AI requirements.
+
 Deliverables:
 
 - Extend control plane with append-only records:
