@@ -374,7 +374,7 @@ Metrics:
 Exit criteria:
 
 - Benchmark can run locally without cloud provider keys.
-- At least one CI-safe command exercises the suite.
+- At least one CI-safe command exercises the suite: `claude-bridge agent-benchmark`.
 - Results can compare current run to a saved baseline.
 - Confidence and relevance signals are evaluated as predictions, not treated as proof of quality.
 
@@ -398,6 +398,7 @@ Deliverables:
 Exit criteria:
 
 - Agent-layer changes have measurable pass/fail criteria.
+- Operators can run release gates directly with `claude-bridge agent-benchmark --gates-only`.
 - The project stops relying on "looks smarter" as evidence.
 - Behavioral telemetry either improves benchmark explainability or stays non-blocking.
 

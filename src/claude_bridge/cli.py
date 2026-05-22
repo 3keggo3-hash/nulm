@@ -76,7 +76,7 @@ register_control_plane_cli(
 
 COMMAND_GROUPS = {
     "Core": ["start", "init", "update"],
-    "Tools": ["skill", "benchmark", "schedule"],
+    "Tools": ["skill", "benchmark", "agent-benchmark", "schedule"],
     "Audit": ["audit", "appeal", "anomaly", "replay", "appeal-history"],
     "Config": ["config"],
     "MCP": ["install", "setup"],
@@ -254,6 +254,13 @@ def _benchmark_runtime() -> tuple[Any, Any, Any]:
         compare_benchmark_to_baseline,
         load_benchmark_profile,
     )
+
+
+def _agent_benchmark_runtime() -> tuple[Any, Any]:
+    from claude_bridge.agents.benchmark_gates import evaluate_agent_benchmark_gates
+    from claude_bridge.agents.benchmark_harness import run_agent_benchmark
+
+    return run_agent_benchmark, evaluate_agent_benchmark_gates
 
 
 def _parse_policy_params(param: list[str]) -> dict[str, Any]:
@@ -2014,6 +2021,45 @@ def benchmark(
             for failure in comparison["failures"]:
                 console.print(f"- {failure}")
             raise typer.Exit(code=1)
+
+
+@app.command("agent-benchmark")
+def agent_benchmark(
+    save_path: Path | None = typer.Option(
+        None,
+        "--save",
+        help="Optional path to write the emitted JSON payload",
+    ),
+    gates_only: bool = typer.Option(
+        False,
+        "--gates-only",
+        help="Print only release gate JSON instead of benchmark plus gate JSON",
+    ),
+) -> None:
+    """Run deterministic local agent benchmark release gates."""
+    run_agent_benchmark, evaluate_agent_benchmark_gates = _agent_benchmark_runtime()
+    benchmark_run = run_agent_benchmark()
+    gate_result = evaluate_agent_benchmark_gates(benchmark_run)
+    payload: dict[str, Any] = (
+        gate_result.to_dict()
+        if gates_only
+        else {
+            "schema_version": "agent_benchmark_cli.v1",
+            "ok": gate_result.ok,
+            "benchmark": benchmark_run.to_dict(),
+            "gates": gate_result.to_dict(),
+        }
+    )
+
+    if save_path is not None:
+        save_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    console.print_json(data=payload)
+    if not gate_result.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("worktree")

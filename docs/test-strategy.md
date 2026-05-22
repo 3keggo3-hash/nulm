@@ -46,19 +46,41 @@ pytest tests/ --tb=short                      # short tracebacks
 ## Agent Benchmark Release Gates
 
 Phase 6 agent release gates convert the deterministic agent benchmark into a local pass/fail
-payload. Run them from Python:
+payload. Run the full benchmark plus gate wrapper from the CLI:
 
 ```bash
-python3 -c "\
-from claude_bridge.agents.benchmark_gates import evaluate_agent_benchmark_gates; \
-print(evaluate_agent_benchmark_gates().to_json())"
+claude-bridge agent-benchmark
+```
+
+For CI release gates, emit the compact gate payload and rely on the command exit code:
+
+```bash
+claude-bridge agent-benchmark --gates-only
+```
+
+The command exits with status 1 when any release gate fails. It writes JSON only when an explicit
+path is provided:
+
+```bash
+claude-bridge agent-benchmark --gates-only --save .claude-bridge/agent-gates.json
 ```
 
 The gate checks benchmark success, trace completeness, context-manifest presence for context
 scenarios, route telemetry, expected fallback counts, broker denial behavior, direct subprocess
 bypass absence, and duplicate context ratio. The MVP intentionally does not add DAG scheduling,
 verifier/adjudication nodes, recursive delegation, learned routing, provider requirements, or
-historical baseline comparison. JSON is only written when `save_json(path)` is called explicitly.
+historical baseline comparison.
+
+The default CLI payload has this top-level shape:
+
+```json
+{
+  "schema_version": "agent_benchmark_cli.v1",
+  "ok": true,
+  "benchmark": {"schema_version": "agent_benchmark_run.v1"},
+  "gates": {"schema_version": "agent_benchmark_gates.v1"}
+}
+```
 
 ## Naming Conventions
 
