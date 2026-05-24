@@ -47,9 +47,9 @@ from claude_bridge.ai_router import (
 AGENT_BENCHMARK_SCHEMA_VERSION = "agent_benchmark_run.v1"
 _MISSING_API_KEY_ENV = "__CLAUDE_BRIDGE_AGENT_BENCHMARK_MISSING_API_KEY__"
 _DEFAULT_BYPASS_SCAN_TARGETS = (
-    Path("src/claude_bridge/agents/sub/git_agent.py"),
-    Path("src/claude_bridge/agents/sub/research_agent.py"),
-    Path("src/claude_bridge/agents/sub/debug_agent.py"),
+    Path(__file__).resolve().parent / "sub/git_agent.py",
+    Path(__file__).resolve().parent / "sub/research_agent.py",
+    Path(__file__).resolve().parent / "sub/debug_agent.py",
 )
 
 

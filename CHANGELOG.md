@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-24
+
+### Fixed
+
+- Agent benchmark release gates now scan packaged subagent source files relative to the installed
+  package instead of the current working directory, so `nulm agent-benchmark --gates-only` works
+  from outside a source checkout.
+
 ## [0.1.2] - 2026-05-24
 
 ### Changed
@@ -78,6 +86,7 @@ layer, with deterministic Agent Quality tools implemented as the first advisory 
 - Public release docs updated to separate implemented advisory behavior from future provider-backed
   ambitions.
 
+[0.1.3]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.3
 [0.1.2]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.2
 [0.1.1]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.1
 [0.1.0]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.0

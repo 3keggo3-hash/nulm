@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from claude_bridge.agents.benchmark_harness import (
     AGENT_BENCHMARK_SCHEMA_VERSION,
@@ -106,6 +109,14 @@ def test_source_scan_bypass_scenario_fails_on_process_api(tmp_path) -> None:
     assert any("subprocess" in finding or "Popen" in finding for finding in findings)
 
 
+def test_default_source_scan_targets_are_package_relative(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    findings = scan_subagent_process_bypass()
+
+    assert findings == []
+
+
 def test_save_json_only_when_path_is_explicit(tmp_path) -> None:
     output = tmp_path / "agent-benchmark.json"
 
@@ -117,6 +128,8 @@ def test_save_json_only_when_path_is_explicit(tmp_path) -> None:
 
 
 def _git_status() -> str:
+    if not (Path.cwd() / ".git").exists():
+        pytest.skip("git status requires a repository checkout")
     result = subprocess.run(
         ["git", "status", "--short"],
         check=True,

@@ -1,4 +1,4 @@
-# Release Notes — nulm v0.1.2
+# Release Notes — nulm v0.1.3
 
 **Date:** 2026-05-24
 **Status:** Public alpha
@@ -103,6 +103,12 @@ pip install -e ".[dev]"
 
 ## Changelog
 
+### v0.1.3 (2026-05-24)
+
+**Fixed:**
+- Installed-package benchmark gates now scan packaged subagent source files relative to the
+  installed module path instead of the current working directory.
+
 ### v0.1.2 (2026-05-24)
 
 **Added:**
@@ -161,7 +167,7 @@ pip install -e ".[dev]"
 | Field | Value |
 |-------|-------|
 | Distribution name | nulm |
-| Version | 0.1.2 |
+| Version | 0.1.3 |
 | License | MIT |
 | Python | >=3.10 |
 | CLI entry point | `nulm` → `claude_bridge.cli:main`; `claude-bridge` compatibility alias |
