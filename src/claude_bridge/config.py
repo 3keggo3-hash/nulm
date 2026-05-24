@@ -46,6 +46,7 @@ class ScopedCredential:
         if self.expires_at is None:
             return False
         import time
+
         return time.time() > self.expires_at
 
     def get_token(self) -> str | None:
@@ -66,6 +67,7 @@ class ScopedCredential:
         if resource is not None and resource in self.denied_resources:
             return False
         return True
+
 
 _ENV_PREFIX = "CLAUDE_BRIDGE_"
 AI_EVALUATOR_PROVIDERS: frozenset[str] = frozenset(
@@ -1224,6 +1226,7 @@ def register_scoped_credential(
 ) -> None:
     """Register a scoped credential."""
     import time as _time
+
     expires_at = _time.time() + ttl_seconds if ttl_seconds is not None else None
     cred = ScopedCredential(
         provider=provider,

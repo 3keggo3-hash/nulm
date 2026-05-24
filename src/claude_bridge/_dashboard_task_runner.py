@@ -66,7 +66,16 @@ def _run_agent_task_background(task_id: str, task: str, mode: str) -> None:
             _ACTIVE_AGENT_TASKS[task_id]["updated_at"] = time.time()
 
         result = subprocess.run(
-            [sys.executable, "-m", "claude_bridge", "workflow-preview", "--mode", mode, "--target", task],
+            [
+                sys.executable,
+                "-m",
+                "claude_bridge",
+                "workflow-preview",
+                "--mode",
+                mode,
+                "--target",
+                task,
+            ],
             cwd=Path.cwd(),
             env=dict(__import__("os").environ),
             capture_output=True,
@@ -82,7 +91,9 @@ def _run_agent_task_background(task_id: str, task: str, mode: str) -> None:
         output_lines.append(f"exit={result.returncode}")
 
         with _ACTIVE_AGENT_TASKS_LOCK:
-            _ACTIVE_AGENT_TASKS[task_id]["status"] = "completed" if result.returncode == 0 else "failed"
+            _ACTIVE_AGENT_TASKS[task_id]["status"] = (
+                "completed" if result.returncode == 0 else "failed"
+            )
             _ACTIVE_AGENT_TASKS[task_id]["output"] = output_lines
             _ACTIVE_AGENT_TASKS[task_id]["updated_at"] = time.time()
 
@@ -100,10 +111,14 @@ def _run_agent_task_background(task_id: str, task: str, mode: str) -> None:
             _ACTIVE_AGENT_TASKS[task_id]["status"] = "failed"
             _ACTIVE_AGENT_TASKS[task_id]["output"] = ["Task timed out after 120s"]
             _ACTIVE_AGENT_TASKS[task_id]["updated_at"] = time.time()
-        update_task_status(task_id, "failed", summary="Task timed out after 120s", metadata={"source": "dashboard"})
+        update_task_status(
+            task_id, "failed", summary="Task timed out after 120s", metadata={"source": "dashboard"}
+        )
     except Exception as exc:
         with _ACTIVE_AGENT_TASKS_LOCK:
             _ACTIVE_AGENT_TASKS[task_id]["status"] = "failed"
             _ACTIVE_AGENT_TASKS[task_id]["output"] = [f"Error: {str(exc)}"]
             _ACTIVE_AGENT_TASKS[task_id]["updated_at"] = time.time()
-        update_task_status(task_id, "failed", summary=str(exc), metadata={"source": "dashboard", "error": str(exc)})
+        update_task_status(
+            task_id, "failed", summary=str(exc), metadata={"source": "dashboard", "error": str(exc)}
+        )

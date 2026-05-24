@@ -182,9 +182,7 @@ def _benchmark_run(
             "context_manifest_token_budget_overrun",
             context_manifest_present=True,
         ),
-        "no_direct_subagent_subprocess_bypass": _scenario(
-            "no_direct_subagent_subprocess_bypass"
-        ),
+        "no_direct_subagent_subprocess_bypass": _scenario("no_direct_subagent_subprocess_bypass"),
     }
     for override in overrides:
         scenarios[override.name] = override

@@ -16,12 +16,14 @@ import os
 
 class SecretStoreError(ValueError):
     """Raised when secret store operation fails."""
+
     pass
 
 
 @dataclass
 class SecretMetadata:
     """Metadata about a stored secret."""
+
     name: str
     provider: str
     created_at: float | None = None
@@ -87,6 +89,7 @@ class LocalSecretStore(SecretStore):
 
     def set(self, key: str, value: str, ttl: float | None = None) -> None:
         import time
+
         entry: dict[str, Any] = {"value": value}
         if ttl:
             entry["expires_at"] = time.time() + ttl
@@ -100,16 +103,19 @@ class LocalSecretStore(SecretStore):
 
     def list(self) -> list[SecretMetadata]:
         import time
+
         result = []
         for name, entry in self._secrets.items():
             if entry.get("expires_at") and time.time() > entry["expires_at"]:
                 continue
-            result.append(SecretMetadata(
-                name=name,
-                provider="local",
-                created_at=entry.get("created_at"),
-                expires_at=entry.get("expires_at"),
-            ))
+            result.append(
+                SecretMetadata(
+                    name=name,
+                    provider="local",
+                    created_at=entry.get("created_at"),
+                    expires_at=entry.get("expires_at"),
+                )
+            )
         return result
 
 
@@ -130,6 +136,7 @@ class VaultSecretStore(SecretStore):
     def get(self, key: str) -> str | None:
         try:
             import hvac  # type: ignore[import-untyped]
+
             client = hvac.Client(url=self.vault_addr, token=self.vault_token)
             result = client.secrets.kv.v2.read_secret_version(
                 path=key,
@@ -145,6 +152,7 @@ class VaultSecretStore(SecretStore):
     def set(self, key: str, value: str, ttl: float | None = None) -> None:
         try:
             import hvac
+
             client = hvac.Client(url=self.vault_addr, token=self.vault_token)
             client.secrets.kv.v2.create_or_update_secret(
                 path=key,
@@ -159,6 +167,7 @@ class VaultSecretStore(SecretStore):
     def delete(self, key: str) -> None:
         try:
             import hvac
+
             client = hvac.Client(url=self.vault_addr, token=self.vault_token)
             client.secrets.kv.v2.delete_metadata_and_all_versions(
                 path=key,
@@ -172,6 +181,7 @@ class VaultSecretStore(SecretStore):
     def list(self) -> list[SecretMetadata]:
         try:
             import hvac
+
             client = hvac.Client(url=self.vault_addr, token=self.vault_token)
             result = client.secrets.kv.v2.list_secrets(
                 path="",

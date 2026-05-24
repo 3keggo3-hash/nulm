@@ -58,7 +58,9 @@ def register_control_plane_cli(
         from claude_bridge._tunnel_manager import TunnelManager
         from claude_bridge.control_plane_dashboard import create_dashboard_server
 
-        selected_modes = [name for name, enabled in (("lan", lan), ("vpn", vpn), ("public", tunnel)) if enabled]
+        selected_modes = [
+            name for name, enabled in (("lan", lan), ("vpn", vpn), ("public", tunnel)) if enabled
+        ]
         if len(selected_modes) > 1:
             _dashboard_start_error(
                 f"Choose only one remote access mode: {', '.join(selected_modes)}",

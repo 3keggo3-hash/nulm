@@ -268,9 +268,7 @@ class TestNetworkProviders:
         assert response.action == EvaluationAction.DENY
         assert seen["timeout"] == 11
 
-    def test_cohere_provider_parses_v2_chat_response(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_cohere_provider_parses_v2_chat_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def fake_urlopen(req: object, *, timeout: int) -> _DummyHttpResponse:
             return _DummyHttpResponse(
                 '{"message": {"content": [{"type": "text", '
@@ -688,13 +686,17 @@ class TestEvaluateToolWithAi:
         assert result is not None
         assert result.action == DecisionAction.ASK
         assert "matched ask pattern" in result.reason.lower()
-        assert result.metadata.get("ai_evaluator_latency_ms") is None or result.metadata.get("ai_evaluator_latency_ms") >= 0
+        assert (
+            result.metadata.get("ai_evaluator_latency_ms") is None
+            or result.metadata.get("ai_evaluator_latency_ms") >= 0
+        )
 
     @pytest.mark.asyncio
     async def test_fallback_triggered_on_provider_timeout(self) -> None:
         class SlowProvider(Provider):
             def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
                 import time
+
                 time.sleep(10)
                 return EvaluationResponse(action=EvaluationAction.ALLOW)
 

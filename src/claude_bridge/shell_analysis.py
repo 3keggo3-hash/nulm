@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class CommandAnalysis:
     """Result of command analysis."""
+
     command: str
     risk_score: float
     risk_level: str

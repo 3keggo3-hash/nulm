@@ -34,6 +34,7 @@ class PackageRiskProfile:
             return "medium"
         return "low"
 
+
 MANIFEST_FILE = "skill.json"
 SKILL_CODE_FILE = "skill.py"
 PACKAGE_VERSION = "1.0"

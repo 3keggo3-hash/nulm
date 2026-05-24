@@ -50,9 +50,7 @@ class HookRegistry:
 
     def get_hooks(self, event_type: EventType) -> list[HookSpec]:
         with self._lock:
-            return [
-                h for h in self._hooks.values() if h.event_type == event_type
-            ]
+            return [h for h in self._hooks.values() if h.event_type == event_type]
 
     def invoke_hooks(
         self,

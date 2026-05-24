@@ -212,9 +212,7 @@ def test_control_plane_dashboard_updates_task_status(monkeypatch, tmp_path: Path
     assert updated["metadata"]["dashboard_reason"] == "waiting on review"
 
 
-def test_control_plane_dashboard_rejects_invalid_task_status(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_control_plane_dashboard_rejects_invalid_task_status(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(control_plane.CONTROL_PLANE_ENV_VAR, str(tmp_path / "state"))
     task = control_plane.create_task("Reject bad status")
 

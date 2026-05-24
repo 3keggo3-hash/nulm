@@ -17,7 +17,6 @@ from claude_bridge.agents.benchmark_harness import (
     AgentBenchmarkScenarioResult,
 )
 
-
 runner = CliRunner()
 
 

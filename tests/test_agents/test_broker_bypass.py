@@ -13,7 +13,6 @@ from claude_bridge.agents.broker import AgentToolBroker
 from claude_bridge.agents.contracts import TaskPermissions
 from claude_bridge.agents.run_record import start_agent_run
 
-
 TARGET_SUBAGENTS = [
     Path("src/claude_bridge/agents/sub/git_agent.py"),
     Path("src/claude_bridge/agents/sub/research_agent.py"),

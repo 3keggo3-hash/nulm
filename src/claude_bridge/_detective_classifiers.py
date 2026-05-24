@@ -94,17 +94,13 @@ class PromptInjectionClassifier:
         self.indirect_injection = INDIRECT_INJECTION
         self.shell_injection = SHELL_INJECTION_PATTERNS
         self.homoglyphs = HOMOGLYPHS
-        self._unicode_re = re.compile(
-            "|".join(f"({p})" for p, _, _ in UNICODE_TRAPS)
-        )
+        self._unicode_re = re.compile("|".join(f"({p})" for p, _, _ in UNICODE_TRAPS))
         self._b64_re = re.compile("|".join(f"({p})" for p, _ in B64_PATTERNS))
         self._indirect_re = re.compile(
             "|".join(f"(?i:{p[4:]})" for p, _ in INDIRECT_INJECTION),
             re.IGNORECASE,
         )
-        self._shell_re = re.compile(
-            "|".join(f"({p})" for p, _ in SHELL_INJECTION_PATTERNS)
-        )
+        self._shell_re = re.compile("|".join(f"({p})" for p, _ in SHELL_INJECTION_PATTERNS))
 
     def classify(self, text: str) -> Tuple[bool, str, float]:
         if not text:
@@ -154,6 +150,7 @@ def get_prompt_injection_classifier() -> PromptInjectionClassifier:
     if PromptInjectionClassifier._instance is None:
         PromptInjectionClassifier._instance = PromptInjectionClassifier()
     return PromptInjectionClassifier._instance
+
 
 _ERROR_PATTERNS: Final[dict[str, list[tuple[str, int]]]] = {
     "SYNTAX_ERROR": [

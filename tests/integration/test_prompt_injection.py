@@ -16,7 +16,7 @@ class TestUnicodeTrapDetection:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier(threshold=7.0)
-        text = "Normal text \u202E \u202D \u200B and more"
+        text = "Normal text \u202e \u202d \u200b and more"
         is_suspicious, reason, score = classifier.classify(text)
         assert is_suspicious is True
         assert "unicode_control_chars" in reason
@@ -25,7 +25,7 @@ class TestUnicodeTrapDetection:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier()
-        text = "\u202E\u202D\u200B"
+        text = "\u202e\u202d\u200b"
         is_suspicious, reason, score = classifier.classify(text)
         assert is_suspicious is True
         assert score >= 1.0
@@ -43,17 +43,17 @@ class TestUnicodeTrapDetection:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier()
-        text = "hello\u202Eworld\u200Btest"
+        text = "hello\u202eworld\u200btest"
         sanitized = classifier.sanitize(text)
-        assert "\u202E" not in sanitized
-        assert "\u200B" not in sanitized
+        assert "\u202e" not in sanitized
+        assert "\u200b" not in sanitized
         assert "helloworldtest" in sanitized
 
     def test_single_unicode_trap_low_threshold(self):
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier(threshold=1.0)
-        text = "Normal text \u202E and more"
+        text = "Normal text \u202e and more"
         is_suspicious, reason, score = classifier.classify(text)
         assert is_suspicious is True
         assert "unicode_control_chars" in reason
@@ -102,10 +102,10 @@ class TestHomoglyphDetection:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier()
-        text = "hello\u202Eworld\u200Btest"
+        text = "hello\u202eworld\u200btest"
         sanitized = classifier.sanitize(text)
-        assert "\u202E" not in sanitized
-        assert "\u200B" not in sanitized
+        assert "\u202e" not in sanitized
+        assert "\u200b" not in sanitized
         assert "helloworldtest" in sanitized
 
     def test_homoglyph_detection_with_low_threshold(self):
@@ -322,7 +322,7 @@ class TestSanitizeMethod:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier()
-        text = "\u202E\u202D\u200B\u200C\u200D\uFEFF"
+        text = "\u202e\u202d\u200b\u200c\u200d\ufeff"
         sanitized = classifier.sanitize(text)
         for char, _, _ in classifier.unicode_traps:
             assert char not in sanitized
@@ -339,13 +339,13 @@ class TestSanitizeMethod:
         from claude_bridge._detective_classifiers import PromptInjectionClassifier
 
         classifier = PromptInjectionClassifier()
-        text = "Hello\u200BWorld\u202Etest"
+        text = "Hello\u200bWorld\u202etest"
         sanitized = classifier.sanitize(text)
         assert "Hello" in sanitized
         assert "World" in sanitized
         assert "test" in sanitized
-        assert "\u200B" not in sanitized
-        assert "\u202E" not in sanitized
+        assert "\u200b" not in sanitized
+        assert "\u202e" not in sanitized
 
 
 class TestPromptInjectionClassifierIntegration:

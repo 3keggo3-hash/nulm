@@ -16,7 +16,6 @@ from claude_bridge.agents.benchmark_harness import (
     run_agent_benchmark,
 )
 
-
 AGENT_BENCHMARK_GATES_SCHEMA_VERSION = "agent_benchmark_gates.v1"
 TRACE_COMPLETENESS_THRESHOLD = 0.95
 DUPLICATE_CONTEXT_RATIO_THRESHOLD = 0.25

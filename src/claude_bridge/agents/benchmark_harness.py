@@ -39,7 +39,6 @@ from claude_bridge.ai_router import (
     route_telemetry_summary,
 )
 
-
 AGENT_BENCHMARK_SCHEMA_VERSION = "agent_benchmark_run.v1"
 _MISSING_API_KEY_ENV = "__CLAUDE_BRIDGE_AGENT_BENCHMARK_MISSING_API_KEY__"
 _DEFAULT_BYPASS_SCAN_TARGETS = (
@@ -518,6 +517,5 @@ def _trace_complete(record: AgentRunRecord) -> bool:
 
 def _has_tool_call(record: AgentRunRecord, tool: str, status: str) -> bool:
     return any(
-        call.get("tool") == tool and call.get("status") == status
-        for call in record.tool_calls
+        call.get("tool") == tool and call.get("status") == status for call in record.tool_calls
     )

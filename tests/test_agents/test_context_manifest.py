@@ -42,7 +42,10 @@ def test_context_manifest_round_trip():
         goal="Analyze codebase",
         target="src/claude_bridge",
         selected_files=("src/a.py", "src/b.py"),
-        file_signatures=({"path": "src/a.py", "mtime_ns": "123"}, {"path": "src/b.py", "mtime_ns": "456"}),
+        file_signatures=(
+            {"path": "src/a.py", "mtime_ns": "123"},
+            {"path": "src/b.py", "mtime_ns": "456"},
+        ),
         token_budget=5000,
         estimated_tokens=3200,
         digest="abc123digest",

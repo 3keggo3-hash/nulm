@@ -115,7 +115,9 @@ class TestTaskPermissionsValidation:
 
 class TestCoerceTaskSpecEdgeCases:
     def test_coerce_task_spec_with_dict_and_spec_mixed(self):
-        spec = TaskSpec(task_id="typed", kind="research", goal="typed goal", agent_name="research_agent")
+        spec = TaskSpec(
+            task_id="typed", kind="research", goal="typed goal", agent_name="research_agent"
+        )
         dict_spec = {"id": "dict", "task": "dict task", "agent_name": "git_agent"}
         result1 = coerce_task_spec(spec)
         result2 = coerce_task_spec(dict_spec)

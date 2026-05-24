@@ -57,7 +57,9 @@ class EventBus:
             if event_type not in self._handlers:
                 self._handlers[event_type] = []
             self._handlers[event_type].append(
-                EventHandler(name=name or f"handler_{id(handler)}", handler=handler, priority=priority)
+                EventHandler(
+                    name=name or f"handler_{id(handler)}", handler=handler, priority=priority
+                )
             )
             self._handlers[event_type].sort(key=lambda h: h.priority, reverse=True)
 

@@ -92,9 +92,7 @@ class AgentMessageBus:
 
     def _cleanup_expired(self) -> None:
         for agent_id in list(self._inbox.keys()):
-            self._inbox[agent_id] = [
-                msg for msg in self._inbox[agent_id] if not msg.is_expired()
-            ]
+            self._inbox[agent_id] = [msg for msg in self._inbox[agent_id] if not msg.is_expired()]
 
 
 _message_bus: AgentMessageBus | None = None

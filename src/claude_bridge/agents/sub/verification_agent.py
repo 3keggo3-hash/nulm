@@ -56,7 +56,9 @@ class VerificationAgent(BaseAgent):
                 reasons.append(f"Recursive delete detected: {action[:50]}")
 
         if reasons:
-            get_event_bus().publish(EventType.VERIFICATION_FAIL, {"reasons": reasons, "changes": changes})
+            get_event_bus().publish(
+                EventType.VERIFICATION_FAIL, {"reasons": reasons, "changes": changes}
+            )
             return AgentResult(
                 status=AgentStatus.FAILURE,
                 findings=["Verification failed: dangerous operations detected"],
@@ -90,7 +92,9 @@ class VerificationAgent(BaseAgent):
                     reasons.append(f"Dangerous pattern in output: {pattern}")
 
         if reasons:
-            get_event_bus().publish(EventType.VERIFICATION_FAIL, {"reasons": reasons, "result": result})
+            get_event_bus().publish(
+                EventType.VERIFICATION_FAIL, {"reasons": reasons, "result": result}
+            )
             return AgentResult(
                 status=AgentStatus.FAILURE,
                 findings=["Post-change verification failed"],

@@ -157,11 +157,13 @@ def _make_handler(token: str) -> type[BaseHTTPRequestHandler]:
 
                 manager = get_tracing_manager()
                 spans = manager.get_recent_spans(limit=100)
-                self._send_json({
-                    "schema_version": "tracing.spans.v1",
-                    "count": len(spans),
-                    "spans": spans,
-                })
+                self._send_json(
+                    {
+                        "schema_version": "tracing.spans.v1",
+                        "count": len(spans),
+                        "spans": spans,
+                    }
+                )
             except Exception as exc:
                 self._send_json({"error": f"traces_unavailable: {exc}"}, status=500)
 

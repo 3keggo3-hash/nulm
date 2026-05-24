@@ -64,6 +64,7 @@ def _consume_pending_events() -> list[tuple[str, dict[str, Any]]]:
         _PENDING_EVENTS.clear()
     return events
 
+
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
 MAX_ACTION_BODY_BYTES = 8192
@@ -273,7 +274,10 @@ def apply_dashboard_action(
         )
         if resolved is None:
             raise ControlPlaneDashboardError(f"Approval '{record_id}' not found")
-        _queue_event("approval", {"id": record_id, "status": "approved", "action": action, "allow_always": True})
+        _queue_event(
+            "approval",
+            {"id": record_id, "status": "approved", "action": action, "allow_always": True},
+        )
         return {"approval": resolved, "pattern": {"tool": tool, "pattern": pattern}}
     raise ControlPlaneDashboardError(f"Unsupported dashboard action '{action}'")
 
@@ -565,11 +569,14 @@ def _start_terminal_ws(host: str, port: int, token: str) -> None:
                             elif isinstance(input_data, bytes):
                                 session.write(input_data)
                     except (json.JSONDecodeError, KeyError):
-                        session.write(message.encode("utf-8") if isinstance(message, str) else message)
+                        session.write(
+                            message.encode("utf-8") if isinstance(message, str) else message
+                        )
         except Exception:
             pass
         finally:
             from claude_bridge.web.terminal import close_terminal_session
+
             close_terminal_session(session_id)
 
     def _read_ws_output(session: Any, websocket: Any) -> None:
@@ -665,6 +672,7 @@ def _make_handler(
                         return
                     task_id = parts[2]
                     from claude_bridge._dashboard_task_runner import get_dashboard_task_status
+
                     self._send_json(get_dashboard_task_status(task_id))
                     return
             if parsed.path == "/api/events":
@@ -728,6 +736,7 @@ def _make_handler(
                     self._send_json({"error": "task_required"}, status=400)
                     return
                 from claude_bridge._dashboard_task_runner import run_dashboard_task
+
                 self._send_json(run_dashboard_task(task.strip(), mode=mode))
                 return
             if len(parts) != 4 or parts[0] != "api":
@@ -773,7 +782,11 @@ def _make_handler(
                         _SSE_BROADCAST_EVENT.clear()
                         events = _consume_pending_events()
                         for event_name, event_data in events:
-                            encoded = f"event: {event_name}\ndata: {json.dumps(event_data)}\n\n".encode("utf-8")
+                            encoded = (
+                                f"event: {event_name}\ndata: {json.dumps(event_data)}\n\n".encode(
+                                    "utf-8"
+                                )
+                            )
                             try:
                                 client.write(encoded)
                                 client.flush()

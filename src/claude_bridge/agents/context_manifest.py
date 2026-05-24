@@ -96,10 +96,7 @@ def _select_files(task: TaskSpec, context: dict[str, Any]) -> tuple[tuple[str, .
     if task.read_set:
         return tuple(task.read_set), "task_read_set"
     context_files = _string_tuple(
-        context.get("selected_files")
-        or context.get("context_files")
-        or context.get("files")
-        or (),
+        context.get("selected_files") or context.get("context_files") or context.get("files") or (),
     )
     if context_files:
         return context_files, "context_selected_files"

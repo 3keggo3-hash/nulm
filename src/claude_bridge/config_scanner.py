@@ -157,7 +157,9 @@ def scan_config_files(project_dir: Path) -> ConfigScanResult:
     return ConfigScanResult(
         project_dir=project_dir,
         approval_issues=[i for i in issues if "auto_approve" in i or "approval_preset" in i],
-        secret_leakage_issues=[i for i in issues if "API key" in i or "token" in i or "secret" in i],
+        secret_leakage_issues=[
+            i for i in issues if "API key" in i or "token" in i or "secret" in i
+        ],
         mcp_config_issues=mcp_issues,
         config_files_scanned=scanned,
     )

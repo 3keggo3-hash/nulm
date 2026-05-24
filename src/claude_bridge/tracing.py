@@ -135,9 +135,9 @@ class TracingManager:
         if trace is None:
             return
         self._provider = TracerProvider()
-        endpoint = os.environ.get(
-            "CLAUDE_BRIDGE_OTLP_ENDPOINT"
-        ) or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        endpoint = os.environ.get("CLAUDE_BRIDGE_OTLP_ENDPOINT") or os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+        )
         if endpoint and OTLPSpanExporter:
             try:
                 exporter = OTLPSpanExporter(endpoint=endpoint)

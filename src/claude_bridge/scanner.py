@@ -136,22 +136,26 @@ def scan_all(project_dir: Path) -> ScanResult:
                 ]:
                     is_suspicious, reason, score = classifier.classify(str(text))
                     if is_suspicious:
-                        result.prompt_injection_findings.append({
-                            "source": f"skill:{skill_file.stem}",
-                            "field": field_name,
-                            "score": score,
-                            "reason": reason,
-                        })
+                        result.prompt_injection_findings.append(
+                            {
+                                "source": f"skill:{skill_file.stem}",
+                                "field": field_name,
+                                "score": score,
+                                "reason": reason,
+                            }
+                        )
 
                 if code:
                     is_suspicious, reason, score = classifier.classify(code)
                     if is_suspicious:
-                        result.prompt_injection_findings.append({
-                            "source": f"skill:{skill_file.stem}",
-                            "field": "code",
-                            "score": score,
-                            "reason": reason,
-                        })
+                        result.prompt_injection_findings.append(
+                            {
+                                "source": f"skill:{skill_file.stem}",
+                                "field": "code",
+                                "score": score,
+                                "reason": reason,
+                            }
+                        )
 
                 pkg_info: dict[str, Any] = {
                     "name": data.get("name", "unknown"),
@@ -183,17 +187,21 @@ def scan_all(project_dir: Path) -> ScanResult:
                     if endpoint:
                         is_suspicious, reason, score = classifier.classify(endpoint)
                         if is_suspicious:
-                            result.prompt_injection_findings.append({
-                                "source": f"mcp_peer:{name}",
-                                "field": "endpoint",
-                                "score": score,
-                                "reason": reason,
-                            })
-                    result.mcp_peers.append({
-                        "name": name,
-                        "enabled": config.get("enabled", True),
-                        "has_endpoint": bool(endpoint),
-                    })
+                            result.prompt_injection_findings.append(
+                                {
+                                    "source": f"mcp_peer:{name}",
+                                    "field": "endpoint",
+                                    "score": score,
+                                    "reason": reason,
+                                }
+                            )
+                    result.mcp_peers.append(
+                        {
+                            "name": name,
+                            "enabled": config.get("enabled", True),
+                            "has_endpoint": bool(endpoint),
+                        }
+                    )
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -222,6 +230,7 @@ def generate_scan_report(result: ScanResult, format: str = "text") -> str:
 
     if format == "yaml":
         import yaml  # type: ignore[import-untyped]
+
         return yaml.dump(result.to_dict(), default_flow_style=False, sort_keys=False)  # type: ignore[no-any-return]
 
     lines: list[str] = []

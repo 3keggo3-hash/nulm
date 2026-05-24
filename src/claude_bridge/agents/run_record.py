@@ -22,7 +22,6 @@ from claude_bridge._audit_core import (
 )
 from claude_bridge._audit_index import append_audit_index_record
 
-
 AGENT_RUN_SCHEMA_VERSION = "agent_run.v1"
 
 
@@ -267,7 +266,9 @@ def log_agent_run_record(record: AgentRunRecord) -> None:
                 "params": params,
             },
         }
-        offset = _append_audit_record(_session_file(session_id), audit_record, session_id=session_id)
+        offset = _append_audit_record(
+            _session_file(session_id), audit_record, session_id=session_id
+        )
         append_audit_index_record(session_id, audit_record, offset=offset)
     except Exception:
         return

@@ -32,7 +32,7 @@ class MemoryStore:
             return self._locks[namespace]
 
     def _get_file_path(self, key: str, namespace: str) -> Path:
-        safe_key = re.sub(r'[^\w\-\.]', '_', key)
+        safe_key = re.sub(r"[^\w\-\.]", "_", key)
         return self._get_namespace_path(namespace) / f"{safe_key}.jsonl"
 
     def get(self, key: str, namespace: str = "default") -> Any | None:

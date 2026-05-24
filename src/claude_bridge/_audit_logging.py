@@ -79,5 +79,11 @@ def log_tool_call(
     append_audit_index_record(session_id, record, offset=offset)
     get_event_bus().publish(
         EventType.TOOL_CALL,
-        {"tool_name": tool_name, "params": params_redacted, "result": summary, "duration_ms": duration_ms, "agent_id": agent_id},
+        {
+            "tool_name": tool_name,
+            "params": params_redacted,
+            "result": summary,
+            "duration_ms": duration_ms,
+            "agent_id": agent_id,
+        },
     )

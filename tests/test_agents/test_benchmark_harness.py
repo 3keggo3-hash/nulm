@@ -93,9 +93,7 @@ def test_benchmark_does_not_mutate_repository() -> None:
 def test_source_scan_bypass_scenario_fails_on_process_api(tmp_path) -> None:
     target = tmp_path / "bad_agent.py"
     target.write_text(
-        "import subprocess\n\n"
-        "def run() -> None:\n"
-        "    subprocess.Popen(['echo', 'bad'])\n",
+        "import subprocess\n\n" "def run() -> None:\n" "    subprocess.Popen(['echo', 'bad'])\n",
         encoding="utf-8",
     )
 

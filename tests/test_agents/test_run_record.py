@@ -90,8 +90,12 @@ def test_compact_run_summary_multiple_records():
 
 def test_record_tool_calls_accumulated():
     record = start_agent_run(task_id="t", agent_name="a", task_kind="k")
-    record.tool_calls.append({"tool": "git_status", "params": {}, "status": "success", "timestamp": time.time()})
-    record.tool_calls.append({"tool": "git_log", "params": {"limit": 5}, "status": "success", "timestamp": time.time()})
+    record.tool_calls.append(
+        {"tool": "git_status", "params": {}, "status": "success", "timestamp": time.time()}
+    )
+    record.tool_calls.append(
+        {"tool": "git_log", "params": {"limit": 5}, "status": "success", "timestamp": time.time()}
+    )
     assert len(record.tool_calls) == 2
     assert record.tool_calls[0]["tool"] == "git_status"
     assert record.tool_calls[1]["params"]["limit"] == 5

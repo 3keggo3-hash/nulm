@@ -57,11 +57,13 @@ class TerminalSession:
 
     def _build_env(self) -> dict[str, str]:
         env = dict(os.environ)
-        env.update({
-            "TERM": "xterm-256color",
-            "COLORTERM": "truecolor",
-            "LC_ALL": "en_US.UTF-8",
-        })
+        env.update(
+            {
+                "TERM": "xterm-256color",
+                "COLORTERM": "truecolor",
+                "LC_ALL": "en_US.UTF-8",
+            }
+        )
         return env
 
     def write(self, data: bytes) -> int:
@@ -91,6 +93,7 @@ class TerminalSession:
             import fcntl
             import struct
             import termios
+
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             fcntl.ioctl(self.slave_fd, termios.TIOCSWINSZ, winsize)
             return True
@@ -208,6 +211,7 @@ def _read_output(session: TerminalSession, websocket: Any) -> None:
         data = session.read(timeout=0.05)
         if data:
             import asyncio
+
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():

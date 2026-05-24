@@ -788,6 +788,7 @@ def _call_chat_completions(
     data = _read_json_response(req, profile.timeout)
     return str(data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
 
+
 def _call_anthropic(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
     key = _api_key(profile, "ANTHROPIC_API_KEY")
     endpoint = (
@@ -822,7 +823,9 @@ def _call_anthropic(profile: AIModelProfile, prompt: str, *, max_tokens: int) ->
 
 def _call_cohere(profile: AIModelProfile, prompt: str, *, max_tokens: int) -> str:
     key = _api_key(profile, "COHERE_API_KEY")
-    endpoint = profile.base_url.rstrip("/") if profile.base_url else "https://api.cohere.com/v2/chat"
+    endpoint = (
+        profile.base_url.rstrip("/") if profile.base_url else "https://api.cohere.com/v2/chat"
+    )
     body = json.dumps(
         {
             "model": profile.model or "command-a-03-2025",

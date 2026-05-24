@@ -16,18 +16,18 @@ from typing import Any
 from claude_bridge._detective_classifiers import get_prompt_injection_classifier
 
 UNICODE_CONTROL_CHARS = (
-    "\u202E",
-    "\u202D",
-    "\u200B",
-    "\u200C",
-    "\u200D",
-    "\uFEFF",
+    "\u202e",
+    "\u202d",
+    "\u200b",
+    "\u200c",
+    "\u200d",
+    "\ufeff",
 )
 
 HOMOGLYPHS: dict[str, str] = {
     "a": "\u0430",
     "e": "\u0435",
-    "o": "\u043E",
+    "o": "\u043e",
     "c": "\u0441",
     "p": "\u0440",
     "y": "\u0443",
@@ -36,10 +36,10 @@ HOMOGLYPHS: dict[str, str] = {
     "B": "\u0412",
     "C": "\u0421",
     "E": "\u0415",
-    "H": "\u041D",
-    "K": "\u041A",
-    "M": "\u041C",
-    "O": "\u041E",
+    "H": "\u041d",
+    "K": "\u041a",
+    "M": "\u041c",
+    "O": "\u041e",
     "P": "\u0420",
     "T": "\u0422",
     "X": "\u0425",
@@ -293,7 +293,11 @@ class ToolSchemaValidator:
         if is_pi or unicode_issues:
             return ValidationResult(
                 valid=False,
-                reason=f"prompt_injection_detected: {reason_pi}" if is_pi else f"unicode_issues: {unicode_issues}",
+                reason=(
+                    f"prompt_injection_detected: {reason_pi}"
+                    if is_pi
+                    else f"unicode_issues: {unicode_issues}"
+                ),
                 risk_level=risk_level,
                 prompt_injection=(f"score:{score_pi}", reason_pi) if is_pi else (),
                 unicode_issues=tuple(unicode_issues),
@@ -311,6 +315,7 @@ class ToolSchemaValidator:
 
     def _normalize_text_for_comparison(self, text: str) -> str:
         import unicodedata
+
         normalized = unicodedata.normalize("NFKC", text)
         result = []
         for char in normalized:
@@ -330,13 +335,7 @@ class ToolSchemaValidator:
                 issues.append(f"homoglyph:{char}→{LATIN_HOMOGLYPHS[char]}")
         return issues
 
-    def sanitize_tool_metadata(
-        self, name: str, description: str
-    ) -> tuple[str, str]:
-        cleaned_name = "".join(
-            c for c in name if c not in UNICODE_CONTROL_CHARS
-        )
-        cleaned_desc = "".join(
-            c for c in description if c not in UNICODE_CONTROL_CHARS
-        )
+    def sanitize_tool_metadata(self, name: str, description: str) -> tuple[str, str]:
+        cleaned_name = "".join(c for c in name if c not in UNICODE_CONTROL_CHARS)
+        cleaned_desc = "".join(c for c in description if c not in UNICODE_CONTROL_CHARS)
         return cleaned_name, cleaned_desc

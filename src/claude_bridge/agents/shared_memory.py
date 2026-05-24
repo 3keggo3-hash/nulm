@@ -15,7 +15,9 @@ from claude_bridge._memory_store import MemoryStore
 class SharedMemorySpace:
     """Thread-safe shared memory with optional disk persistence."""
 
-    def __init__(self, use_persistence: bool = False, persistence_namespace: str = "shared") -> None:
+    def __init__(
+        self, use_persistence: bool = False, persistence_namespace: str = "shared"
+    ) -> None:
         self._data: dict[str, Any] = {}
         self._lock = threading.RLock()
         self._agent_views: dict[str, dict[str, Any]] = {}
