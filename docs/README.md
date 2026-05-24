@@ -24,6 +24,9 @@ behavior, or operational flow.
   orchestration design.
 - `multi-agent-execution-roadmap.md`
   Prioritized 3-6 month execution roadmap for measurable multi-agent runtime improvements.
+- `agent-runtime-remaining-work-plan.md`
+  Implementation blueprint for the remaining MissionBrief, DAG scheduler, verifier, conflict, and
+  behavioral-enforcement work.
 - `known-issues-and-improvements.md`
   Known gaps, risks, and improvement suggestions.
 - `optional-dependencies.md`
