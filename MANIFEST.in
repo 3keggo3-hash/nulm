@@ -5,6 +5,8 @@ graft docs
 graft examples
 graft web
 graft src
+prune web/node_modules
+prune web/dist
 prune tests
 prune archive
 prune tasks

@@ -46,7 +46,7 @@ class TestOTLPExport:
         assert tm.level == TraceLevel.DETAILED
 
     def test_span_attributes_creation(self):
-        from claude_bridge.tracing import TracingManager, SpanAttributes
+        from claude_bridge.tracing import TracingManager
 
         tm = TracingManager()
         attrs = tm.create_span_attributes(
@@ -101,9 +101,8 @@ class TestOTLPExport:
             assert attrs.tool_name == "test_tool"
 
     def test_trace_workflow_context_manager(self):
-        from claude_bridge.tracing import trace_workflow, get_tracing_manager
+        from claude_bridge.tracing import trace_workflow
 
-        manager = get_tracing_manager()
         with trace_workflow("test task", max_steps=5) as (span, attrs):
             assert attrs is not None
             assert attrs.user_goal == "test task"
@@ -219,7 +218,7 @@ class TestHealthEndpoints:
         health._last_check_time = 0.0
         with patch.object(health, "check_components") as mock_check:
             mock_check.return_value = {}
-            report = health.get_report()
+            health.get_report()
             assert mock_check.called
 
 
@@ -389,12 +388,10 @@ class TestTracingIntegration:
         tm.set_ok(None)
 
     def test_span_attributes_custom_fields(self):
-        from claude_bridge.tracing import TracingManager, SpanAttributes
+        from claude_bridge.tracing import TracingManager
 
         tm = TracingManager()
-        attrs = tm.create_span_attributes(
-            custom={"custom1": "value1", "custom2": 42}
-        )
+        attrs = tm.create_span_attributes(custom={"custom1": "value1", "custom2": 42})
         assert attrs.custom["custom1"] == "value1"
         assert attrs.custom["custom2"] == 42
 
@@ -414,8 +411,7 @@ class TestTracingIntegration:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=record_spans, args=(10,), name=f"worker_{i}")
-            for i in range(3)
+            threading.Thread(target=record_spans, args=(10,), name=f"worker_{i}") for i in range(3)
         ]
         for t in threads:
             t.start()

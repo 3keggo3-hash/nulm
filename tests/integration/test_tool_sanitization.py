@@ -17,7 +17,7 @@ class TestBidiUnicodeDetection:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "test\u202Etool",
+            "name": "test\u202etool",
             "description": "A test tool",
             "inputSchema": {"type": "object", "properties": {}},
         }
@@ -31,7 +31,7 @@ class TestBidiUnicodeDetection:
         validator = ToolSchemaValidator()
         tool_schema = {
             "name": "test_tool",
-            "description": "Read\u202Dfiles",
+            "description": "Read\u202dfiles",
             "inputSchema": {"type": "object", "properties": {}},
         }
         result = validator.validate(tool_schema)
@@ -42,8 +42,8 @@ class TestBidiUnicodeDetection:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "\u202Eadmin\u202Dtool",
-            "description": "\u200Bhidden\u200Cdescription",
+            "name": "\u202eadmin\u202dtool",
+            "description": "\u200bhidden\u200cdescription",
             "inputSchema": {"type": "object", "properties": {}},
         }
         result = validator.validate(tool_schema)
@@ -71,7 +71,7 @@ class TestBidiUnicodeDetection:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path\u200Bname": {"type": "string"},
+                    "path\u200bname": {"type": "string"},
                 },
             },
         }
@@ -83,7 +83,7 @@ class TestBidiUnicodeDetection:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "test\u202E\u202D\u200B",
+            "name": "test\u202e\u202d\u200b",
             "description": "A tool",
             "inputSchema": {"type": "object", "properties": {}},
         }
@@ -176,11 +176,11 @@ class TestValidationResultUnicodeIssues:
     """Tests for ValidationResult.unicode_issues attribute."""
 
     def test_validation_result_unicode_issues_tuple(self):
-        from claude_bridge.tool_validator import ToolSchemaValidator, ValidationResult
+        from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "test\u202Etool",
+            "name": "test\u202etool",
             "description": "A tool",
             "inputSchema": {"type": "object", "properties": {}},
         }
@@ -194,7 +194,7 @@ class TestValidationResultUnicodeIssues:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "test\u202Etool",
+            "name": "test\u202etool",
             "description": "A tool",
             "inputSchema": {"type": "object", "properties": {}},
         }
@@ -208,7 +208,7 @@ class TestValidationResultUnicodeIssues:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "test\u202Etool",
+            "name": "test\u202etool",
             "description": "A tool",
             "inputSchema": {"type": "object", "properties": {}},
         }
@@ -237,38 +237,30 @@ class TestSanitizeToolMetadata:
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "tool\u200Bname", "desc\u200Bcription"
-        )
-        assert "\u200B" not in name
-        assert "\u200B" not in desc
+        name, desc = validator.sanitize_tool_metadata("tool\u200bname", "desc\u200bcription")
+        assert "\u200b" not in name
+        assert "\u200b" not in desc
 
     def test_sanitize_removes_rle(self):
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "tool\u202Ename", "desc\u202Eription"
-        )
-        assert "\u202E" not in name
-        assert "\u202E" not in desc
+        name, desc = validator.sanitize_tool_metadata("tool\u202ename", "desc\u202eription")
+        assert "\u202e" not in name
+        assert "\u202e" not in desc
 
     def test_sanitize_removes_bom(self):
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "\uFEFFtool", "description"
-        )
-        assert "\uFEFF" not in name
+        name, desc = validator.sanitize_tool_metadata("\ufefftool", "description")
+        assert "\ufeff" not in name
 
     def test_sanitize_preserves_normal_text(self):
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "read_file_v2", "Read file version 2.0"
-        )
+        name, desc = validator.sanitize_tool_metadata("read_file_v2", "Read file version 2.0")
         assert name == "read_file_v2"
         assert desc == "Read file version 2.0"
 
@@ -276,9 +268,7 @@ class TestSanitizeToolMetadata:
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "rеad_file", "Read files"
-        )
+        name, desc = validator.sanitize_tool_metadata("rеad_file", "Read files")
         assert "а" not in name or "е" not in name
 
 
@@ -290,7 +280,7 @@ class TestUnicodeConstants:
 
         assert isinstance(UNICODE_CONTROL_CHARS, (list, tuple, frozenset))
         assert len(UNICODE_CONTROL_CHARS) > 0
-        assert "\u202E" in UNICODE_CONTROL_CHARS or "\u202E" in str(UNICODE_CONTROL_CHARS)
+        assert "\u202e" in UNICODE_CONTROL_CHARS or "\u202e" in str(UNICODE_CONTROL_CHARS)
 
     def test_homoglyphs_dict(self):
         from claude_bridge.tool_validator import HOMOGLYPHS
@@ -315,8 +305,8 @@ class TestEdgeCases:
 
         validator = ToolSchemaValidator()
         tool_schema = {
-            "name": "\u202E\u202D\u200B",
-            "description": "\uFEFF",
+            "name": "\u202e\u202d\u200b",
+            "description": "\ufeff",
             "inputSchema": {"type": "object", "properties": {}},
         }
         result = validator.validate(tool_schema)
@@ -327,8 +317,6 @@ class TestEdgeCases:
         from claude_bridge.tool_validator import ToolSchemaValidator
 
         validator = ToolSchemaValidator()
-        name, desc = validator.sanitize_tool_metadata(
-            "read_file_v2", "Read file version 2.0"
-        )
+        name, desc = validator.sanitize_tool_metadata("read_file_v2", "Read file version 2.0")
         assert name == "read_file_v2"
         assert desc == "Read file version 2.0"

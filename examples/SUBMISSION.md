@@ -30,7 +30,7 @@ explicit security boundaries and auditability.
 
 ```bash
 pip install -e .
-nulm doctor --project-dir .
+nulm doctor --project-dir . security
 nulm install
 ```
 
@@ -62,7 +62,7 @@ Manual configuration in `claude_desktop_config.json`:
 ## Example Usage
 
 ```bash
-nulm doctor --project-dir .
+nulm doctor --project-dir . security
 
 nulm run-workflow --mode quality --execute
 

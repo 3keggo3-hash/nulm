@@ -360,6 +360,52 @@ class TestPolicyDecisionE2E:
 
 
 class TestAiEvaluatorDecisions:
+    async def test_client_managed_approval_still_invokes_ai_evaluator(
+        self, policy_project: tuple[Path, Path]
+    ) -> None:
+        project, _ = policy_project
+        mcp_server.set_config(
+            project_dir=project,
+            auto_approve=False,
+            client_managed_approval=True,
+            shell_timeout=2,
+            ai_evaluator_enabled=True,
+        )
+        provider = CountingProvider()
+
+        payload = parse_payload(
+            await run_shell(
+                "echo advisory-test",
+                request_approval=lambda _t, _p, **_kw: True,  # type: ignore[return-value]
+                project_dir=lambda: project,
+                shell_timeout=lambda: 2,
+                ai_provider=provider,
+            )
+        )
+
+        assert payload["ok"] is True
+        assert provider.calls == 1
+        assert_decision(payload, action="allow", source="approval", risk_level="low")
+
+    def test_enabled_unavailable_provider_fails_closed_instead_of_silent_skip(
+        self, policy_project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project, _ = policy_project
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        mcp_server.set_config(
+            project_dir=project,
+            ai_evaluator_enabled=True,
+            ai_evaluator_provider="minimax",
+        )
+
+        provider = mcp_server._get_ai_provider()
+
+        assert provider is not None
+        response = provider.evaluate(object())  # type: ignore[arg-type]
+        assert response.action == EvaluationAction.ASK
+        assert "minimax" in response.reason
+        assert "unavailable" in response.reason
+
     async def test_ai_allow_shell_command_still_requires_approval(
         self, policy_project: tuple[Path, Path]
     ) -> None:

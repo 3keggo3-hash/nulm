@@ -7,12 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-24
+
 ### Changed
 
 - AI routing decisions now expose quality tier, token cap, and estimated maximum cost metadata for
   model selection transparency.
 - README now leads with the concrete MCP safety use case, moves security up front, separates core,
   optional, and experimental surfaces, and explains `claude-bridge` compatibility naming.
+- Multi-agent execution roadmap now includes a limited `MissionBrief`/context curator layer that
+  packages subagent context without acting as a second master.
+- Release docs now use the actual `nulm doctor --project-dir . security` command shape.
+
+### Fixed
+
+- AI evaluator configuration now fails closed when an enabled provider is unavailable instead of
+  silently skipping advisory evaluation.
+- Source distributions exclude root `web/node_modules` and `web/dist`, keeping the release package
+  small and free of local frontend build dependencies.
 
 ## [0.1.1] - 2026-05-17
 
@@ -66,5 +78,6 @@ layer, with deterministic Agent Quality tools implemented as the first advisory 
 - Public release docs updated to separate implemented advisory behavior from future provider-backed
   ambitions.
 
+[0.1.2]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.2
 [0.1.1]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.1
 [0.1.0]: https://github.com/3keggo3-hash/nulm/releases/tag/v0.1.0

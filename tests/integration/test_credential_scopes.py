@@ -7,7 +7,6 @@
 import pytest
 import threading
 import time
-from unittest.mock import patch
 
 pytestmark = pytest.mark.integration
 
@@ -141,9 +140,7 @@ class TestIsOperationAllowed:
             expires_at=None,
             _token="token",
         )
-        assert (
-            cred.is_operation_allowed("agent1", "read", "/any/path") is True
-        )
+        assert cred.is_operation_allowed("agent1", "read", "/any/path") is True
 
 
 class TestTokenExpiry:
@@ -348,7 +345,7 @@ class TestEnvVarAutoRegistration:
 
         os.environ["CLAUDE_BRIDGE_CRED_test"] = "provider=github,scopes=repo:read"
 
-        from claude_bridge.config import _CREDENTIALS, _CREDENTIALS_LOCK
+        from claude_bridge.config import _CREDENTIALS_LOCK
 
         with _CREDENTIALS_LOCK:
             pass

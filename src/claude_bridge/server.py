@@ -384,7 +384,7 @@ def _get_ai_provider() -> Any | None:
         return None
     provider_name = cfg["provider"]
     try:
-        from claude_bridge.ai_evaluator import create_provider
+        from claude_bridge.ai_evaluator import UnavailableEvaluatorProvider, create_provider
 
         return create_provider(
             provider_name,
@@ -392,8 +392,14 @@ def _get_ai_provider() -> Any | None:
             model=cfg["model"],
             timeout=int(cfg["timeout"]),
         )
-    except (ValueError, ImportError):
-        return None
+    except ValueError as exc:
+        return UnavailableEvaluatorProvider(
+            f"AI evaluator provider {provider_name!r} is unavailable: {exc}"
+        )
+    except ImportError as exc:
+        return UnavailableEvaluatorProvider(
+            f"AI evaluator provider {provider_name!r} could not be loaded: {exc}"
+        )
 
 
 def _get_ai_router() -> Any:

@@ -244,6 +244,16 @@ class Provider(ABC):
         ...
 
 
+class UnavailableEvaluatorProvider(Provider):
+    """Fail-closed provider used when configured AI evaluator setup is invalid."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def evaluate(self, request: EvaluationRequest) -> EvaluationResponse:
+        return EvaluationResponse.fail_closed(self.reason)
+
+
 # ---------------------------------------------------------------------------
 # Strict JSON response parser
 # ---------------------------------------------------------------------------
@@ -947,11 +957,18 @@ async def evaluate_tool_with_ai(
             return decision
     try:
         registry = get_hook_registry()
-        prompt_context = {"prompt": request.prompt, "tool_name": request.tool_name, "params": request.tool_params}
+        prompt_context = {
+            "prompt": request.prompt,
+            "tool_name": request.tool_name,
+            "params": request.tool_params,
+        }
         prompt_result = registry.invoke_hooks(EventType.PROMPT_SEND, prompt_context)
         if not prompt_result.allow:
             return evaluation_response_to_policy_decision(
-                EvaluationResponse(action=EvaluationAction.DENY, reason=prompt_result.message or "Prompt hooks denied"),
+                EvaluationResponse(
+                    action=EvaluationAction.DENY,
+                    reason=prompt_result.message or "Prompt hooks denied",
+                ),
                 ctx=ctx,
             )
         if prompt_result.modified_params and "prompt" in prompt_result.modified_params:
@@ -1001,9 +1018,7 @@ def _budget_path_for_context(ctx: ToolRequestContext) -> Path:
     return root / BUDGET_STORAGE_PATH
 
 
-def _estimate_evaluation_tokens(
-    request: EvaluationRequest, response: EvaluationResponse
-) -> float:
+def _estimate_evaluation_tokens(request: EvaluationRequest, response: EvaluationResponse) -> float:
     payload = json.dumps(request.to_dict(), ensure_ascii=False, sort_keys=True)
     response_text = json.dumps(response.to_dict(), ensure_ascii=False, sort_keys=True)
     return float(max(1, (len(payload) + len(response_text) + 3) // 4))

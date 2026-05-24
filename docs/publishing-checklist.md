@@ -29,7 +29,8 @@ Quick pre-release verification before sharing publicly.
 ## Policy / Audit / Replay
 
 - `nulm policy validate --path .claude-bridge-guard.json` reports no errors.
-- `nulm policy simulate` works for a simple allowed command.
+- `nulm policy simulate --path <policy> --tool run_shell --param command=ls` works for a simple
+  allowed command.
 - `nulm audit --last` shows the latest session records.
 - `nulm replay --record-id <id>` re-evaluates an existing record.
 - Audit records are JSONL with redaction applied.
@@ -39,7 +40,7 @@ Quick pre-release verification before sharing publicly.
 
 - README covers installation in under 2 minutes.
 - `pipx install nulm` is the primary public install path.
-- `nulm init`, `nulm doctor`, and `nulm install ...` flow is visible in
+- `nulm init`, `nulm doctor --project-dir . security`, and `nulm install ...` flow is visible in
   README.
 - The installed CLI is consistently documented as `nulm`.
 - Editable source install is kept under Development, not the user-facing quick start.

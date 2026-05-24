@@ -1,6 +1,6 @@
 # Release Notes — nulm v0.1.2
 
-**Date:** 2026-05-19
+**Date:** 2026-05-24
 **Status:** Public alpha
 **Python:** 3.10+
 
@@ -68,7 +68,7 @@ All releases must pass the quality gate script:
 Checks performed:
 - `ruff check .` — lint compliance
 - `mypy src` — type checking (strict)
-- `pytest` — test suite (1300+ tests)
+- `pytest` — test suite (2500+ tests)
 - Policy validate (JSON example)
 - Audit summary & replay smoke tests
 - Package metadata validation
@@ -103,7 +103,7 @@ pip install -e ".[dev]"
 
 ## Changelog
 
-### v0.1.2 (2026-05-19)
+### v0.1.2 (2026-05-24)
 
 **Added:**
 - Web CLI tab (formerly Messages) with output UX: exit badge, stdout/stderr blocks,
@@ -117,6 +117,14 @@ pip install -e ".[dev]"
 **Changed:**
 - Dashboard CLI runner now captures and stores stdout/stderr separately in message metadata
 - Background CLI jobs tracked by session ID with process lifecycle management
+- AI routing telemetry now exposes quality tier, token cap, and estimated maximum cost metadata
+- Release docs use the actual `nulm doctor --project-dir . security` command shape
+
+**Fixed:**
+- Enabled but unavailable AI evaluator providers now fail closed instead of silently skipping the
+  advisory layer
+- Source distributions exclude root `web/node_modules` and `web/dist`, reducing the sdist from
+  local-build size to release size
 
 ### v0.1.0 (2026-05-10)
 
@@ -153,7 +161,7 @@ pip install -e ".[dev]"
 | Field | Value |
 |-------|-------|
 | Distribution name | nulm |
-| Version | 0.1.1 |
+| Version | 0.1.2 |
 | License | MIT |
 | Python | >=3.10 |
 | CLI entry point | `nulm` → `claude_bridge.cli:main`; `claude-bridge` compatibility alias |

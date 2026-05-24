@@ -473,7 +473,7 @@ pip install -e .
 pip install -e .[dev]
 pip install -e .[treesitter]
 pip install -e .[multi-format]
-nulm doctor --project-dir .
+nulm doctor --project-dir . security
 ruff check .
 black --check .
 mypy src

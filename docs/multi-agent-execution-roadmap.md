@@ -1,6 +1,6 @@
 # Multi-Agent Execution Roadmap
 
-Date: 2026-05-20
+Date: 2026-05-22
 Horizon: 29 weeks
 Status: Updated implementation roadmap
 
@@ -28,6 +28,8 @@ then calibrate it through benchmarks, and only then use it to stop, escalate, or
 - Make the current agent layer measurable before making it more autonomous.
 - Route agent work through mediated tools before adding parallel mutation.
 - Prefer typed contracts and traceable state over bigger prompts.
+- Keep briefing/context-curation separate from planning. A briefing layer may package context for a
+  subagent, but it must not create tasks, change task goals, or grant tool permissions.
 - Keep provider-backed AI optional and deterministic local behavior intact.
 - Hide experimental orchestration behind explicit/full profiles.
 - Treat shell/file safety as a protected layer.
@@ -46,6 +48,7 @@ then calibrate it through benchmarks, and only then use it to stop, escalate, or
 | P0 | Typed task/artifact contracts | Very high | Low-medium | Removes loose dict orchestration |
 | P0 | Subagent tool mediation | Critical | Medium | Closes the direct subprocess/tool-bypass gap |
 | P1 | Context manifests/budget ledger | High | Low-medium | Reduces token waste |
+| P1 | Mission brief/context curator | High | Low-medium | Gives each subagent scoped context without creating a second master |
 | P1 | Benchmark/evaluation harness | High | Low-medium | Prevents demo-ware progress claims |
 | P1 | Route decision telemetry | High | Low | Observes `ai_router.py` without autonomy |
 | P1 | Behavioral telemetry | High | Low-medium | Shows drift and low relevance before enforcement |
@@ -64,7 +67,7 @@ then calibrate it through benchmarks, and only then use it to stop, escalate, or
 | 5-6 | Phase 2 | Typed task/artifact contracts | Low-medium |
 | 7 | Phase 3 | Route decision telemetry | Low |
 | 8-11 | Phase 4 | Agent Tool Broker plus buffer | Medium |
-| 12-13 | Phase 5 | Context manifest plus budget ledger | Low-medium |
+| 12-13 | Phase 5 | Context manifest, budget ledger, and mission brief MVP | Low-medium |
 | 14-16 | Phase 6 | Benchmark harness plus regression gates | Low-medium |
 | 17-21 | Phase 7 | Durable DAG records plus buffer | Medium |
 | 22 | Phase 7.5 | Wait, measure, and validate the state model | Low |
@@ -79,6 +82,7 @@ These additions refine the existing phases; they do not create a new autonomy tr
 |---|---:|---:|---|
 | Confidence score | Phase 1 | Phase 9 | Shadow first; enforce only after calibration |
 | Context grounding | Phase 5 | Phase 8 | Bind runs to `ContextManifest` ids before scheduling |
+| Mission brief | Phase 5 | Phase 8 | Derive per-subagent briefings from manifests; never allow replanning |
 | Typed failure class | Phase 1 | Phase 8 | Log immediately; schedule from it later |
 | One-turn critique | Phase 6 | Phase 9 | Benchmark as gated review; never make it always-on |
 | Conflict record | Phase 8 | Phase 9 | Detect overlap first; adjudicate after verifier evidence |
@@ -334,6 +338,57 @@ Exit criteria:
 Estimated difficulty: Medium.
 Operational risk: Low-medium.
 
+### 5.5 Add Mission Brief / Context Curator MVP
+
+This is the limited version of the proposed second intelligent agent. It is not a second master,
+planner, scheduler, or permission authority. Its job is to convert a typed task plus a
+`ContextManifest` into a small, auditable per-subagent briefing.
+
+Deliverables:
+
+- Add `MissionBrief` as a typed artifact linked to:
+  - task id;
+  - agent role;
+  - context manifest id;
+  - selected file refs/digests;
+  - short "must know" notes;
+  - explicit non-goals;
+  - allowed scope;
+  - expected artifact shape;
+  - escalation triggers;
+  - confidence floor;
+  - token estimate.
+- Add a `BriefingAgent` or `ContextCurator` component that produces `MissionBrief` records from
+  existing planner output and context manifests.
+- Store the exact brief sent to each subagent in the run record.
+- Add route telemetry for briefing decisions:
+  - why this context was selected;
+  - what was omitted;
+  - whether the brief expanded, compressed, or preserved planner intent.
+- Add verifier checks that compare subagent output against the assigned `MissionBrief`.
+
+Hard constraints:
+
+- The briefing layer must not create new tasks.
+- The briefing layer must not change `TaskSpec.goal`, dependencies, read/write sets, or budgets.
+- The briefing layer must not grant tool permissions.
+- The briefing layer must not silently hide planner constraints.
+- The briefing layer must not become always-on debate or council.
+
+Exit criteria:
+
+- Every dispatcher-managed subagent run can answer: "what exactly was this agent told?"
+- A brief can be reconstructed from persisted records without replaying model reasoning.
+- Subagent output can be checked against brief scope.
+- Token cost for subagent context does not increase versus raw manifest injection.
+- Benchmark scenarios include at least one case where the brief prevents irrelevant context from
+  reaching a subagent.
+
+Estimated difficulty: Medium.
+Operational risk: Low-medium.
+Hidden risk: if this layer starts interpreting goals instead of packaging context, it becomes an
+untraceable second planner and should be rolled back behind a feature flag.
+
 ## Month 3: Build the Evaluation Spine
 
 Objective: create a realistic harness before adding durable autonomy.
@@ -559,6 +614,7 @@ These are not 3-6 month priorities unless earlier phases prove they are necessar
 
 - learned model router;
 - recursive delegation;
+- second-master briefing agents that can replan, rescope, or grant permissions;
 - always-on council/debate;
 - autonomous skill installation or execution;
 - self-modifying prompts;
@@ -579,6 +635,7 @@ Track these from Month 1 onward:
 | Direct subagent subprocess count | Down | 0 outside broker tests |
 | Policy bypass test failures | Down | 0 |
 | Duplicate context ratio | Down | baseline first, then -25 percent |
+| Mission brief drift | Down | 0 briefs may change task goal, scope, dependencies, or permissions |
 | Confidence calibration error | Down | baseline first; no enforcement before calibration |
 | Low-relevance artifact promotion | Down | 0 promoted to final output by default |
 | Context insufficiency escalations | Visible | baseline first; trend should explain blocked runs |
@@ -601,25 +658,27 @@ Track these from Month 1 onward:
 | 4 | Broker skeleton | Broker interface and first git/research migration |
 | 5 | Broker hardening | Remove remaining direct subagent subprocess paths |
 | 6 | Context manifest MVP | Manifest ids, digest summaries, token estimates |
-| 7 | Benchmark harness | First deterministic agent scenarios |
-| 8 | Behavioral telemetry gates | Confidence/relevance/context-insufficiency metrics |
-| 9 | Regression gates | CI-safe benchmark, behavioral telemetry, and bypass tests |
-| 10-11 | Durable records | Runs/nodes/artifacts append-only state |
-| 12-13 | Minimal scheduler | Ready-node execution, leases, capped retries |
-| 14 | Verifier nodes | Independent verification and failure classes |
-| 15 | Conflict/adjudication | Write-set and patch conflict handling |
+| 7 | Mission brief MVP | Auditable per-subagent briefings derived from manifests |
+| 8 | Benchmark harness | First deterministic agent scenarios |
+| 9 | Behavioral telemetry gates | Confidence/relevance/context-insufficiency metrics |
+| 10 | Regression gates | CI-safe benchmark, behavioral telemetry, and bypass tests |
+| 11-12 | Durable records | Runs/nodes/artifacts append-only state |
+| 13-14 | Minimal scheduler | Ready-node execution, leases, capped retries |
+| 15 | Verifier nodes | Independent verification and failure classes |
+| 16 | Conflict/adjudication | Write-set and patch conflict handling |
 
 ## Final Priority Recommendation
 
-Do these seven capabilities before touching durable DAG scheduling:
+Do these eight capabilities before touching durable DAG scheduling:
 
 1. agent run observability;
 2. typed task contracts;
 3. route decision telemetry;
 4. mediated subagent tools;
 5. context manifests;
-6. benchmark harness;
-7. behavioral telemetry calibration.
+6. mission briefs;
+7. benchmark harness;
+8. behavioral telemetry calibration.
 
 That sequence is boring in the right way. It converts the current agent layer from a promising
 demo surface into something measurable, debuggable, and safer. Only then is it worth paying the
