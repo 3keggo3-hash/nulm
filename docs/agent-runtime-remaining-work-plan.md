@@ -1,7 +1,7 @@
 # Agent Runtime Remaining Work Plan
 
 Date: 2026-05-24
-Status: Implementation blueprint
+Status: Implemented and locally validated
 Scope: Remaining multi-agent runtime work after the v0.1.2 release-readiness pass
 
 This document turns the unfinished parts of `docs/multi-agent-execution-roadmap.md` into an
@@ -10,7 +10,7 @@ explicit tests, and no new autonomy until the runtime can observe and recover fr
 
 ## Current Baseline
 
-Already implemented on `main`:
+Already implemented before this plan was applied:
 
 - `AgentRunRecord` telemetry for dispatcher/orchestrator-visible execution.
 - `TaskSpec`, `TaskBudget`, `TaskPermissions`, `AgentArtifact`, and `EvidenceRef`.
@@ -20,21 +20,29 @@ Already implemented on `main`:
 - Deterministic agent benchmark harness and release gates.
 - Durable DAG record schemas and append-only `AgentDagStore`.
 
-Important limitation: durable DAG records are only a reconstruction layer today. They do not yet
-schedule work, lease work, enforce dependency order, retry nodes, or adjudicate conflicts.
+Implemented by this plan application:
 
-## Work That Is Still Not Done
+- `MissionBrief` records and deterministic `ContextCurator`.
+- Hardened DAG node events and store helper APIs.
+- `AgentDagScheduler` for dependency-ordered DAG execution from durable records.
+- Mutating-node write-set/permission guard with first-class conflict records.
+- Deterministic verifier nodes that gate mutating DAG success.
+- Deterministic conflict detection and artifact adjudication helpers.
+- Limited behavioral enforcement for fatal failures, retry caps, context insufficiency, confidence
+  logging, and low-relevance artifact promotion.
+
+## Work Status
 
 | Area | Status | Size | Risk |
 |---|---|---:|---:|
-| Typed contract cleanup | Partial | Small | Low |
-| `MissionBrief` / context curator | Not started | Medium | Low-medium |
-| DAG record hardening | Partial | Small-medium | Medium |
-| Minimal DAG scheduler | Not started | Large | Medium-high |
-| Mutating-node write-set guard | Not started | Medium | Medium |
-| Verifier node MVP | Not started | Medium-large | Medium |
-| Conflict detection/adjudication | Not started | Medium-large | Medium |
-| Behavioral enforcement | Not started | Large | High |
+| Typed contract cleanup | Implemented | Small | Low |
+| `MissionBrief` / context curator | Implemented | Medium | Low-medium |
+| DAG record hardening | Implemented | Small-medium | Medium |
+| Minimal DAG scheduler | Implemented | Large | Medium-high |
+| Mutating-node write-set guard | Implemented | Medium | Medium |
+| Verifier node MVP | Implemented | Medium-large | Medium |
+| Conflict detection/adjudication | Implemented | Medium-large | Medium |
+| Behavioral enforcement | Implemented | Large | High |
 
 Do not start with behavioral enforcement. It depends on benchmark calibration and verifier
 evidence. Starting there would create orchestration theater: more knobs, more traces, and worse
@@ -587,4 +595,3 @@ The remaining runtime work is done when:
 - retry loops are capped by typed failure class;
 - benchmark gates prove the behavior locally without provider keys;
 - operator cognitive load goes down rather than up.
-

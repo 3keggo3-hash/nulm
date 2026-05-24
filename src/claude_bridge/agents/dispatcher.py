@@ -20,6 +20,7 @@ from claude_bridge.agents.dag_records import (
     make_node_idempotency_key,
 )
 from claude_bridge.agents.dag_store import AgentDagStore
+from claude_bridge.agents.mission_brief import ContextCurator
 from claude_bridge.agents.result import AgentResult
 from claude_bridge.agents.run_record import AgentRunRecord, finish_agent_run, start_agent_run
 from claude_bridge.agents.shared_memory import SharedMemorySpace
@@ -39,6 +40,7 @@ class TaskDispatcher:
         self.shared_memory = shared_memory or SharedMemorySpace()
         self.dag_store = dag_store
         self.dag_run_id = dag_run_id
+        self.context_curator = ContextCurator()
         self.run_records: list[AgentRunRecord] = []
 
     async def distribute(
@@ -89,6 +91,8 @@ class TaskDispatcher:
                 session_id=current_session_id(),
             )
             record.context_manifest_id = manifest.manifest_id
+            brief = self.context_curator.curate(subtask, manifest)
+            record.mission_brief_id = brief.brief_id
             dag_node = self._append_dag_node_record(
                 subtask,
                 record,
@@ -102,6 +106,8 @@ class TaskDispatcher:
                 "agent_run_record": record,
                 "context_manifest": manifest,
                 "context_manifest_id": manifest.manifest_id,
+                "mission_brief": brief,
+                "mission_brief_id": brief.brief_id,
             }
 
             try:
@@ -254,7 +260,7 @@ class TaskDispatcher:
             failure_message=failure_message,
             created_at=previous_node.created_at if previous_node is not None else now,
             updated_at=now,
-            metadata={"agent_run_id": record.run_id},
+            metadata={"agent_run_id": record.run_id, "mission_brief_id": record.mission_brief_id},
         )
         self.dag_store.append_node(node)
         return node

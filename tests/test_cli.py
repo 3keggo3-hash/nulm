@@ -8,6 +8,11 @@ import json
 import os
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 test fallback
+    import tomli as tomllib
+
 from typer.testing import CliRunner
 
 from claude_bridge import cli
@@ -163,6 +168,12 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert cli.__version__ in result.stdout
+
+    def test_runtime_version_matches_package_metadata(self):
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+
+        assert cli.__version__ == project["version"]
 
     def test_schedule_list_does_not_require_name_or_query(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("CLAUDE_BRIDGE_CACHE_DIR", str(tmp_path))

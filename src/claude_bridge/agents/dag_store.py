@@ -66,14 +66,26 @@ class AgentDagStore:
     def append_run(self, record: AgentDagRunRecord) -> None:
         _append_record(self.runs_path, record.to_dict())
 
+    def append_run_record(self, record: AgentDagRunRecord) -> None:
+        self.append_run(record)
+
     def append_node(self, record: AgentDagNodeRecord) -> None:
         _append_record(self.nodes_path, record.to_dict())
+
+    def append_node_record(self, record: AgentDagNodeRecord) -> None:
+        self.append_node(record)
 
     def append_artifact(self, record: AgentDagArtifactRecord) -> None:
         _append_record(self.artifacts_path, record.to_dict())
 
+    def append_artifact_record(self, record: AgentDagArtifactRecord) -> None:
+        self.append_artifact(record)
+
     def append_conflict(self, record: AgentDagConflictRecord) -> None:
         _append_record(self.conflicts_path, record.to_dict())
+
+    def append_conflict_record(self, record: AgentDagConflictRecord) -> None:
+        self.append_conflict(record)
 
     def load_runs(self) -> list[AgentDagRunRecord]:
         records = _read_records(self.runs_path, AgentDagRunRecord.from_dict)
@@ -83,6 +95,12 @@ class AgentDagStore:
         records = _read_records(self.nodes_path, AgentDagNodeRecord.from_dict)
         latest = _latest_by_id(records, lambda record: record.node_id)
         return _filter_run(latest, run_id)
+
+    def list_nodes_for_run(self, run_id: str) -> list[AgentDagNodeRecord]:
+        return self.load_nodes(run_id=run_id)
+
+    def latest_node_records(self, run_id: str | None = None) -> list[AgentDagNodeRecord]:
+        return self.load_nodes(run_id=run_id)
 
     def load_artifacts(self, run_id: str | None = None) -> list[AgentDagArtifactRecord]:
         records = _read_records(self.artifacts_path, AgentDagArtifactRecord.from_dict)
@@ -104,6 +122,9 @@ class AgentDagStore:
             artifacts=tuple(self.load_artifacts(run_id=run_id)),
             conflicts=tuple(self.load_conflicts(run_id=run_id)),
         )
+
+    def load_run_view(self, run_id: str) -> AgentDagRunView:
+        return self.reconstruct_run(run_id)
 
 
 def _append_record(path: Path, record: Mapping[str, Any]) -> None:

@@ -28,8 +28,8 @@ def test_all_default_scenarios_pass() -> None:
     run = run_agent_benchmark()
 
     assert run.failed == 0
-    assert run.passed == 11
-    assert run.to_dict()["scenario_count"] == 11
+    assert run.passed == 19
+    assert run.to_dict()["scenario_count"] == 19
 
 
 def test_result_payload_is_json_serializable() -> None:
@@ -63,6 +63,9 @@ def test_metrics_include_manifest_and_route_fields() -> None:
     assert metrics["research_context_manifest_selection"]["context_manifest_present"] is True
     assert metrics["research_context_manifest_selection"]["estimated_tokens"] > 0
     assert "duplicate_context_ratio" in metrics["research_context_manifest_selection"]
+    brief_metrics = metrics["mission_brief_filters_irrelevant_context"]
+    assert brief_metrics["context_manifest_present"] is True
+    assert brief_metrics["mission_brief_present"] is True
     assert metrics["route_telemetry_local_disabled"]["route_decision_count"] == 1
     assert metrics["route_telemetry_provider_fallback"]["fallback_count"] == 1
     assert metrics["permission_denied_broker_tool"]["policy_denial_correct"] is True

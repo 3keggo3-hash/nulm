@@ -40,6 +40,7 @@ class AgentRunRecord:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     model_route: dict[str, Any] | None = None
     context_manifest_id: str | None = None
+    mission_brief_id: str | None = None
     artifact_ids: list[str] = field(default_factory=list)
     error_class: str | None = None
     error_message: str | None = None
@@ -77,6 +78,7 @@ class AgentRunRecord:
             "tool_calls": self.tool_calls,
             "model_route": self.model_route,
             "context_manifest_id": self.context_manifest_id,
+            "mission_brief_id": self.mission_brief_id,
             "artifact_ids": self.artifact_ids,
             "error_class": self.error_class,
             "error_message": self.error_message,
@@ -149,6 +151,11 @@ def compact_run_summary_from_audit_records(records: list[dict[str, Any]]) -> dic
                     context_manifest_id=(
                         str(payload["context_manifest_id"])
                         if payload.get("context_manifest_id") is not None
+                        else None
+                    ),
+                    mission_brief_id=(
+                        str(payload["mission_brief_id"])
+                        if payload.get("mission_brief_id") is not None
                         else None
                     ),
                     artifact_ids=[str(item) for item in payload.get("artifact_ids", [])],

@@ -50,6 +50,30 @@ def test_append_and_load_run_record(tmp_path) -> None:
     assert (tmp_path / "dag" / "runs.jsonl").exists()
 
 
+def test_plan_named_append_helpers_and_run_view(tmp_path) -> None:
+    store = AgentDagStore(tmp_path / "dag")
+    node = _node_record()
+    artifact = _artifact_record(node.node_id)
+    run = AgentDagRunRecord(
+        run_id=node.run_id,
+        goal="helper names",
+        status="completed",
+        created_at=1.0,
+        updated_at=2.0,
+        root_node_ids=(node.node_id,),
+    )
+
+    store.append_run_record(run)
+    store.append_node_record(node)
+    store.append_artifact_record(artifact)
+    view = store.load_run_view(node.run_id)
+
+    assert view.run == run
+    assert store.list_nodes_for_run(node.run_id) == [node]
+    assert store.latest_node_records(node.run_id) == [node]
+    assert view.artifacts == (artifact,)
+
+
 def test_append_and_load_node_record(tmp_path) -> None:
     store = AgentDagStore(tmp_path / "dag")
     record = _node_record()

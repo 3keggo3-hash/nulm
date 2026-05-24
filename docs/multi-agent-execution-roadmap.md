@@ -194,10 +194,13 @@ Primary tests:
 
 ### 2. Introduce Typed Task Contracts Behind an Adapter
 
-Status: In progress. `TaskSpec`, `TaskBudget`, `TaskPermissions`, `AgentArtifact`, and
-`EvidenceRef` now exist. The dispatcher coerces legacy subtask dictionaries into `TaskSpec` at the
-boundary and also accepts typed `TaskSpec` inputs directly. Keyword decomposition and public
-orchestrator behavior are unchanged.
+Status: Implemented. `TaskSpec`, `TaskBudget`, `TaskPermissions`, `AgentArtifact`, and
+`EvidenceRef` exist. `TaskSpec` includes optional behavioral fields (`question`,
+`acceptance_criteria`, `escalation_policy`, `allowed_failure_classes`, and `expected_evidence`)
+that round-trip through the legacy adapter without requiring old callers to provide them. The
+dispatcher coerces legacy subtask dictionaries into `TaskSpec` at the boundary and also accepts
+typed `TaskSpec` inputs directly. Keyword decomposition and public orchestrator behavior are
+unchanged.
 
 Deliverables:
 
@@ -340,6 +343,12 @@ Operational risk: Low-medium.
 
 ### 5.5 Add Mission Brief / Context Curator MVP
 
+Status: MVP implemented for dispatcher-managed runs. `ContextCurator` deterministically packages a
+`TaskSpec` plus `ContextManifest` into a `MissionBrief`, attaches the brief and `mission_brief_id`
+to dispatcher context, and records the brief id in `AgentRunRecord` telemetry. Benchmark coverage
+includes an irrelevant-context filtering case. Verifier checks against brief scope remain in the
+later verifier-node phase.
+
 This is the limited version of the proposed second intelligent agent. It is not a second master,
 planner, scheduler, or permission authority. Its job is to convert a typed task plus a
 `ContextManifest` into a small, auditable per-subagent briefing.
@@ -429,7 +438,8 @@ Metrics:
 Exit criteria:
 
 - Benchmark can run locally without cloud provider keys.
-- At least one CI-safe command exercises the suite: `claude-bridge agent-benchmark`.
+- At least one CI-safe command exercises the suite: `nulm agent-benchmark`
+  (`claude-bridge agent-benchmark` remains a compatibility alias).
 - Results can compare current run to a saved baseline.
 - Confidence and relevance signals are evaluated as predictions, not treated as proof of quality.
 
@@ -453,7 +463,8 @@ Deliverables:
 Exit criteria:
 
 - Agent-layer changes have measurable pass/fail criteria.
-- Operators can run release gates directly with `claude-bridge agent-benchmark --gates-only`.
+- Operators can run release gates directly with `nulm agent-benchmark --gates-only`
+  (`claude-bridge agent-benchmark --gates-only` remains a compatibility alias).
 - The project stops relying on "looks smarter" as evidence.
 - Behavioral telemetry either improves benchmark explainability or stays non-blocking.
 
@@ -466,20 +477,23 @@ Objective: move from parallel calls to resumable orchestration without changing 
 
 ### 8. Persist Runs, Nodes, and Artifacts
 
-Status: Phase 7 Durable DAG Records MVP implemented as a record/reconstruction layer only.
+Status: Phase 7 Durable DAG Records MVP implemented as a record/reconstruction layer.
 `AgentDagRunRecord`, `AgentDagNodeRecord`, `AgentDagArtifactRecord`, and
 `AgentDagConflictRecord` provide versioned schemas, deterministic node/artifact/idempotency ids,
-and fail-closed `from_dict` validation. `AgentDagStore` writes append-only JSONL under an explicit
-caller-provided base path (`runs.jsonl`, `nodes.jsonl`, `artifacts.jsonl`, `conflicts.jsonl`) and
-materializes latest records to reconstruct a run from disk.
+explicit node event records, and fail-closed `from_dict` validation. `AgentDagStore` writes
+append-only JSONL under an explicit caller-provided base path (`runs.jsonl`, `nodes.jsonl`,
+`artifacts.jsonl`, `conflicts.jsonl`) and materializes latest records to reconstruct a run from
+disk. The scheduler-facing helper names (`append_*_record`, `load_run_view`,
+`list_nodes_for_run`, and `latest_node_records`) are available without introducing scheduling yet.
 
 The existing control-plane task, approval, and message APIs remain the compatibility facade. The
 DAG store is not a default global state directory and does not replace the control plane. Dispatcher
-integration is opt-in and record-only: supplying a DAG store can append node state for work the
-dispatcher already executes, but it does not select ready nodes or create a new execution path.
+integration is opt-in and record-oriented: supplying a DAG store can append node state for work the
+dispatcher already executes, while the deterministic `AgentDagScheduler` provides the separate
+minimal scheduling path described below.
 
-Intentionally not implemented yet: DAG scheduling, worker loops, active leases, verifier or
-adjudication nodes, recursive delegation, learned routing, and provider-backed AI requirements.
+Intentionally not implemented yet: recursive delegation, learned routing, peer-to-peer agent
+messaging, automatic broad refactors, and provider-backed AI requirements.
 
 Deliverables:
 
@@ -518,6 +532,16 @@ Danger points:
 
 ### 9. Add Minimal DAG Scheduler
 
+Status: Minimal deterministic scheduler implemented. `AgentDagScheduler` reconstructs a run from
+`AgentDagStore`, marks dependency-satisfied nodes ready, leases and runs nodes through existing
+`BaseAgent` instances, records completed/failed/blocked node events, preserves typed failure
+classes, caps retryable failures, and skips completed nodes after restart. Mutating nodes now require
+non-empty `write_set`, explicit `allow_mutation` permission, and at least one allowed tool.
+Overlapping active or same-batch write sets are blocked with `AgentDagConflictRecord`; read-only
+nodes that overlap an active mutation write set are blocked unless stale reads are explicitly
+allowed. Deterministic verifier and adjudication helpers are available for the MVP path; automatic
+merge application remains intentionally unimplemented.
+
 Deliverables:
 
 - Scheduler executes ready nodes in dependency order.
@@ -554,6 +578,13 @@ Objective: enable safer autonomy only where the system can verify itself.
 
 ### 10. Independent Verification Nodes
 
+Status: Deterministic verifier-node MVP implemented. `DeterministicVerifier` consumes artifact ids,
+acceptance criteria, expected evidence, mission brief id, and optional test output. Scheduler-managed
+verifier nodes (`kind="verifier"` or `verification_agent`) run without provider-backed execution,
+cannot mutate, cite artifact/evidence refs in `verifier_output`, and fail closed with typed
+`validation_failure`. Completed mutating nodes keep the DAG run pending until a completed verifier
+covers them by dependency or `verifies_node_id`.
+
 Deliverables:
 
 - Add verifier node type with no mutation permission.
@@ -584,6 +615,12 @@ Operational risk: Low-medium.
 
 ### 11. Patch Conflict and Adjudication MVP
 
+Status: Deterministic detection/adjudication MVP implemented. `ConflictDetector` records
+`overlapping_write_set`, `overlapping_patch`, and `task_boundary_ambiguity` conflicts as
+`AgentDagConflictRecord` values, and exposes a simple conflict-rate metric. `DeterministicAdjudicator`
+orders candidate artifacts by tests, verifier pass, diff size, risk, explicit preference, then id;
+rejected artifacts remain explicit in adjudication metadata. No LLM-based adjudication is used.
+
 Deliverables:
 
 - Detect overlapping write sets before execution.
@@ -607,6 +644,14 @@ Exit criteria:
 
 Estimated difficulty: Medium.
 Operational risk: Medium.
+
+### 12. Limited Behavioral Enforcement
+
+Status: First deterministic enforcement slice implemented. `EnforcementPolicy` stops
+schema/policy failures, caps repeated failure-class retries, escalates context insufficiency,
+keeps low-relevance artifacts audit-only by default, and records low-confidence signals without
+enforcing them unless an explicit feature flag enables confidence enforcement. Scheduler retry
+decisions use the policy; benchmark coverage includes low-relevance artifact non-promotion.
 
 ## Work Explicitly Deferred
 

@@ -31,10 +31,15 @@ class TestTaskSpecValidation:
                 "task": "full goal",
                 "agent_name": "research_agent",
                 "kind": "research",
+                "question": "What should be checked?",
                 "read_set": ["src", "tests"],
                 "write_set": ["docs"],
                 "budget": {"max_tool_calls": 10, "timeout_seconds": 120},
                 "permissions": {"allowed_tools": ["search"], "allow_mutation": False},
+                "acceptance_criteria": ["answer the question"],
+                "escalation_policy": "ask_user",
+                "allowed_failure_classes": ["context_insufficiency"],
+                "expected_evidence": ["file citation"],
                 "expected_artifacts": ["findings"],
                 "priority": 1,
             }
@@ -46,6 +51,11 @@ class TestTaskSpecValidation:
         assert spec.write_set == ("docs",)
         assert spec.budget.max_tool_calls == 10
         assert spec.permissions.allowed_tools == frozenset({"search"})
+        assert spec.question == "What should be checked?"
+        assert spec.acceptance_criteria == ("answer the question",)
+        assert spec.escalation_policy == "ask_user"
+        assert spec.allowed_failure_classes == ("context_insufficiency",)
+        assert spec.expected_evidence == ("file citation",)
         assert spec.priority == 1
 
     def test_task_spec_coerce_passthrough(self):
@@ -112,6 +122,18 @@ class TestTaskPermissionsValidation:
         assert perms.allow_mutation is True
         assert perms.allowed_tools == frozenset({"shell"})
 
+    def test_task_permissions_from_raw_parses_string_bools_safely(self):
+        perms = TaskPermissions.from_raw(
+            {
+                "allowed_tools": ["shell"],
+                "allow_mutation": "false",
+                "allow_network": "yes",
+            }
+        )
+
+        assert perms.allow_mutation is False
+        assert perms.allow_network is True
+
 
 class TestCoerceTaskSpecEdgeCases:
     def test_coerce_task_spec_with_dict_and_spec_mixed(self):
@@ -160,6 +182,11 @@ class TestCoerceTaskSpecEdgeCases:
             kind="research",
             goal="test goal",
             agent_name="research_agent",
+            question="What is the test goal?",
+            acceptance_criteria=("criteria",),
+            escalation_policy="ask_user",
+            allowed_failure_classes=("validation_failure",),
+            expected_evidence=("test output",),
             priority=1,
         )
         ctx = spec.to_legacy_context()
@@ -167,4 +194,50 @@ class TestCoerceTaskSpecEdgeCases:
         assert ctx["task"] == "test goal"
         assert ctx["agent_name"] == "research_agent"
         assert ctx["kind"] == "research"
+        assert ctx["question"] == "What is the test goal?"
+        assert ctx["acceptance_criteria"] == ["criteria"]
+        assert ctx["escalation_policy"] == "ask_user"
+        assert ctx["allowed_failure_classes"] == ["validation_failure"]
+        assert ctx["expected_evidence"] == ["test output"]
         assert ctx["priority"] == 1
+
+    def test_behavioral_fields_round_trip_from_legacy_context(self):
+        source = TaskSpec(
+            task_id="behavior",
+            kind="review",
+            goal="review behavior",
+            agent_name="review_agent",
+            question="What changed?",
+            acceptance_criteria=("explain risks",),
+            escalation_policy="block on schema failure",
+            allowed_failure_classes=("schema_failure",),
+            expected_evidence=("diff citation",),
+        )
+
+        loaded = TaskSpec.from_legacy_dict(source.to_legacy_context())
+
+        assert loaded.question == source.question
+        assert loaded.acceptance_criteria == source.acceptance_criteria
+        assert loaded.escalation_policy == source.escalation_policy
+        assert loaded.allowed_failure_classes == source.allowed_failure_classes
+        assert loaded.expected_evidence == source.expected_evidence
+
+    def test_invalid_behavioral_fields_coerce_safely(self):
+        spec = TaskSpec.from_legacy_dict(
+            {
+                "id": "safe",
+                "task": "safe coercion",
+                "agent_name": "research_agent",
+                "question": {"bad": "shape"},
+                "acceptance_criteria": "not a list",
+                "escalation_policy": ["not", "a", "string"],
+                "allowed_failure_classes": {"schema_failure": True},
+                "expected_evidence": 42,
+            }
+        )
+
+        assert spec.question == ""
+        assert spec.acceptance_criteria == ()
+        assert spec.escalation_policy == ""
+        assert spec.allowed_failure_classes == ()
+        assert spec.expected_evidence == ()

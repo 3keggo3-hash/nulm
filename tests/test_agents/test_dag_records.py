@@ -47,6 +47,7 @@ def test_node_record_round_trips() -> None:
         agent_name="research_agent",
         kind="research",
         status="ready",
+        node_event="node_ready",
         dependencies=("node_0",),
         read_set=("src",),
         write_set=("docs",),
@@ -67,6 +68,40 @@ def test_node_record_round_trips() -> None:
 
     assert loaded == record
     assert loaded.to_dict()["schema_version"] == AGENT_DAG_NODE_SCHEMA_VERSION
+
+
+def test_node_record_infers_event_from_status() -> None:
+    record = AgentDagNodeRecord(
+        node_id="node_1",
+        run_id="run_1",
+        task_id="task_1",
+        agent_name="research_agent",
+        kind="research",
+        status="completed",
+        created_at=1.0,
+        updated_at=2.0,
+    )
+
+    loaded = AgentDagNodeRecord.from_dict(record.to_dict())
+
+    assert loaded.node_event == "node_completed"
+
+
+def test_invalid_node_event_raises() -> None:
+    payload = AgentDagNodeRecord(
+        node_id="node_1",
+        run_id="run_1",
+        task_id="task_1",
+        agent_name="research_agent",
+        kind="research",
+        status="running",
+        created_at=1.0,
+        updated_at=2.0,
+    ).to_dict()
+    payload["node_event"] = "node_exploded"
+
+    with pytest.raises(ValueError):
+        AgentDagNodeRecord.from_dict(payload)
 
 
 def test_artifact_record_round_trips() -> None:

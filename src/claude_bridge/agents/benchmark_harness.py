@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, cast
 
 from claude_bridge.agents.base import BaseAgent
 from claude_bridge.agents.broker import AgentToolBroker
@@ -24,12 +24,17 @@ from claude_bridge.agents.dag_records import (
     AgentDagArtifactRecord,
     AgentDagNodeRecord,
     AgentDagRunRecord,
+    AgentDagStatus,
     make_artifact_id,
     make_node_id,
     make_node_idempotency_key,
 )
+from claude_bridge.agents.conflict_detector import ConflictDetector, PatchHunk
+from claude_bridge.agents.dag_scheduler import AgentDagScheduler
 from claude_bridge.agents.dag_store import AgentDagStore
+from claude_bridge.agents.enforcement import EnforcementPolicy
 from claude_bridge.agents.dispatcher import TaskDispatcher
+from claude_bridge.agents.mission_brief import ContextCurator
 from claude_bridge.agents.result import AgentResult, AgentStatus
 from claude_bridge.agents.run_record import AgentRunRecord, start_agent_run
 from claude_bridge.ai_router import (
@@ -56,6 +61,7 @@ class AgentBenchmarkMetrics:
     tool_call_count: int = 0
     trace_complete: bool = False
     context_manifest_present: bool = False
+    mission_brief_present: bool = False
     estimated_tokens: int = 0
     duplicate_context_ratio: float = 0.0
     policy_denial_correct: bool = False
@@ -70,6 +76,7 @@ class AgentBenchmarkMetrics:
             "tool_call_count": self.tool_call_count,
             "trace_complete": self.trace_complete,
             "context_manifest_present": self.context_manifest_present,
+            "mission_brief_present": self.mission_brief_present,
             "estimated_tokens": self.estimated_tokens,
             "duplicate_context_ratio": self.duplicate_context_ratio,
             "policy_denial_correct": self.policy_denial_correct,
@@ -177,10 +184,42 @@ def default_scenarios() -> tuple[AgentBenchmarkScenario, ...]:
         AgentBenchmarkScenario("permission_denied_broker_tool", _scenario_permission_denied),
         AgentBenchmarkScenario("git_status_agent_tool_broker", _scenario_git_status_broker),
         AgentBenchmarkScenario("research_context_manifest_selection", _scenario_context_selection),
+        AgentBenchmarkScenario(
+            "mission_brief_filters_irrelevant_context",
+            _scenario_mission_brief_filters_irrelevant_context,
+        ),
         AgentBenchmarkScenario("route_telemetry_local_disabled", _scenario_route_local_disabled),
         AgentBenchmarkScenario("route_telemetry_provider_fallback", _scenario_provider_fallback),
         AgentBenchmarkScenario("context_manifest_token_budget_overrun", _scenario_budget_overrun),
         AgentBenchmarkScenario("durable_dag_reconstruct_run", _scenario_durable_dag_reconstruct),
+        AgentBenchmarkScenario(
+            "dag_readonly_dependency_order",
+            _scenario_dag_readonly_dependency_order,
+        ),
+        AgentBenchmarkScenario(
+            "dag_completed_node_not_rerun",
+            _scenario_dag_completed_node_not_rerun,
+        ),
+        AgentBenchmarkScenario(
+            "dag_retry_cap_same_failure",
+            _scenario_dag_retry_cap_same_failure,
+        ),
+        AgentBenchmarkScenario(
+            "dag_mutation_write_set_overlap_blocked",
+            _scenario_dag_mutation_write_set_overlap_blocked,
+        ),
+        AgentBenchmarkScenario(
+            "verifier_required_for_mutation_success",
+            _scenario_verifier_required_for_mutation_success,
+        ),
+        AgentBenchmarkScenario(
+            "conflict_record_for_overlapping_patch",
+            _scenario_conflict_record_for_overlapping_patch,
+        ),
+        AgentBenchmarkScenario(
+            "low_relevance_artifact_not_promoted",
+            _scenario_low_relevance_artifact_not_promoted,
+        ),
         AgentBenchmarkScenario("no_direct_subagent_subprocess_bypass", _scenario_no_bypass),
     )
 
@@ -316,6 +355,43 @@ def _scenario_context_selection() -> AgentBenchmarkMetrics:
             and manifest.file_signatures[0]["exists"] == "true"
         )
         return _metrics_from_manifest(manifest, verified_success=ok)
+
+
+def _scenario_mission_brief_filters_irrelevant_context() -> AgentBenchmarkMetrics:
+    with TemporaryDirectory(prefix="claude-bridge-agent-brief-bench-") as tmp:
+        auth_file = Path(tmp) / "auth_login.py"
+        notes_file = Path(tmp) / "billing_notes.md"
+        auth_file.write_text("def login():\n    return True\n", encoding="utf-8")
+        notes_file.write_text("billing notes\n", encoding="utf-8")
+        spec = TaskSpec(
+            task_id="brief_filter",
+            kind="research",
+            goal="inspect auth login behavior",
+            agent_name="research_agent",
+            question="What does auth login do?",
+            acceptance_criteria=("cite auth behavior",),
+            expected_artifacts=("findings",),
+        )
+        manifest = build_context_manifest(
+            task=spec,
+            run_id="run",
+            session_id="bench",
+            context={"selected_files": [str(auth_file), str(notes_file)]},
+        )
+        brief = ContextCurator().curate(spec, manifest)
+        ok = (
+            brief.context_manifest_id == manifest.manifest_id
+            and brief.objective == spec.goal
+            and brief.allowed_scope == (str(auth_file),)
+            and str(notes_file) not in brief.allowed_scope
+        )
+        return AgentBenchmarkMetrics(
+            verified_success=ok,
+            trace_complete=True,
+            context_manifest_present=bool(manifest.manifest_id),
+            mission_brief_present=bool(brief.brief_id),
+            estimated_tokens=brief.token_estimate,
+        )
 
 
 def _scenario_route_local_disabled() -> AgentBenchmarkMetrics:
@@ -469,12 +545,347 @@ def _scenario_durable_dag_reconstruct() -> AgentBenchmarkMetrics:
         )
 
 
+def _scenario_dag_readonly_dependency_order() -> AgentBenchmarkMetrics:
+    class EchoAgent(BaseAgent):
+        def __init__(self) -> None:
+            super().__init__("research_agent")
+            self.calls: list[str] = []
+
+        async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
+            self.calls.append(task)
+            return AgentResult.success(
+                findings=[task],
+                artifacts={"findings": {"task": task}},
+                agent_name=self.name,
+            )
+
+    with TemporaryDirectory(prefix="claude-bridge-agent-dag-scheduler-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        _append_benchmark_run(store, "run_scheduler")
+        first = _benchmark_node(run_id="run_scheduler", task_id="first", task="first")
+        second = _benchmark_node(
+            run_id="run_scheduler",
+            task_id="second",
+            task="second",
+            dependencies=(first.node_id,),
+        )
+        store.append_node_record(first)
+        store.append_node_record(second)
+        agent = EchoAgent()
+        result = AgentDagScheduler(store, [agent]).run_until_blocked(
+            "run_scheduler",
+            max_steps=4,
+        )
+        nodes = {node.task_id: node for node in store.latest_node_records("run_scheduler")}
+        ok = (
+            result.ran == 2
+            and agent.calls == ["first", "second"]
+            and nodes["first"].status == "completed"
+            and nodes["second"].status == "completed"
+        )
+        return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
+def _scenario_dag_completed_node_not_rerun() -> AgentBenchmarkMetrics:
+    class CountingAgent(BaseAgent):
+        def __init__(self) -> None:
+            super().__init__("research_agent")
+            self.calls = 0
+
+        async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
+            self.calls += 1
+            return AgentResult.success(findings=[task], agent_name=self.name)
+
+    with TemporaryDirectory(prefix="claude-bridge-agent-dag-scheduler-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        _append_benchmark_run(store, "run_restart")
+        store.append_node_record(
+            _benchmark_node(
+                run_id="run_restart",
+                task_id="already_done",
+                task="already done",
+                status="completed",
+                artifact_ids=("findings",),
+            )
+        )
+        agent = CountingAgent()
+        result = AgentDagScheduler(store, [agent]).run_until_blocked("run_restart", max_steps=2)
+        node = store.latest_node_records("run_restart")[0]
+        ok = result.ran == 0 and agent.calls == 0 and node.status == "completed"
+        return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
+def _scenario_dag_retry_cap_same_failure() -> AgentBenchmarkMetrics:
+    class FailingAgent(BaseAgent):
+        def __init__(self) -> None:
+            super().__init__("research_agent")
+            self.calls = 0
+
+        async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
+            self.calls += 1
+            return AgentResult.failure(error="same failure", agent_name=self.name)
+
+    with TemporaryDirectory(prefix="claude-bridge-agent-dag-scheduler-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        _append_benchmark_run(store, "run_retry")
+        store.append_node_record(_benchmark_node(run_id="run_retry", task_id="retry", task="retry"))
+        agent = FailingAgent()
+        result = AgentDagScheduler(store, [agent], max_retries=1).run_until_blocked(
+            "run_retry",
+            max_steps=5,
+        )
+        node = store.latest_node_records("run_retry")[0]
+        ok = (
+            result.ran == 2
+            and agent.calls == 2
+            and node.status == "failed"
+            and node.failure_class == "unknown_failure"
+            and node.retry_count == 1
+        )
+        return AgentBenchmarkMetrics(
+            verified_success=ok,
+            trace_complete=ok,
+            retry_count=node.retry_count,
+        )
+
+
+def _scenario_dag_mutation_write_set_overlap_blocked() -> AgentBenchmarkMetrics:
+    class MutatingAgent(BaseAgent):
+        def __init__(self) -> None:
+            super().__init__("research_agent")
+            self.calls: list[str] = []
+
+        async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
+            self.calls.append(task)
+            return AgentResult.success(findings=[task], agent_name=self.name)
+
+    with TemporaryDirectory(prefix="claude-bridge-agent-dag-scheduler-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        _append_benchmark_run(store, "run_write_overlap")
+        store.append_node_record(
+            _benchmark_node(
+                run_id="run_write_overlap",
+                task_id="mutate_a",
+                task="mutate a",
+                write_set=("src/shared.py",),
+                permissions={"allow_mutation": True, "allowed_tools": ["file_write"]},
+            )
+        )
+        store.append_node_record(
+            _benchmark_node(
+                run_id="run_write_overlap",
+                task_id="mutate_b",
+                task="mutate b",
+                write_set=("src/shared.py",),
+                permissions={"allow_mutation": True, "allowed_tools": ["file_write"]},
+            )
+        )
+        agent = MutatingAgent()
+        result = AgentDagScheduler(store, [agent], concurrency=2).run_once("run_write_overlap")
+        nodes = {node.task_id: node for node in store.latest_node_records("run_write_overlap")}
+        conflicts = store.load_conflicts("run_write_overlap")
+        ok = (
+            result.ran == 1
+            and result.blocked == 1
+            and nodes["mutate_a"].status == "completed"
+            and nodes["mutate_b"].status == "blocked"
+            and len(conflicts) == 1
+            and conflicts[0].type == "overlapping_write_set"
+            and conflicts[0].files == ("src/shared.py",)
+        )
+        return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
+def _scenario_verifier_required_for_mutation_success() -> AgentBenchmarkMetrics:
+    class MutatingAgent(BaseAgent):
+        async def execute(self, task: str, context: dict[str, Any]) -> AgentResult:
+            return AgentResult.success(
+                findings=[task],
+                artifacts={"mutation": {"task": task}},
+                agent_name=self.name,
+            )
+
+    with TemporaryDirectory(prefix="claude-bridge-agent-verifier-bench-") as tmp:
+        store = AgentDagStore(Path(tmp) / "dag")
+        _append_benchmark_run(store, "run_verifier")
+        mutation = _benchmark_node(
+            run_id="run_verifier",
+            task_id="mutate",
+            task="mutate",
+            write_set=("src/app.py",),
+            permissions={"allow_mutation": True, "allowed_tools": ["file_write"]},
+        )
+        store.append_node_record(mutation)
+        scheduler = AgentDagScheduler(store, [MutatingAgent("research_agent")])
+        scheduler.run_until_blocked("run_verifier", max_steps=2)
+        completed_mutation = store.latest_node_records("run_verifier")[0]
+        gated_before_verifier = store.load_run_view("run_verifier").run.status == "pending"
+        artifact_id = completed_mutation.artifact_ids[0]
+        store.append_artifact_record(
+            AgentDagArtifactRecord(
+                artifact_id=artifact_id,
+                run_id="run_verifier",
+                node_id=completed_mutation.node_id,
+                kind="mutation",
+                digest="sha256:test",
+                summary="mutation artifact",
+                path="",
+                created_at=2.0,
+            )
+        )
+        verifier = _benchmark_node(
+            run_id="run_verifier",
+            task_id="verify_mutation",
+            task="verify mutation",
+            kind="verifier",
+            agent_name="verification_agent",
+            dependencies=(completed_mutation.node_id,),
+            artifact_ids=(artifact_id,),
+            metadata={"verifies_node_id": completed_mutation.node_id},
+        )
+        store.append_node_record(verifier)
+        scheduler.run_until_blocked("run_verifier", max_steps=3)
+        view = store.load_run_view("run_verifier")
+        nodes = {node.task_id: node for node in view.nodes}
+        ok = (
+            gated_before_verifier
+            and nodes["mutate"].status == "completed"
+            and nodes["verify_mutation"].status == "completed"
+            and view.run.status == "completed"
+            and nodes["verify_mutation"].metadata["verifier_output"]["verified"] is True
+        )
+        return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
+def _scenario_conflict_record_for_overlapping_patch() -> AgentBenchmarkMetrics:
+    conflicts = ConflictDetector().detect_patch_conflicts(
+        "run_patch_conflict",
+        (
+            PatchHunk(
+                node_id="node_a",
+                file_path="src/app.py",
+                start_line=10,
+                end_line=20,
+            ),
+            PatchHunk(
+                node_id="node_b",
+                file_path="src/app.py",
+                start_line=15,
+                end_line=30,
+            ),
+        ),
+        now=1.0,
+    )
+    ok = (
+        len(conflicts) == 1
+        and conflicts[0].run_id == "run_patch_conflict"
+        and conflicts[0].type == "overlapping_patch"
+        and conflicts[0].files == ("src/app.py",)
+        and conflicts[0].signal == "patch hunks overlap"
+    )
+    return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
+def _scenario_low_relevance_artifact_not_promoted() -> AgentBenchmarkMetrics:
+    low = AgentDagArtifactRecord(
+        artifact_id="artifact_low",
+        run_id="run_relevance",
+        node_id="node_low",
+        kind="finding",
+        digest="sha256:low",
+        summary="low relevance finding",
+        path="",
+        created_at=1.0,
+        metadata={"relevance_score": 0.1},
+    )
+    high = AgentDagArtifactRecord(
+        artifact_id="artifact_high",
+        run_id="run_relevance",
+        node_id="node_high",
+        kind="finding",
+        digest="sha256:high",
+        summary="high relevance finding",
+        path="",
+        created_at=1.0,
+        metadata={"relevance_score": 0.9},
+    )
+    policy = EnforcementPolicy()
+    promotable = policy.promotable_artifacts((low, high))
+    audit_only = policy.audit_only_artifacts((low, high))
+    ok = promotable == (high,) and audit_only == (low,)
+    return AgentBenchmarkMetrics(verified_success=ok, trace_complete=ok)
+
+
 def _scenario_no_bypass() -> AgentBenchmarkMetrics:
     findings = scan_subagent_process_bypass()
     return AgentBenchmarkMetrics(
         verified_success=not findings,
         trace_complete=True,
         tool_call_count=0,
+    )
+
+
+def _append_benchmark_run(store: AgentDagStore, run_id: str) -> None:
+    store.append_run_record(
+        AgentDagRunRecord(
+            run_id=run_id,
+            goal="benchmark scheduler",
+            status="pending",
+            created_at=1.0,
+            updated_at=1.0,
+        )
+    )
+
+
+def _benchmark_node(
+    *,
+    run_id: str,
+    task_id: str,
+    task: str,
+    status: AgentDagStatus = "pending",
+    dependencies: tuple[str, ...] = (),
+    artifact_ids: tuple[str, ...] = (),
+    write_set: tuple[str, ...] = (),
+    permissions: dict[str, Any] | None = None,
+    kind: str = "research",
+    agent_name: str = "research_agent",
+    metadata: dict[str, Any] | None = None,
+) -> AgentDagNodeRecord:
+    node_id = make_node_id(
+        run_id=run_id,
+        task_id=task_id,
+        agent_name=agent_name,
+        kind=kind,
+        read_set=("src",),
+        write_set=write_set,
+    )
+    return AgentDagNodeRecord(
+        node_id=node_id,
+        run_id=run_id,
+        task_id=task_id,
+        agent_name=agent_name,
+        kind=kind,
+        status=cast(AgentDagStatus, status),
+        dependencies=dependencies,
+        read_set=("src",),
+        write_set=write_set,
+        idempotency_key=make_node_idempotency_key(
+            run_id=run_id,
+            task_id=task_id,
+            agent_name=agent_name,
+            kind=kind,
+            read_set=("src",),
+            write_set=write_set,
+        ),
+        artifact_ids=artifact_ids,
+        created_at=1.0,
+        updated_at=1.0,
+        metadata={
+            "artifact_ids": list(artifact_ids),
+            "permissions": permissions or {},
+            "task": task,
+            **(metadata or {}),
+        },
     )
 
 
@@ -493,6 +904,7 @@ def _metrics_from_record(
         tool_call_count=len(record.tool_calls),
         trace_complete=_trace_complete(record),
         context_manifest_present=bool(record.context_manifest_id),
+        mission_brief_present=bool(record.mission_brief_id),
         policy_denial_correct=policy_denial_correct,
     )
 
@@ -506,6 +918,7 @@ def _metrics_from_manifest(
         verified_success=verified_success,
         trace_complete=True,
         context_manifest_present=bool(manifest.manifest_id),
+        mission_brief_present=False,
         estimated_tokens=manifest.estimated_tokens,
         duplicate_context_ratio=manifest.duplicate_ratio,
     )

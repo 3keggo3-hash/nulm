@@ -26,6 +26,16 @@ AgentDagStatus = Literal[
     "cancelled",
 ]
 
+AgentDagNodeEvent = Literal[
+    "node_ready",
+    "node_leased",
+    "node_running",
+    "node_completed",
+    "node_failed",
+    "node_blocked",
+    "lease_expired",
+]
+
 AGENT_DAG_STATUSES: tuple[AgentDagStatus, ...] = (
     "pending",
     "ready",
@@ -35,6 +45,16 @@ AGENT_DAG_STATUSES: tuple[AgentDagStatus, ...] = (
     "completed",
     "failed",
     "cancelled",
+)
+
+AGENT_DAG_NODE_EVENTS: tuple[AgentDagNodeEvent, ...] = (
+    "node_ready",
+    "node_leased",
+    "node_running",
+    "node_completed",
+    "node_failed",
+    "node_blocked",
+    "lease_expired",
 )
 
 _RecordT = TypeVar("_RecordT")
@@ -104,7 +124,14 @@ class AgentDagNodeRecord:
     created_at: float = 0.0
     updated_at: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    node_event: AgentDagNodeEvent | None = None
     schema_version: str = AGENT_DAG_NODE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.node_event is None:
+            object.__setattr__(self, "node_event", _event_from_status(self.status))
+        elif self.node_event not in AGENT_DAG_NODE_EVENTS:
+            raise ValueError(f"invalid DAG node_event {self.node_event!r}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +142,7 @@ class AgentDagNodeRecord:
             "agent_name": self.agent_name,
             "kind": self.kind,
             "status": self.status,
+            "node_event": self.node_event or _event_from_status(self.status),
             "dependencies": list(self.dependencies),
             "read_set": list(self.read_set),
             "write_set": list(self.write_set),
@@ -134,13 +162,15 @@ class AgentDagNodeRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentDagNodeRecord:
         _require_schema(data, AGENT_DAG_NODE_SCHEMA_VERSION)
+        status = _status(data.get("status"))
         return cls(
             node_id=_required_str(data, "node_id"),
             run_id=_required_str(data, "run_id"),
             task_id=_required_str(data, "task_id"),
             agent_name=_required_str(data, "agent_name"),
             kind=_required_str(data, "kind"),
-            status=_status(data.get("status")),
+            status=status,
+            node_event=_node_event(data.get("node_event"), status=status),
             dependencies=_string_tuple(data.get("dependencies", ())),
             read_set=_string_tuple(data.get("read_set", ())),
             write_set=_string_tuple(data.get("write_set", ())),
@@ -365,6 +395,30 @@ def _status(value: Any) -> AgentDagStatus:
     if value not in AGENT_DAG_STATUSES:
         raise ValueError(f"invalid DAG status {value!r}")
     return cast(AgentDagStatus, value)
+
+
+def _node_event(value: Any, *, status: AgentDagStatus) -> AgentDagNodeEvent:
+    if value is None:
+        return _event_from_status(status)
+    if value not in AGENT_DAG_NODE_EVENTS:
+        raise ValueError(f"invalid DAG node_event {value!r}")
+    return cast(AgentDagNodeEvent, value)
+
+
+def _event_from_status(status: AgentDagStatus) -> AgentDagNodeEvent:
+    if status == "ready":
+        return "node_ready"
+    if status == "leased":
+        return "node_leased"
+    if status == "running":
+        return "node_running"
+    if status == "completed":
+        return "node_completed"
+    if status == "failed":
+        return "node_failed"
+    if status == "blocked":
+        return "node_blocked"
+    return "node_ready"
 
 
 def _string_tuple(raw: Any) -> tuple[str, ...]:

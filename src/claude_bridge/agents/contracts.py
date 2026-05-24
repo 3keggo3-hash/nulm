@@ -64,8 +64,8 @@ class TaskPermissions:
         )
         return cls(
             allowed_tools=allowed_tools,
-            allow_mutation=bool(raw.get("allow_mutation", False)),
-            allow_network=bool(raw.get("allow_network", False)),
+            allow_mutation=_bool_value(raw.get("allow_mutation", False)),
+            allow_network=_bool_value(raw.get("allow_network", False)),
         )
 
 
@@ -96,10 +96,15 @@ class TaskSpec:
     kind: str
     goal: str
     agent_name: str
+    question: str = ""
     read_set: tuple[str, ...] = ()
     write_set: tuple[str, ...] = ()
     budget: TaskBudget = field(default_factory=TaskBudget)
     permissions: TaskPermissions = field(default_factory=TaskPermissions)
+    acceptance_criteria: tuple[str, ...] = ()
+    escalation_policy: str = ""
+    allowed_failure_classes: tuple[str, ...] = ()
+    expected_evidence: tuple[str, ...] = ()
     expected_artifacts: tuple[str, ...] = ()
     priority: int = 2
 
@@ -128,10 +133,15 @@ class TaskSpec:
             kind=kind,
             goal=goal,
             agent_name=agent_name,
+            question=_string_value(raw.get("question"), ""),
             read_set=_string_tuple(raw.get("read_set", ())),
             write_set=_string_tuple(raw.get("write_set", ())),
             budget=TaskBudget.from_raw(raw.get("budget")),
             permissions=TaskPermissions.from_raw(raw.get("permissions")),
+            acceptance_criteria=_string_tuple(raw.get("acceptance_criteria", ())),
+            escalation_policy=_string_value(raw.get("escalation_policy"), ""),
+            allowed_failure_classes=_string_tuple(raw.get("allowed_failure_classes", ())),
+            expected_evidence=_string_tuple(raw.get("expected_evidence", ())),
             expected_artifacts=_string_tuple(raw.get("expected_artifacts", ())),
             priority=priority,
         )
@@ -143,6 +153,11 @@ class TaskSpec:
             "task": self.goal,
             "agent_name": self.agent_name,
             "kind": self.kind,
+            "question": self.question,
+            "acceptance_criteria": list(self.acceptance_criteria),
+            "escalation_policy": self.escalation_policy,
+            "allowed_failure_classes": list(self.allowed_failure_classes),
+            "expected_evidence": list(self.expected_evidence),
             "priority": self.priority,
         }
 
@@ -166,7 +181,25 @@ def coerce_task_spec(raw: TaskSpec | dict[str, Any]) -> TaskSpec:
 def _string_tuple(raw: Any) -> tuple[str, ...]:
     if not isinstance(raw, list | tuple | set):
         return ()
-    return tuple(str(item) for item in raw)
+    return tuple(str(item) for item in raw if str(item))
+
+
+def _string_value(raw: Any, default: str) -> str:
+    if raw is None:
+        return default
+    if isinstance(raw, str):
+        return raw
+    return default
+
+
+def _bool_value(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(raw, int):
+        return raw != 0
+    return False
 
 
 @dataclass(frozen=True)
