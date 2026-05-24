@@ -1,6 +1,6 @@
 # Nulm MCP API Specification
 
-> **Version:** 0.1.1
+> **Version:** 0.1.2
 > **Status:** Alpha
 
 Nulm exposes tools via the Model Context Protocol (MCP). This document describes the MCP tool schemas and REST API endpoints (if HTTP server is enabled).

@@ -1,7 +1,7 @@
 # Nulm MCP Tool Schema Examples
 
-> **Version:** 0.1.1
-> **Last Updated:** 2026-05-12
+> **Version:** 0.1.2
+> **Last Updated:** 2026-05-24
 
 This document provides representative JSON Schema definitions for common MCP tools exposed by
 Nulm. The active runtime schema is generated from the registered tools and can vary by

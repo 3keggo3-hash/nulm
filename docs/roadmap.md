@@ -1,6 +1,6 @@
 # Nulm — Roadmap
 
-> **Last updated:** 2026-05-08
+> **Last updated:** 2026-05-24
 > **Status:** Active technical roadmap
 
 Nulm is moving from a "security-controlled MCP runtime" toward a broader **agent quality
@@ -165,12 +165,13 @@ Exit criteria:
 
 External confirmation still required before a broad launch:
 
-- GitHub Actions matrix must pass after push. As of 2026-05-19, local `main` matches
-  `origin/main` at `79613f5`, but this environment could not read private-repo Actions run
-  results.
-- First external source/PyPI install smoke should pass. As of 2026-05-19,
-  `pip install nulm==0.1.1` and `pip index versions nulm` returned no matching PyPI
-  distributions, so publishing/visibility remains a release blocker.
+- GitHub Actions matrix must pass after push. As of 2026-05-24, local `main` matches
+  `origin/main` at `fa662eb`; local release gates pass, but this environment could not read
+  private-repo Actions run results.
+- First external source/PyPI install smoke should pass. As of 2026-05-24,
+  `pip index versions nulm` still returned no matching PyPI distributions after pushing
+  `v0.1.2`, so the likely remaining step is GitHub Actions `pypi` environment approval or
+  publish secret/Trusted Publisher configuration.
 
 ## Deferred
 
