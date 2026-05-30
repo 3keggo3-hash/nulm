@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 import re
 import threading
@@ -15,6 +16,12 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence, cast
 
 from claude_bridge.ai_router import parse_model_profiles, parse_routing_rules
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_invalid_json_env(env_name: str) -> None:
+    logger.warning("Ignoring invalid JSON in %s; using default.", env_name)
 
 
 @dataclass
@@ -797,7 +804,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
             if isinstance(loaded_profiles, dict):
                 ai_model_profiles = loaded_profiles
         except (json.JSONDecodeError, TypeError):
-            pass
+            _warn_invalid_json_env("CLAUDE_BRIDGE_AI_PROFILES_JSON")
     if raw_ai_routing_rules:
         try:
             import json
@@ -806,7 +813,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
             if isinstance(loaded_rules, list):
                 ai_routing_rules = loaded_rules
         except (json.JSONDecodeError, TypeError):
-            pass
+            _warn_invalid_json_env("CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON")
     raw_role = os.environ.get("CLAUDE_BRIDGE_ROLE", "").strip() or None
     raw_user = os.environ.get("CLAUDE_BRIDGE_USER", "").strip() or None
     raw_auto_approve_patterns = os.environ.get("CLAUDE_BRIDGE_AUTO_APPROVE_PATTERNS", "").strip()
@@ -817,7 +824,7 @@ def configure_from_env_state(*, force_auto_approve: bool | None = None) -> None:
 
             auto_approve_patterns = json.loads(raw_auto_approve_patterns)
         except (json.JSONDecodeError, TypeError):
-            pass
+            _warn_invalid_json_env("CLAUDE_BRIDGE_AUTO_APPROVE_PATTERNS")
     if force_auto_approve is not None:
         auto_approve = force_auto_approve and auto_approve_confirmed
         if force_auto_approve and not auto_approve_confirmed:

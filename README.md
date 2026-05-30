@@ -245,6 +245,19 @@ client-managed approval or trusted local auto-approval (`CLAUDE_BRIDGE_AUTO_APPR
 For Claude Desktop approval UI support:
 `nulm setup --client-managed-approval ...`.
 
+With `CLAUDE_BRIDGE_CLIENT_MANAGED_APPROVAL=1`, Nulm assumes the MCP client shows approval prompts.
+If the client does not enforce approvals, mutating tools may proceed without a local prompt.
+
+## Known limitations (v0.1.4)
+
+- Nulm is a policy-gated local runner, not an OS or container sandbox.
+- Shell velocity rate limits are configured via env vars but not yet enforced at runtime.
+- Audit HMAC uses a development default key unless `CLAUDE_BRIDGE_AUDIT_KEY` is set.
+- The experimental `secret_store` module is not on the default MCP path; local storage is plaintext JSON.
+- Invalid JSON in `CLAUDE_BRIDGE_*_JSON` env vars is ignored with a warning logged to stderr.
+
+See [`docs/security-model.md`](docs/security-model.md) for the full security model.
+
 ## Workflow Modes
 
 `run_workflow` supports: `review`, `optimize`, `orchestrate`, `agent_loop`, `quality`, `test`,
@@ -465,6 +478,9 @@ nulm appeal --record-id <record_id> --justification "reason"
 Anomaly scoring is advisory in v0.1: high scores are surfaced in summaries and audit metadata, but
 they do not silently change guard-policy decisions. Nulm is a policy-gated local runner,
 not an OS or container sandbox.
+
+Set `CLAUDE_BRIDGE_AUDIT_KEY` when audit tamper evidence matters; without it, HMAC signatures use a
+public development default.
 
 ## Development
 

@@ -7,6 +7,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-30
+
+### Security
+
+- Remove leaked MiniMax API key from git history and stop tracking `.opencode/` local config.
+- Add gitleaks pre-commit hook and `.gitleaks.toml` allowlist for test fixtures.
+
+### Changed
+
+- Document known limitations honestly: audit default key, shell rate-limit wiring status, experimental
+  secret store, and `client_managed_approval` contract.
+- Log warnings when `CLAUDE_BRIDGE_*_JSON` environment variables contain invalid JSON.
+- Untrack `web/node_modules/`, internal planning docs, and local-only development paths.
+- Add `examples/opencode.json.example` as a public OpenCode config template.
+
+### Fixed
+
+- Correct `secret_store` and `feedback` docstrings to match actual behavior.
+
 ## [0.1.3] - 2026-05-24
 
 ### Fixed

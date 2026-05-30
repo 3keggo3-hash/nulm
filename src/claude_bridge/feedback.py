@@ -129,9 +129,8 @@ def get_recent_ratings(limit: int = 10) -> list[int]:
 def is_low_satisfaction() -> bool:
     """Check if recent feedback indicates low satisfaction (avg < 3).
 
-    Returns True if we have at least 3 recent ratings with average < 3.0.
-    This function is intended for future integration with adaptive behavior.
-    Currently returns False as feedback consumption is not yet implemented.
+    Returns True when there are at least 3 recent ratings and the average is below 3.0.
+    Reserved for future adaptive behavior; not consumed by the default MCP path yet.
     """
     recent = get_recent_ratings(limit=5)
     if len(recent) < 3:

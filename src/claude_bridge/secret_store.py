@@ -1,10 +1,10 @@
-"""Secret store integration for Nulm.
+"""Experimental secret store helpers for Nulm.
 
-Supports:
-- HashiCorp Vault
-- AWS Secrets Manager
-- GCP Secret Manager
-- Local encrypted file (fallback)
+Not used on the default MCP path. Supported providers today:
+- ``local`` — plaintext JSON at ``~/.claude-bridge/secrets/encrypted.json``
+- ``vault`` — HashiCorp Vault (requires optional ``hvac`` package)
+
+AWS Secrets Manager and GCP Secret Manager are not implemented yet.
 """
 
 from abc import ABC, abstractmethod
@@ -57,10 +57,10 @@ class SecretStore(ABC):
 
 class LocalSecretStore(SecretStore):
     """
-    Local encrypted file-based secret store.
+    Local file-based secret store (experimental).
 
-    Secrets are stored in ~/.claude-bridge/secrets/encrypted.json
-    Uses Fernet symmetric encryption.
+    Secrets are stored as plaintext JSON at ``~/.claude-bridge/secrets/encrypted.json``.
+    Treat this path as sensitive local data. Fernet encryption is planned but not implemented.
     """
 
     def __init__(self, path: str | None = None):

@@ -48,6 +48,7 @@ Install optional capabilities by selecting the extra that matches the feature yo
 | `observability` | `pip install "nulm[observability]"` | Prometheus metrics integration. |
 | `tracing` | `pip install "nulm[tracing]"` | OpenTelemetry tracing integration. |
 | `streaming` | `pip install "nulm[streaming]"` | SSE streaming helpers through sse-starlette. |
+| `vault` | `pip install hvac` | HashiCorp Vault backend for the experimental `secret_store` module (not used on the default MCP path). |
 | `legacy` | `pip install "nulm[legacy]"` | Legacy FastAPI/Uvicorn integration kept for compatibility. |
 
 For most desktop or IDE MCP users, `nulm[recommended]` is the easiest install path. It keeps

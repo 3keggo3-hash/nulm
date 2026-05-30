@@ -76,6 +76,12 @@ Every tool call is recorded to a local JSONL audit file:
 - **Redaction**: sensitive parameter values (tokens, passwords, API keys) are masked at write time.
 - **Retention**: default 90 days / 100 sessions (configurable).
 
+### Audit integrity
+
+Each audit record includes an HMAC signature. For deployments where audit integrity matters, set
+`CLAUDE_BRIDGE_AUDIT_KEY` to a long random secret. Without it, Nulm falls back to a public
+development default key, which does not provide meaningful tamper evidence across machines.
+
 ---
 
 ## Path and Root Enforcement
@@ -97,6 +103,7 @@ deployments):
 - `CLAUDE_BRIDGE_AUTO_APPROVE` — enable/disable auto-approve.
 - `CLAUDE_BRIDGE_GUARD_POLICY` — path to guard policy file.
 - `CLAUDE_BRIDGE_AUDIT_DIR` — path to audit log directory.
+- `CLAUDE_BRIDGE_AUDIT_KEY` — HMAC signing key for audit records (recommended for non-dev use).
 - `CLAUDE_BRIDGE_ALLOWED_ROOTS` — colon-separated list of allowed root paths.
 - `CLAUDE_BRIDGE_APPROVAL_PRESET` — preset name for approval mode.
 
@@ -116,6 +123,25 @@ returns secret values.
 Custom cloud provider `base_url` values must use HTTPS and must not point to private/internal hosts
 or hostnames resolving to private/internal addresses. Ollama routing is intentionally limited to
 localhost/loopback URLs because it is expected to run on the user's own machine.
+
+### JSON environment variables
+
+`CLAUDE_BRIDGE_AI_PROFILES_JSON`, `CLAUDE_BRIDGE_AI_ROUTING_RULES_JSON`, and
+`CLAUDE_BRIDGE_AUTO_APPROVE_PATTERNS` must contain valid JSON. Invalid values are ignored and a
+warning is logged; Nulm continues with defaults rather than failing startup.
+
+### Shell rate limiting (planned wiring)
+
+Environment variables `CLAUDE_BRIDGE_SHELL_RATE_LIMIT_MAX` and
+`CLAUDE_BRIDGE_SHELL_RATE_LIMIT_WINDOW` define per-session shell command velocity limits. The
+limiter is implemented but not yet connected to `run_shell` / `start_process` in v0.1.4; setting
+these variables has no effect until a future release wires them in.
+
+### Experimental secret store
+
+`src/claude_bridge/secret_store.py` provides optional Vault/local helpers and is **not** used on
+the default MCP path. The local provider stores secrets as plaintext JSON under
+`~/.claude-bridge/secrets/`. Do not rely on it for production secret management yet.
 
 ### Adaptive Proposals and MCP Discovery
 
