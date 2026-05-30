@@ -24,6 +24,9 @@ Quick pre-release verification before sharing publicly.
 - Only `examples/claude_desktop_config.snippet.json` with placeholder paths is tracked.
 - Personal paths, usernames, or home directory references have been cleaned.
 - `.env`, `*.local`, log files, and private configs are gitignored.
+- `.opencode/` is gitignored and not tracked (use `examples/opencode.json.example`).
+- Provider API keys are set via environment variables, not committed config files.
+- `pre-commit run gitleaks --all-files` passes with no findings.
 - Public docs/config examples do not contain real local paths or secrets.
 
 ## Policy / Audit / Replay

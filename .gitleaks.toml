@@ -1,0 +1,12 @@
+title = "claude-bridge gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and example secret-detection patterns"
+paths = [
+  '''tests/''',
+  '''examples/security-layer/''',
+  '''src/claude_bridge/config_scanner\.py''',
+]

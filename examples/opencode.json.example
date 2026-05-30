@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@tarquinen/opencode-dcp@latest"
+  ],
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "mcp": {
+    "nulm": {
+      "type": "local",
+      "command": ["python", "-m", "claude_bridge.mcp_server"],
+      "enabled": true,
+      "env": {
+        "CLAUDE_BRIDGE_AI_ROUTING_ENABLED": "1",
+        "CLAUDE_BRIDGE_AI_EVALUATOR_ENABLED": "1",
+        "CLAUDE_BRIDGE_AI_EVALUATOR_PROVIDER": "minimax",
+        "CLAUDE_BRIDGE_AI_ROUTING_MODE": "auto",
+        "CLAUDE_BRIDGE_AI_DEFAULT_PROFILE": "local"
+      }
+    }
+  }
+}
