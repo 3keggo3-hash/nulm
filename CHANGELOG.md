@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-31
+
+### Changed
+
+- Remove broken GitHub Actions CI and rate-limited PyPI download badges from README.
+
 ## [0.1.4] - 2026-05-30
 
 ### Security
