@@ -1,8 +1,6 @@
 # Nulm
 
 [![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/nulm)](https://pypi.org/project/nulm/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/3keggo3-hash/nulm/ci.yml?branch=main)](https://github.com/3keggo3-hash/nulm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
