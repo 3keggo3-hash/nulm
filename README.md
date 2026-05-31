@@ -1,6 +1,7 @@
 # Nulm
 
 [![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
+[![Downloads](https://static.pepy.tech/badge/nulm)](https://pepy.tech/project/nulm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)

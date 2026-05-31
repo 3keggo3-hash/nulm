@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-31
+
+### Changed
+
+- Restore download badge in README using Pepy (shields.io PyPI stats were rate-limited).
+
 ## [0.1.5] - 2026-05-31
 
 ### Changed
