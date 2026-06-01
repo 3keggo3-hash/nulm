@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-06-01
+
+### Changed
+
+- Set PyPI author/maintainer metadata to Kerem Dilker (fixes missing author on PyPI and Pepy).
+- Replace cached Pepy static badge with shields.io total-download badge linked to pepy.tech.
+
 ## [0.1.6] - 2026-05-31
 
 ### Changed

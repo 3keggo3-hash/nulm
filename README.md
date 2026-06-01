@@ -1,15 +1,14 @@
 # Nulm
 
 [![PyPI version](https://img.shields.io/pypi/v/nulm)](https://pypi.org/project/nulm/)
-[![Downloads](https://static.pepy.tech/badge/nulm)](https://pepy.tech/project/nulm)
+[![PyPI downloads](https://img.shields.io/pepy/dt/nulm?label=downloads)](https://pepy.tech/project/nulm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![Code style: Black](https://img.shields.io/badge/code%20style-Black-000000.svg)](https://github.com/psf/black)
 
 <!-- GitHub Topics: mcp-server, nulm, agent-quality, local-ai, developer-tools -->
-CI: GitHub Actions | PyPI package: `nulm` | CLI: `nulm` |
-Python: 3.10+ | License: MIT |
-Code style: Black
+PyPI package: `nulm` | CLI: `nulm` | Python: 3.10+ | License: MIT |
+Download charts: [pepy.tech/project/nulm](https://pepy.tech/project/nulm)
 
 > Nulm wraps your MCP client with path-safe file operations, guarded shell execution, and audit
 > logging without requiring a remote server.
