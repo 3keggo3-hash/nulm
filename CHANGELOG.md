@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-06-01
+
+### Fixed
+
+- PyPI/Pepy metadata: separate author name and email fields so Author displays;
+  License-Expression MIT is emitted for package indexes.
+
 ## [0.1.7] - 2026-06-01
 
 ### Changed
