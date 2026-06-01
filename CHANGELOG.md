@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-06-01
+
+### Added
+
+- README **Feedback** section with links to issues and Discussions.
+- `SUPPORT.md`, issue template chooser, and Discussion template for community input.
+
 ## [0.1.8] - 2026-06-01
 
 ### Fixed

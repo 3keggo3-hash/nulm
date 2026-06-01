@@ -1,0 +1,26 @@
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Nulm. Questions, setup help, and feature ideas are welcome here.
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Setup / installation
+        - Claude Desktop or MCP client config
+        - Security / policy behavior
+        - Feature idea
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: body
+    attributes:
+      label: Details
+      description: What are you trying to do? What client (Claude Desktop, Cursor, VS Code, etc.)?
+      placeholder: I installed nulm with pip and ...
+    validations:
+      required: true

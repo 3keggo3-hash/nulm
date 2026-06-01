@@ -23,6 +23,16 @@ execution, patch application, audit logging, policy checks, and MCP client setup
 features are early advisory tools layered on top of that core. They can help shape requests, plans,
 and reviews, but they do not replace code review, tests, approvals, or the built-in guard policy.
 
+## Feedback
+
+We are actively looking for feedback from real MCP setups (Claude Desktop, Cursor, VS Code, etc.).
+
+- **Bug** → [Open a bug report](https://github.com/3keggo3-hash/nulm/issues/new?template=bug_report.md)
+- **Feature idea** → [Feature request](https://github.com/3keggo3-hash/nulm/issues/new?template=feature_request.md)
+- **Questions / how-to** → [GitHub Discussions](https://github.com/3keggo3-hash/nulm/discussions) (enable under repo **Settings → General → Discussions** if the tab is missing)
+
+Include `nulm --version`, your OS, and MCP client. Redact API keys and home paths from configs.
+
 ## Security Model
 
 Nulm starts fail-closed by default. Mutating tools and shell tools require either client-managed
@@ -521,5 +531,7 @@ MIT. See [LICENSE](LICENSE).
 ## Contributing
 
 Contributions are welcome. Please open an issue before larger changes.
+
+See [SUPPORT.md](SUPPORT.md) for bugs, questions, and feedback channels.
 
 This project is not an official Anthropic product.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas (Discussions)
+    url: https://github.com/3keggo3-hash/nulm/discussions/new?category=general
+    about: Ask how to use Nulm, share MCP client setups, or suggest improvements.
+  - name: PyPI package page
+    url: https://pypi.org/project/nulm/
+    about: Install with pip install nulm
