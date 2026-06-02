@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 import shutil
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +51,26 @@ def command_available(command_name: str) -> bool:
     return shutil.which(command_name) is not None
 
 
+def _platform_label(platform: str) -> str:
+    if platform == "darwin":
+        return "macOS"
+    if platform.startswith("win"):
+        return "Windows"
+    if platform.startswith("linux"):
+        return "Linux"
+    return platform
+
+
+def _treesitter_import_status() -> tuple[bool, str]:
+    try:
+        importlib.import_module("tree_sitter_language_pack")
+    except ImportError as exc:
+        return False, f"not importable ({exc})"
+    except OSError as exc:
+        return False, f"native load failed ({exc})"
+    return True, "tree_sitter_language_pack importable"
+
+
 def _update_check(
     checks: list[DoctorCheck], label: str, ok: bool, detail: str, fix: str | None
 ) -> None:
@@ -64,13 +86,39 @@ def build_doctor_report(
     desktop_config_path: Path,
     python_executable: str,
     python_version: Sequence[int],
+    platform: str = sys.platform,
     module_checker: ModuleChecker = module_available,
     command_checker: CommandChecker = command_available,
 ) -> DoctorReport:
     resolved_project_dir = project_dir.resolve()
     version_text = ".".join(str(part) for part in python_version[:3])
+    platform_label = _platform_label(platform)
     checks: list[DoctorCheck] = []
     quick_fixes: list[str] = []
+
+    _update_check(
+        checks,
+        "Operating system",
+        True,
+        platform_label,
+        None,
+    )
+    if platform.startswith("win"):
+        _update_check(
+            checks,
+            "Windows native support",
+            True,
+            "Core MCP tools supported; dashboard web terminal unavailable",
+            "Prefer WSL for full parity, or use pip install nulm without [recommended] if Tree-sitter fails",
+        )
+    else:
+        _update_check(
+            checks,
+            "Platform support tier",
+            True,
+            f"{platform_label} — fully supported in CI",
+            None,
+        )
 
     _update_check(
         checks,
@@ -173,13 +221,31 @@ def build_doctor_report(
         None if charset_ok else "pip install -e .[smart]",
     )
 
-    treesitter_ok = module_checker("tree_sitter_language_pack")
+    treesitter_ok, treesitter_detail = _treesitter_import_status()
+    treesitter_fix = None
+    if not treesitter_ok:
+        if platform.startswith("win"):
+            treesitter_fix = (
+                "pip install nulm (core only), or install Microsoft VC++ Redistributable "
+                "then pip install \"nulm[treesitter]\""
+            )
+        else:
+            treesitter_fix = "pip install -e .[treesitter]"
     _update_check(
         checks,
-        "Tree-sitter package available",
+        "Tree-sitter importable",
         treesitter_ok,
-        "Optional indexing extra: pip install -e .[treesitter]",
-        None if treesitter_ok else "pip install -e .[treesitter]",
+        treesitter_detail,
+        treesitter_fix,
+    )
+
+    terminal_ok = not platform.startswith("win")
+    _update_check(
+        checks,
+        "Dashboard web terminal",
+        terminal_ok,
+        "Available on macOS/Linux/WSL" if terminal_ok else "Not supported on native Windows",
+        None if terminal_ok else "Use WSL or macOS/Linux for dashboard terminal access",
     )
 
     desktop_config_ok = desktop_config_path.exists()

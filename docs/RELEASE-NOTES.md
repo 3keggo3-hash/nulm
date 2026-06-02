@@ -83,7 +83,7 @@ Checks performed:
 - Agent Quality Layer tools are an advisory deterministic MVP; they do not replace human review or
   independently prove correctness
 - Relevance scoring is keyword-based; no embedding or graph-based semantic search yet
-- GitHub CI covers Linux and macOS; Windows end-to-end validation is not yet performed
+- GitHub CI covers Linux, macOS, and Windows; dashboard web terminal remains Unix-only
 - Tree-sitter integration is optional; behavior may differ with/without it
 - Index cache is in-memory; very large mono-repos may need disk cache in future
 - PyYAML is optional; YAML policy files require manual installation

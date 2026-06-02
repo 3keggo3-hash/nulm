@@ -528,6 +528,8 @@ def create_dashboard_server(
 
 
 def _start_terminal_ws(host: str, port: int, token: str) -> None:
+    if sys.platform == "win32":
+        return
     if websockets is None:
         return
     from claude_bridge.web.terminal import create_terminal_session

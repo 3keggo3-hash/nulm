@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,29 @@ def test_build_doctor_report_marks_dev_and_optional_dependencies(tmp_path: Path)
     assert checks["mypy available"].ok is False
     assert checks["tiktoken package available"].ok is False
     assert checks["charset-normalizer package available"].ok is True
-    assert checks["Tree-sitter package available"].ok is False
+    assert checks["Tree-sitter importable"].ok is False
+
+
+def test_build_doctor_report_windows_platform_notes(tmp_path: Path) -> None:
+    report = build_doctor_report(
+        project_dir=tmp_path,
+        config_snapshot={
+            "approval_preset": None,
+            "auto_approve": False,
+            "client_managed_approval": True,
+            "onboarding_enabled": True,
+        },
+        desktop_config_path=tmp_path / "claude_desktop_config.json",
+        python_executable=sys.executable,
+        python_version=(3, 11, 5),
+        platform="win32",
+        module_checker={"claude_bridge"}.__contains__,
+        command_checker=set().__contains__,
+    )
+    checks = {check.label: check for check in report.checks}
+    assert checks["Operating system"].detail == "Windows"
+    assert checks["Windows native support"].ok is True
+    assert checks["Dashboard web terminal"].ok is False
 
 
 def test_build_security_doctor_report_audit_dir_writable(tmp_path: Path) -> None:

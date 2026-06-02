@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
-import pty
 import select
 import signal
 import subprocess
 import sys
 import threading
 from typing import Any
+
+TERMINAL_SUPPORTED = sys.platform != "win32"
+
+if TERMINAL_SUPPORTED:
+    import fcntl
+    import pty
+else:
+    fcntl = None  # type: ignore[assignment,misc]
+    pty = None  # type: ignore[assignment,misc]
 
 try:
     import websockets  # type: ignore[import]
@@ -32,10 +39,13 @@ class TerminalSession:
         self.lock = threading.Lock()
 
     def start(self, shell: str | None = None) -> bool:
+        if not TERMINAL_SUPPORTED:
+            return False
         if self.running:
             return False
         shell = shell or os.environ.get("SHELL", "/bin/bash")
         try:
+            assert pty is not None
             self.master_fd, self.slave_fd = pty.openpty()
             self.process = subprocess.Popen(
                 [shell],

@@ -202,6 +202,39 @@ as experimental in this alpha.
 
 See [docs/optional-dependencies.md](docs/optional-dependencies.md) for the full extras matrix.
 
+### Windows
+
+Nulm runs on native Windows for core MCP workflows (file tools, guarded shell, patch, audit).
+WSL is recommended when you want the same experience as macOS/Linux, including the dashboard web
+terminal and Tree-sitter indexing without native DLL issues.
+
+PowerShell (recommended first install):
+
+```powershell
+py -m pip install --upgrade pip
+py -m pip install nulm
+nulm install --simple
+```
+
+If you want the full optional feature set and Tree-sitter installs cleanly on your machine:
+
+```powershell
+py -m pip install "nulm[recommended]"
+```
+
+If `nulm[recommended]` fails with a DLL or native extension error, stay on core `nulm` — file
+tools, shell guard, and audit logging still work; only optional indexing extras are affected.
+Install the [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+and retry, or use WSL.
+
+Claude Desktop config path on Windows:
+
+```text
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+Run `nulm doctor` after install to see platform-specific notes.
+
 ### Add to an MCP client
 
 `nulm install` can write supported target configs, while `nulm setup` prints a
@@ -516,8 +549,11 @@ nulm benchmark --query "login auth" --path src --json
 |---|---|
 | Claude says it cannot access local files | Ask it to check the Nulm MCP tools and call `workspace_status()` first; restart or reload the MCP client if tools are missing. |
 | macOS: Operation not permitted | Use `/usr/bin/env` with the module command in config. |
-| Tools not appearing | Check the client MCP config is valid JSON; verify the Python environment. |
-| Claude Desktop logs | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |
+| Windows: `nulm[recommended]` install fails | Install core only: `py -m pip install nulm`. Optional Tree-sitter extras need MSVC redistributable or WSL. |
+| Windows: dashboard terminal missing | Web terminal is Unix-only; use WSL or macOS/Linux for that feature. Core MCP tools work on native Windows. |
+| Tools not appearing | Check the client MCP config is valid JSON; verify the Python environment. Run `nulm doctor`. |
+| Claude Desktop logs (macOS) | `~/Library/Logs/Claude/mcp-server-claude-bridge.log` |
+| Claude Desktop logs (Windows) | `%APPDATA%\Claude\logs\` or MCP client log panel |
 
 ## Requirements
 
