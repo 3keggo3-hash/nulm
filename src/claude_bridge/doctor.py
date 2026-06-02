@@ -227,7 +227,7 @@ def build_doctor_report(
         if platform.startswith("win"):
             treesitter_fix = (
                 "pip install nulm (core only), or install Microsoft VC++ Redistributable "
-                "then pip install \"nulm[treesitter]\""
+                'then pip install "nulm[treesitter]"'
             )
         else:
             treesitter_fix = "pip install -e .[treesitter]"
