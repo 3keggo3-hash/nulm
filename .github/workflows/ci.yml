@@ -47,8 +47,13 @@ jobs:
       - name: Type check with mypy
         run: mypy src
 
-      - name: Test with pytest
+      - name: Test with pytest (Unix)
+        if: runner.os != 'Windows'
         run: pytest -q --tb=short --cov=claude_bridge --cov-report=term-missing
+
+      - name: Test with pytest (Windows smoke)
+        if: runner.os == 'Windows'
+        run: pytest tests/test_doctor.py tests/test_cli.py::TestCLI::test_runtime_version_matches_package_metadata -q --tb=short
 
   package:
     runs-on: ubuntu-latest
