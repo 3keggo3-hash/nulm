@@ -56,7 +56,8 @@ class TerminalSession:
             for fd in (self.master_fd, self.slave_fd):
                 if fd is not None:
                     fl = fcntl_mod.fcntl(fd, fcntl_mod.F_GETFL)
-                    fcntl_mod.fcntl(fd, fcntl_mod.F_SETFL, fl | os.O_NONBLOCK)
+                    nonblock = getattr(os, "O_NONBLOCK", 0)
+                    fcntl_mod.fcntl(fd, fcntl_mod.F_SETFL, fl | nonblock)
             return True
         except Exception:
             self._cleanup()
@@ -103,7 +104,8 @@ class TerminalSession:
 
             fcntl_mod = cast(Any, fcntl)
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
-            fcntl_mod.ioctl(self.slave_fd, termios.TIOCSWINSZ, winsize)
+            tiocs_winsz = getattr(termios, "TIOCSWINSZ", 0)
+            fcntl_mod.ioctl(self.slave_fd, tiocs_winsz, winsize)
             return True
         except Exception:
             return False

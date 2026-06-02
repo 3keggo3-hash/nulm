@@ -17,6 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Dashboard web terminal is skipped on native Windows; terminal module imports safely on win32.
+- Parse UTC lesson timestamps with `Z` suffix on Python 3.10 during memory cleanup.
 
 ## [0.1.9] - 2026-06-01
 

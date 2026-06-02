@@ -38,6 +38,13 @@ DEFAULT_MAX_LESSONS = 500
 DEFAULT_LESSON_TTL_DAYS = 90
 
 
+def _parse_utc_timestamp(timestamp: str) -> float:
+    normalized = timestamp.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    return datetime.fromisoformat(normalized).timestamp()
+
+
 def _get_key() -> bytes:
     if _Fernet is None:
         raise RuntimeError(
@@ -317,7 +324,7 @@ class MemoryStore:
             expired: list[int] = []
             for i, lesson in enumerate(lessons):
                 try:
-                    lesson_ts = datetime.fromisoformat(lesson.timestamp).timestamp()
+                    lesson_ts = _parse_utc_timestamp(lesson.timestamp)
                     if lesson_ts < cutoff:
                         expired.append(i)
                 except (ValueError, TypeError):
