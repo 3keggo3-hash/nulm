@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="500" viewBox="0 0 1500 500" role="img" aria-label="Nulm header">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="55%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="1500" height="500" fill="url(#bg)"/>
+  <g opacity="0.12" stroke="#22D3EE" stroke-width="1">
+    <path d="M0 125 H1500 M0 250 H1500 M0 375 H1500"/>
+    <path d="M187.5 0 V500 M375 0 V500 M562.5 0 V500 M750 0 V500 M937.5 0 V500 M1125 0 V500 M1312.5 0 V500"/>
+  </g>
+  <g transform="translate(120 130)">
+    <rect x="0" y="0" width="88" height="240" rx="12" fill="none" stroke="url(#accent)" stroke-width="10"/>
+    <path d="M88 0 L240 0 L240 88" fill="none" stroke="url(#accent)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M88 240 L240 132" fill="none" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" opacity="0.5"/>
+    <circle cx="200" cy="200" r="70" fill="none" stroke="#334155" stroke-width="3"/>
+    <path d="M155 200 H245" stroke="url(#accent)" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  </g>
+  <text x="420" y="210" fill="#F8FAFC" font-family="ui-sans-serif, system-ui, sans-serif" font-size="96" font-weight="700" letter-spacing="-2">Nulm</text>
+  <text x="425" y="280" fill="#94A3B8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="32" font-weight="500">Local MCP · Guarded tools · Audit log</text>
+  <text x="425" y="360" fill="#22D3EE" font-family="ui-monospace, monospace" font-size="28">pip install nulm</text>
+</svg>

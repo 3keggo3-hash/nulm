@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" role="img" aria-label="Nulm avatar">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" rx="80" fill="url(#bg)"/>
+  <g fill="none" stroke="url(#accent)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 96 L128 304 L272 96 L272 304"/>
+    <path d="M148 200 L252 200" opacity="0.55"/>
+  </g>
+  <circle cx="200" cy="200" r="118" stroke="#1F2937" stroke-width="2" fill="none"/>
+</svg>

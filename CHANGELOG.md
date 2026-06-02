@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-06-02
+
+### Added
+
+- Windows CI matrix job, README Windows install section, and `nulm doctor` platform checks.
+- Social launch docs, X post copy, and brand assets under `assets/social/`.
+
+### Fixed
+
+- Dashboard web terminal is skipped on native Windows; terminal module imports safely on win32.
+
 ## [0.1.9] - 2026-06-01
 
 ### Added
