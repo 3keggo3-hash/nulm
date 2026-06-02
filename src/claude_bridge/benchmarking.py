@@ -7,8 +7,9 @@
 from __future__ import annotations
 
 import gc
-import time
 import json
+import sys
+import time
 import statistics
 from pathlib import Path
 from typing import Any
@@ -29,10 +30,12 @@ def load_benchmark_profile(profile_path: Path) -> dict[str, Any]:
 
 
 def _get_memory_mb() -> float:
+    if sys.platform == "win32":
+        return 0.0
     try:
         import resource
 
-        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        return float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)
     except Exception:
         return 0.0
 

@@ -9,16 +9,9 @@ import signal
 import subprocess
 import sys
 import threading
-from typing import Any
+from typing import Any, cast
 
 TERMINAL_SUPPORTED = sys.platform != "win32"
-
-if TERMINAL_SUPPORTED:
-    import fcntl
-    import pty
-else:
-    fcntl = None  # type: ignore[assignment,misc]
-    pty = None  # type: ignore[assignment,misc]
 
 try:
     import websockets  # type: ignore[import]
@@ -45,8 +38,12 @@ class TerminalSession:
             return False
         shell = shell or os.environ.get("SHELL", "/bin/bash")
         try:
-            assert pty is not None
-            self.master_fd, self.slave_fd = pty.openpty()
+            import fcntl
+            import pty
+
+            pty_mod = cast(Any, pty)
+            fcntl_mod = cast(Any, fcntl)
+            self.master_fd, self.slave_fd = pty_mod.openpty()
             self.process = subprocess.Popen(
                 [shell],
                 stdin=self.slave_fd,
@@ -58,8 +55,8 @@ class TerminalSession:
             self.running = True
             for fd in (self.master_fd, self.slave_fd):
                 if fd is not None:
-                    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-                    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+                    fl = fcntl_mod.fcntl(fd, fcntl_mod.F_GETFL)
+                    fcntl_mod.fcntl(fd, fcntl_mod.F_SETFL, fl | os.O_NONBLOCK)
             return True
         except Exception:
             self._cleanup()
@@ -97,15 +94,16 @@ class TerminalSession:
         return b""
 
     def resize(self, rows: int, cols: int) -> bool:
-        if not self.running or self.slave_fd is None:
+        if not TERMINAL_SUPPORTED or not self.running or self.slave_fd is None:
             return False
         try:
             import fcntl
             import struct
             import termios
 
+            fcntl_mod = cast(Any, fcntl)
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
-            fcntl.ioctl(self.slave_fd, termios.TIOCSWINSZ, winsize)
+            fcntl_mod.ioctl(self.slave_fd, termios.TIOCSWINSZ, winsize)
             return True
         except Exception:
             return False
@@ -124,10 +122,24 @@ class TerminalSession:
         with self.lock:
             self.running = False
             if self.process:
-                try:
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-                except (OSError, ProcessLookupError):
-                    pass
+                if TERMINAL_SUPPORTED:
+                    killpg = getattr(os, "killpg", None)
+                    getpgid = getattr(os, "getpgid", None)
+                    if killpg is not None and getpgid is not None:
+                        try:
+                            killpg(getpgid(self.process.pid), signal.SIGTERM)
+                        except (OSError, ProcessLookupError):
+                            pass
+                    else:
+                        try:
+                            self.process.terminate()
+                        except (OSError, ProcessLookupError):
+                            pass
+                else:
+                    try:
+                        self.process.terminate()
+                    except (OSError, ProcessLookupError):
+                        pass
                 self.process = None
             for fd in (self.master_fd, self.slave_fd):
                 if fd is not None:

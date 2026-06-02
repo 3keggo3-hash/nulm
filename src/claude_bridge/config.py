@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import sys
 import re
 import threading
 from pathlib import Path
@@ -652,16 +653,16 @@ def apply_config(
 
 
 def load_config_from_toml(config_path: Path | str) -> dict[str, Any]:
-    try:
-        import tomllib  # type: ignore[import-untyped]
-    except ImportError:
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
         try:
             import tomli as tomllib  # type: ignore[import-not-found,no-redef]
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "tomllib or tomli is required for TOML config loading. "
                 "Install with: pip install tomli"
-            )
+            ) from exc
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
